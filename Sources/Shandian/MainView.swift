@@ -487,7 +487,9 @@ struct TaskRow: View {
                     // 迅雷那边的任务：边下边播直接打开迅雷已写好的部分；暂停到迅雷里操作
                     if item.file != nil { CircleIconButton(symbol: "play.tv", help: "边下边播") { store.playThunderFile(item) } }
                     CircleIconButton(symbol: "arrow.uturn.backward", help: "收回到闪电全能下载（改由这里接着下）") { store.reclaimFromThunder(item) }
-                    CircleIconButton(symbol: "arrow.up.forward.app", help: "在迅雷中查看（暂停、继续）") { NSWorkspace.shared.open(ThunderBridge.app) }
+                    if ThunderBridge.installed {
+                        CircleIconButton(symbol: "arrow.up.forward.app", help: "在迅雷中查看（暂停、继续）") { store.openThunder() }
+                    }
                 }
                 if case .engine = item.source {
                     CircleIconButton(symbol: item.status == .paused || item.isFailed ? "play.fill" : "pause.fill",
@@ -644,13 +646,13 @@ private struct ItemMenu: View {
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
             if item.isThunder, item.isActive {
-                Button("在迅雷中查看") { NSWorkspace.shared.open(ThunderBridge.app) }
+                if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
                 Button("收回到闪电全能下载") { store.reclaimFromThunder(item) }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
                 Button("交给云盘离线（PikPak）") { store.sendToCloud(item) }
-                if ThunderBridge.installed { Button("用迅雷下载") { store.handToThunder(item) } }
+                Button(ThunderBridge.installed ? "用迅雷下载" : "用迅雷下载（需先安装迅雷）…") { store.handToThunder(item) }
             }
             Divider()
             Button("移除…") { store.removalTarget = item }

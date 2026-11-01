@@ -48,7 +48,6 @@ struct SettingsView: View {
     @AppStorage(Prefs.notifyKey) private var notify = true
     @AppStorage(Prefs.doneSoundKey) private var doneSound = true
     @AppStorage(Prefs.downloadLimitKey) private var limit = 0
-    @AppStorage(Prefs.autoThunderKey) private var autoThunder = false
     @AppStorage(Prefs.autoCloudKey) private var autoCloud = false
     @State private var pkState = PikPak.loggedInUser
     @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
@@ -79,13 +78,11 @@ struct SettingsView: View {
                     }
                 }
                 .onChange(of: limit) { store.reapplyEngineSettings() }
-                if ThunderBridge.installed {
-                    Toggle("磁力、种子太慢时交给迅雷（没登录云盘时）", isOn: $autoThunder)
-                        .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里")
-                }
                 Toggle("新建任务时显示确认框", isOn: $confirmNew)
                 Toggle("复制链接后弹出下载提示", isOn: $watchClipboard)
             }
+
+            ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {
                 if let u = pkState {
@@ -131,6 +128,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser; pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
+        .onAppear { ThunderBridge.recheck() }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .tint(Theme.tint)
@@ -143,8 +141,7 @@ struct SettingsView: View {
         }
     }
 
-    private func dirRow(_ title: String, key: String, current: URL) -> some View {
-        LabeledContent(title) {
+    private func dirRow(_ title: String, key: String, current: URL) -> some View {        LabeledContent(title) {
             HStack(spacing: 8) {
                 Text(Folders.displayName(current)).foregroundStyle(Theme.sub).lineLimit(1).truncationMode(.middle)
                     .help(current.path)
@@ -168,5 +165,38 @@ private struct UpdateToggle: View {
     var body: some View {
         Toggle("自动检查更新", isOn: $checker.automatic)
             .help("每天最多访问一次 GitHub 查询最新版本，不上传任何数据")
+    }
+}
+
+/// 迅雷是第三方软件、可选：装了能把任务交给它下，没装也不用藏开关——
+/// 说清「不装也能下」，给出官网，装完点重新检测就能用（11-01 用户反馈：别人电脑上没装迅雷怎么办）
+struct ThunderSettingsSection: View {
+    @AppStorage(Prefs.autoThunderKey) private var autoThunder = false
+    @State private var installed = ThunderBridge.installed
+
+    var body: some View {
+        Section("迅雷（可选）") {
+            if installed {
+                Toggle("磁力、种子太慢时交给迅雷（没登录云盘时）", isOn: $autoThunder)
+                    .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里")
+                Text("已检测到本机的迅雷。单个任务也可以在右键菜单里选「用迅雷下载」。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            } else {
+                LabeledContent("未检测到迅雷") {
+                    HStack(spacing: 8) {
+                        Button("去官网下载") { ThunderBridge.openOfficialSite() }
+                        Button("重新检测") { ThunderBridge.recheck(); installed = ThunderBridge.installed }
+                    }
+                }
+                // 迅雷被卸载/移走后，之前开着的自动接管还留在偏好里；这里留个开关，别让人没法关
+                if autoThunder {
+                    Toggle("装上迅雷后自动接管太慢的任务（当前已开启）", isOn: $autoThunder)
+                        .help("没装迅雷时不会真的交出去，任务仍由闪电全能下载下")
+                }
+                Text("迅雷是第三方下载工具，不装也能正常下磁力、种子和直链。装上后可以把任务交给它下，国内冷门资源通常更快；装好点「重新检测」即可。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear { ThunderBridge.recheck(); installed = ThunderBridge.installed }
     }
 }

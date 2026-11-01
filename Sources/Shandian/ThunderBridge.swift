@@ -27,8 +27,45 @@ struct ThunderJob: Codable, Identifiable, Equatable {
 
 @MainActor
 enum ThunderBridge {
-    static let app = URL(fileURLWithPath: "/Applications/Thunder.app")
-    static var installed: Bool { FileManager.default.fileExists(atPath: app.path) }
+    /// 迅雷是第三方软件，不是本应用的依赖：没装也能正常下磁力、种子。装在哪由系统登记的信息查，
+    /// 只认 /Applications 会漏掉装在别处的（比如 ~/Applications 或改名后的副本）
+    private static var cache: (url: URL?, at: Date)?
+
+    static var appURL: URL? {
+        if let c = cache, Date().timeIntervalSince(c.at) < 3 { return c.url }
+        let fallback = URL(fileURLWithPath: "/Applications/Thunder.app")
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.xunlei.Thunder")
+            ?? (FileManager.default.fileExists(atPath: fallback.path) ? fallback : nil)
+        cache = (url, Date())
+        return url
+    }
+
+    static var installed: Bool { appURL != nil }
+
+    /// 用户刚装完迅雷时，设置页/右键菜单要能立刻认出来
+    static func recheck() { cache = nil }
+
+    /// 官网（Mac 版页，intel 与 Apple 芯片同一个包），只在用户主动要用迅雷、但本机没装时给
+    static let officialSite = URL(string: "https://mac.xunlei.com/")!
+
+    static func openOfficialSite() {
+        NSWorkspace.shared.open(officialSite)
+    }
+
+    /// 用户主动要用迅雷、但本机没装时的提示。说清它是什么、装不装都行，再给官网
+    static func installAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "还没安装迅雷"
+        alert.informativeText = """
+        「用迅雷下载」要把任务交给本机的迅雷，没装就交不出去。
+
+        不装也能照常下磁力、种子和直链，只是国内冷门资源多在迅雷用户之间传，装上通常更快。到官网下载 Mac 版（免费），装好后回来再点一次。
+        """
+        alert.addButton(withTitle: "去迅雷官网")
+        alert.addButton(withTitle: "继续用闪电全能下载")
+        return alert
+    }
+
     static var store: URL { EngineConfig.supportDir.appendingPathComponent("thunder.json") }
 
     static func load() -> [ThunderJob] {
@@ -63,8 +100,8 @@ enum ThunderBridge {
 
     /// 用迅雷打开链接（保存位置预设好），再替用户点迅雷新建任务窗口里的「立即下载」
     static func open(link: String, saveDir: String, onClicked: @escaping (Bool) -> Void) {
+        guard let app = appURL, let url = URL(string: link) else { onClicked(false); return }
         UserDefaults(suiteName: "com.xunlei.Thunder")?.set(saveDir, forKey: "LastSavePath")
-        guard let url = URL(string: link) else { return }
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
         Task {
             // 第一次会请求「辅助功能」权限；没给就只能让用户自己在迅雷里点
@@ -130,6 +167,40 @@ enum ThunderBridge {
             if let n = (d["dlsize"] as? NSNumber)?.int64Value { total += n }
         }
         return total > 0 ? (checked, total) : nil
+    }
+
+    /// 迅雷还在写这个文件夹时，收回会被拒：只提醒一句「先暂停」，不摆一堆说明（11-01 用户反馈字太多）
+    static func writingAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "迅雷还在下这条"
+        alert.informativeText = "先在迅雷里暂停它，再点收回。两边同时写同一个文件会损坏。"
+        alert.addButton(withTitle: "知道了")
+        return alert
+    }
+
+    /// 迅雷是不是还在往这个文件夹里写。收回前必须先确认：两边同时写同一个文件会损坏数据，
+    /// 而迅雷的暂停按钮我们点不到（2026-11-01 实测：辅助功能拿不到它的窗口），只能让用户去停。
+    /// 采样 1.5 秒，文件占用和修改时间都没动就算停了
+    static func isWriting(_ job: ThunderJob) async -> Bool {
+        guard let folder = job.folder else { return false }
+        func snap() -> (bytes: Int64, newest: TimeInterval) {
+            var bytes: Int64 = 0, newest: TimeInterval = 0
+            let en = FileManager.default.enumerator(at: URL(fileURLWithPath: folder),
+                                                    includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey, .contentModificationDateKey])
+            while let f = en?.nextObject() as? URL {
+                if f.lastPathComponent.hasPrefix(".") { continue }
+                let v = try? f.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey, .contentModificationDateKey])
+                if v?.isRegularFile == true {
+                    bytes += Int64(v?.totalFileAllocatedSize ?? 0)
+                    newest = max(newest, v?.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                }
+            }
+            return (bytes, newest)
+        }
+        let a = snap()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        let b = snap()
+        return b.bytes != a.bytes || b.newest > a.newest + 0.5
     }
 
     /// 量一次进度：优先用迅雷 `.js` 里记的真值；文件占用只用来估速度

@@ -400,7 +400,7 @@ final class DownloadStore: ObservableObject {
                     Task { @MainActor in self.sendToCloud(it) }
                 } else if Prefs.autoThunder, ThunderBridge.installed {
                     autoHanded.insert(i.id)
-                    Task { @MainActor in self.handToThunder(it) }
+                    Task { @MainActor in self.handToThunder(it, promptIfMissing: false) }
                 }
             }
             if !all[k].isActive, let f = all[k].location ?? all[k].file { all[k].fileGone = Self.isGone(f) }
@@ -483,7 +483,7 @@ final class DownloadStore: ObservableObject {
     func primaryAction(_ item: Item) {
         if item.fileGone { return }
         if !item.isActive { open(item); return }
-        if case .thunder = item.source { NSWorkspace.shared.open(ThunderBridge.app); return }   // 迅雷里的任务到迅雷里管
+        if case .thunder = item.source { openThunder(); return }   // 迅雷里的任务到迅雷里管
         if case .failed = item.status { retry(item); return }
         togglePause(item)
     }
@@ -563,8 +563,9 @@ final class DownloadStore: ObservableObject {
     }
 
     /// 真正开始下载。dir / selectFiles 来自确认框；不给就按默认规则（按类型存、种子只选正片）。
-    /// paused 用于从迅雷收回：先建任务但停着，等用户把迅雷那条停了再继续，免得两边同时写同一个文件
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, paused: Bool = false) {
+    /// carry 用于从迅雷收回：任务解析、校验期间先把迅雷已经下好的量显示出来，别让用户以为从头再来；
+    /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil) {
         guard let kind = LinkKind.of(link) else { return }
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key }) { reveal(existing: existing); return }
@@ -586,9 +587,11 @@ final class DownloadStore: ObservableObject {
         let url = localTorrent ? Self.torrentDataURL(link) ?? link : link
         if kind == .magnet || kind == .torrentFile {
             // 先解析文件列表，只勾主视频和字幕；磁力要先从网络拿到种子信息
-            var placeholder = Item(id: "pending-" + UUID().uuidString, source: .pending, title: PrettyTitle.clean(Self.displayName(link)), rawTitle: Self.displayName(link),
+            let shown = givenTitle ?? Self.displayName(link)
+            var placeholder = Item(id: "pending-" + UUID().uuidString, source: .pending, title: PrettyTitle.clean(shown), rawTitle: shown,
                                    origin: kind == .magnet ? "磁力" : "种子文件", category: .movie, status: .resolving(Date()),
-                                   downloaded: 0, total: 0, speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
+                                   downloaded: carry?.downloaded ?? 0, total: max(carry?.total ?? 0, carry?.downloaded ?? 0),
+                                   speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
             if !localTorrent { placeholder.link = link }
             pending.append(placeholder); rebuild()
             pendingRecords[placeholder.id] = PendingRecord(link: link, headers: headers, name: name, dir: dir.path, selectFiles: chosenFiles)
@@ -614,7 +617,6 @@ final class DownloadStore: ObservableObject {
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select)
                     if selectedID == placeholder.id { selectedID = id }
-                    if paused { try? await host.client.pause(id) }
                 } catch { notice = "添加失败：\(error.localizedDescription)" }
                 dropPending(placeholder.id)
                 await poll()
@@ -624,7 +626,6 @@ final class DownloadStore: ObservableObject {
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
                     selectedID = id
-                    if paused { try? await host.client.pause(id) }
                     notice = "已添加：\(name ?? Self.displayName(link))"
                 } catch { notice = "添加失败：\(error.localizedDescription)" }
                 await poll()
@@ -703,8 +704,26 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    static let thunder = URL(fileURLWithPath: "/Applications/Thunder.app")
-    static var hasThunder: Bool { FileManager.default.fileExists(atPath: thunder.path) }
+    /// 打开迅雷本体。交给迅雷的任务记在迅雷里，它被卸载或挪走后要给个明确说明，不能静默失败
+    func openThunder() {
+        guard let app = ThunderBridge.appURL else {
+            notice = "没找到迅雷。这条任务可以用「收回」改由闪电全能下载接着下，不用重下"
+            return
+        }
+        NSWorkspace.shared.open(app)
+    }
+
+    /// 用户主动要用迅雷、但本机没装：说明清楚它是什么、装不装都行，并给出官网
+    func promptInstallThunder() {
+        ThunderBridge.recheck()
+        if ThunderBridge.installed { return }
+        let alert = ThunderBridge.installAlert()
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            ThunderBridge.openOfficialSite()
+            notice = "已打开迅雷官网；装好后再点「用迅雷下载」"
+        }
+    }
 
     /// 云盘离线：BT 任务先暂停（云盘失败了还能接着 BT），交给 PikPak；云端下好后按直链拉回同一个位置
     func sendToCloud(_ item: Item) {
@@ -811,9 +830,15 @@ final class DownloadStore: ObservableObject {
     }
 
     /// 交给迅雷（见 ThunderBridge）：我们这边的任务删掉、已下的一点点移到废纸篓（同名文件会和迅雷打架），
-    /// 换成一条「迅雷」任务，进度从迅雷写的文件里量
-    func handToThunder(_ item: Item) {
-        guard ThunderBridge.installed, !item.link.isEmpty else { return }
+    /// 换成一条「迅雷」任务，进度从迅雷写的文件里量。
+    /// promptIfMissing：用户主动点的时候没装迅雷要说清楚并给官网；自动接管时静默留在本地下，别弹窗打断下载
+    func handToThunder(_ item: Item, promptIfMissing: Bool = true) {
+        guard !item.link.isEmpty else { notice = "这条任务没留下链接，交不了"; return }
+        guard ThunderBridge.installed else {
+            if promptIfMissing { promptInstallThunder() }
+            else { notice = "没找到迅雷，「\(item.title)」继续由闪电全能下载下（设置里可关掉「自动交给迅雷」）" }
+            return
+        }
         let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
@@ -827,7 +852,7 @@ final class DownloadStore: ObservableObject {
         case .pending: dropPending(item.id)
         default: return
         }
-        var job = ThunderJob(id: "thunder-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
+        let job = ThunderJob(id: "thunder-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
                              hash: ThunderBridge.infoHash(item.link), name: item.rawTitle, total: item.total, createdAt: Date())
         thunderJobs.append(job); ThunderBridge.save(thunderJobs)
         selectedID = job.id
@@ -839,8 +864,9 @@ final class DownloadStore: ObservableObject {
     }
 
     /// 收回：不再让迅雷下，改由闪电全能下载接着下。用迅雷文件夹里它自己存的种子建任务、目录指回原处，
-    /// 内核会校验已下好的数据、只补没下的部分。任务建成暂停：迅雷那边还在写同一个文件，
-    /// 得等用户把迅雷那条停掉再点继续，两边同时写会损坏文件
+    /// 内核会校验已下好的数据、只补没下的部分。
+    /// 迅雷的暂停按钮我们点不到，所以先确认它确实没在写：还在写就只提醒一句，不收——
+    /// 建个暂停的任务等用户去停，用户看到的是「暂停 + 进度 0」，像从头重下（11-01 用户反馈）
     func reclaimFromThunder(_ item: Item) {
         guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
         let torrent = job.folder.flatMap { folder -> String? in
@@ -850,26 +876,22 @@ final class DownloadStore: ObservableObject {
         }
         let link = torrent ?? job.link
         guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
-        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").isEmpty
-        if running {
-            let alert = NSAlert()
-            alert.messageText = "收回到闪电全能下载？"
-            alert.informativeText = """
-            收回后这条任务改由这里接着下，迅雷已经下好的部分会保留，只补没下的。
-            迅雷正在运行，请先到迅雷里把「\(item.title)」暂停或删除——两边同时写同一个文件会损坏数据。
-            收回后任务先停着，确认迅雷已经停了，再点「继续」。
-            """
-            alert.addButton(withTitle: "收回")
-            alert.addButton(withTitle: "取消")
-            NSApp.activate(ignoringOtherApps: true)
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        notice = "正在确认迅雷已经停下…"
+        Task {
+            if await ThunderBridge.isWriting(job) {
+                notice = nil
+                let alert = ThunderBridge.writingAlert()
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+                return
+            }
+            thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
+            rebuild()
+            // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0
+            start(link: link, dir: URL(fileURLWithPath: job.dir),
+                  carry: (job.checked ?? job.bytes, job.dlSize ?? job.total), title: item.title)
+            notice = "已收回「\(item.title)」，正在校验已下好的部分"
         }
-        thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
-        rebuild()
-        start(link: link, dir: URL(fileURLWithPath: job.dir), paused: running)
-        notice = running
-            ? "已收回「\(item.title)」：在迅雷里暂停这条，再点继续，就从已下好的部分接着下"
-            : "已收回「\(item.title)」，正在校验已下好的部分"
     }
 
     /// 迅雷任务边下边播：迅雷大体按顺序写文件，直接用播放器打开正在写的文件
