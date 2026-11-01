@@ -140,10 +140,12 @@ final class Gateway: @unchecked Sendable {
             var device = o["device"] as? String ?? ""
             device = device.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             let name = (c["username"] as? String) ?? (c["email"] as? String) ?? "PikPak 账号"
-            await PikPak.shared.adoptWebSession(clientID: client.isEmpty ? PikPak.web.clientID : client, deviceID: device,
-                                                accessToken: at, refreshToken: rt, userID: c["sub"] as? String ?? "", name: name)
-            await MainActor.run { NotificationCenter.default.post(name: PikPak.loginChanged, object: nil) }
-            return (200, json(["ok": true]))
+            do {
+                try await PikPak.shared.adoptWebSession(clientID: client.isEmpty ? PikPak.web.clientID : client, deviceID: device,
+                                                        accessToken: at, refreshToken: rt, userID: c["sub"] as? String ?? "", name: name)
+                await MainActor.run { NotificationCenter.default.post(name: PikPak.loginChanged, object: nil) }
+                return (200, json(["ok": true]))
+            } catch { return (500, json(["ok": false])) }
         }
         if r.path.hasPrefix("/extension/ping") {
             // ready：内核已就绪。扩展拉起 App 后等到它为 true 再交任务，否则会被「下载内核未运行」挡掉

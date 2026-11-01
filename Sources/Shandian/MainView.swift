@@ -150,11 +150,6 @@ private struct Sidebar: View {
     }
 
     @ViewBuilder private var diskStatus: some View {
-        if !store.diskMounted {
-            Label("移动硬盘未连接，电影暂存到「下载 › 电影」", systemImage: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
-        }
         switch store.engineState {
         case .failed(let m):
             Label("内核未启动：\(m)", systemImage: "exclamationmark.triangle")

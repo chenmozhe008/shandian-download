@@ -21,9 +21,11 @@ struct PikPakLoginView: View {
             PikPakWebView { cred in
                 status = "已登录，正在关联…"
                 Task {
-                    await PikPak.shared.adoptWebSession(clientID: cred.clientID, deviceID: cred.deviceID, accessToken: cred.access,
-                                                        refreshToken: cred.refresh, userID: cred.sub, name: cred.name)
-                    onDone(cred.name)
+                    do {
+                        try await PikPak.shared.adoptWebSession(clientID: cred.clientID, deviceID: cred.deviceID, accessToken: cred.access,
+                                                                refreshToken: cred.refresh, userID: cred.sub, name: cred.name)
+                        onDone(cred.name)
+                    } catch { status = "关联信息保存失败，请关闭窗口后重试" }
                 }
             }
         }

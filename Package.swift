@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.executable(name: "Shandian", targets: ["Shandian"])],
     targets: [
-        .executableTarget(name: "Shandian", path: "Sources/Shandian")
+        .executableTarget(name: "Shandian", path: "Sources/Shandian"),
+        .testTarget(name: "ShandianTests", dependencies: ["Shandian"], path: "Tests/ShandianTests")
     ]
 )

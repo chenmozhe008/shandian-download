@@ -113,16 +113,21 @@ actor PikPak {
     }
 
     /// 网页登录：在 PikPak 网页里登录后取到的会话（见 PikPakLoginView）。之后只由闪电全能下载刷新
-    func adoptWebSession(clientID: String, deviceID: String, accessToken: String, refreshToken: String, userID: String, name: String) {
+    func adoptWebSession(clientID: String, deviceID: String, accessToken: String, refreshToken: String, userID: String, name: String) throws {
         // 网页存的 deviceid 形如 wdi10.<…>，网页签名和请求头用的是最后一段的前 32 位
         let device = String((deviceID.split(separator: ".").last.map(String.init) ?? deviceID).prefix(32))
-        session = Session(username: name, deviceID: device, accessToken: accessToken, refreshToken: refreshToken,
-                          userID: userID, clientID: clientID)
-        save()
+        let newSession = Session(username: name, deviceID: device, accessToken: accessToken, refreshToken: refreshToken,
+                                 userID: userID, clientID: clientID)
+        let data = try JSONEncoder().encode(newSession)
+        try data.write(to: Self.file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.file.path)
+        session = newSession
+        UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
     }
 
     func logout() {
         session = nil
+        UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
         try? FileManager.default.removeItem(at: Self.file)
     }
 
@@ -138,8 +143,14 @@ actor PikPak {
                                body: ["client_id": profile.clientID, "refresh_token": s.refreshToken, "grant_type": "refresh_token"],
                                device: s.deviceID, auth: false, extraHeaders: profile.refreshHeaders)
         guard let at = r["access_token"] as? String, let rt = r["refresh_token"] as? String else {
-            throw PikPakError.server("登录已过期，请在设置里重新登录 PikPak")
+            if session?.refreshToken == s.refreshToken {
+                UserDefaults.standard.set(true, forKey: "pikpakSessionProblem")
+                DispatchQueue.main.async { NotificationCenter.default.post(name: Self.loginChanged, object: nil) }
+            }
+            throw PikPakError.server("PikPak 会话刷新失败，请检查网络或在设置里重新关联")
         }
+        guard session?.refreshToken == s.refreshToken else { return }
+        UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
         s.accessToken = at; s.refreshToken = rt
         session = s; save()
     }

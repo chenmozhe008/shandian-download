@@ -271,9 +271,7 @@ function grabPikPakSession() {
   if (!k) return null;
   const c = JSON.parse(localStorage.getItem(k) || "{}");
   if (!c.access_token || !c.refresh_token) return null;
-  const out = { key: k, c, device: localStorage.getItem("deviceid") || "" };
-  localStorage.removeItem(k);
-  return out;
+  return { key: k, c, device: localStorage.getItem("deviceid") || "" };
 }
 
 // PikPak 网页一打开会自己跳到 /drive/all，地址里的 #shandian-link 会丢：记住是哪个标签页
@@ -282,8 +280,7 @@ const linkTabs = new Set();
 chrome.tabs.onUpdated.addListener(async (tabId, change, tab) => {
   if ((change.url || tab.url || "").includes("#shandian-link")) linkTabs.add(tabId);
   if (change.status !== "complete" || !linkTabs.has(tabId) || !tab.url || !tab.url.startsWith("https://mypikpak.com/")) return;
-  linkTabs.delete(tabId);
-  await linkPikPak(tabId);
+  if (await linkPikPak(tabId)) linkTabs.delete(tabId);
 });
 
 async function linkPikPak(tabId) {
@@ -293,12 +290,18 @@ async function linkPikPak(tabId) {
     if (s) {
       const ok = await fetch("http://127.0.0.1:6800/extension/pikpak", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s),
-      }).then((r) => r.ok).catch(() => false);
+      }).then(async (r) => r.ok && (await r.json()).ok === true).catch(() => false);
+      if (ok) {
+        await chrome.scripting.executeScript({ target: { tabId }, func: (key, access) => {
+          const value = localStorage.getItem(key);
+          try { if (value && JSON.parse(value).access_token === access) localStorage.removeItem(key); } catch (_) {}
+        }, args: [s.key, s.c.access_token] }).catch(() => {});
+      }
       await chrome.scripting.executeScript({ target: { tabId }, func: (ok) => {
         document.title = ok ? "已关联到闪电全能下载" : "关联失败";
         alert(ok ? "PikPak 已关联到闪电全能下载，可以关掉这个页面了。" : "没能交给闪电全能下载，请确认闪电全能下载已打开。");
       }, args: [ok] });
-      return true;
+      return ok;
     }
     await new Promise((r) => setTimeout(r, 1000));
   }

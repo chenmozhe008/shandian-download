@@ -142,7 +142,7 @@ private struct IntroPage: View {
     private let sources = ["磁力", "种子", "ed2k", "HTTP 直链", "网盘直链", "YouTube", "X", "B 站", "微博", "小红书", "新片场", "抖音"]
     private let notes: [(String, String)] = [
         ("doc.on.clipboard", "复制链接后在窗口中按 ⌘V 即可下载，也可拖入链接或种子文件；装好浏览器扩展后，网页上点下载会直接交给闪电全能下载。"),
-        ("externaldrive", "电影默认存到移动硬盘；硬盘未连接时暂存到「下载 › 电影」。推出硬盘前会自动暂停存在上面的任务。"),
+        ("externaldrive", "磁力、种子和其他下载默认存到「下载」，可在设置中选择保存位置。"),
         ("play.tv", "下载中的电影可「边下边播」：先下片头，用 IINA 或 VLC 打开。"),
         ("cloud", "网盘下载需先在浏览器中获取直链，速度受网盘自身限速影响。"),
         ("gauge.with.dots.needle.33percent", "下载速度取决于资源热度、来源数量和网络环境。"),

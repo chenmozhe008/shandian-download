@@ -86,7 +86,7 @@ final class DownloadStore: ObservableObject {
     private var videoJobs: [VideoJob] = []
     private var pending: [Item] = []
     /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢（10-28 「抓特务」就这么丢了）
-    struct PendingRecord: Codable { var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]? }
+    struct PendingRecord: Codable, Equatable { var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]? }
     private var pendingRecords: [String: PendingRecord] = [:]
     private var pendingFile: URL { EngineConfig.supportDir.appendingPathComponent("pending.json") }
 
@@ -122,6 +122,7 @@ final class DownloadStore: ObservableObject {
         var id: String; var title: String; var link: String; var dir: String
         var engineID: String?; var partial: String?; var total: Int64
         var taskID = ""; var fileID = ""; var progress = 0; var createdAt = Date()
+        var pendingRecord: PendingRecord?
         var pulling: [String]?      // 已在从云盘拉回的内核任务；都下完后删云端文件（免费账号只有 6 GB）
     }
     private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
@@ -177,7 +178,6 @@ final class DownloadStore: ObservableObject {
         ("aliyundrive", "阿里云盘"), ("alipan", "阿里云盘"), ("123pan", "123 云盘"), ("123684", "123 云盘"), ("189.cn", "天翼云盘"),
         ("ctyunxs", "天翼云盘"), ("139.com", "移动云盘"), ("uc.cn", "UC 网盘"), ("xunlei.com", "迅雷云盘")]
 
-    @Published private(set) var diskMounted = Folders.diskMounted
     private var pausedForEject = Set<String>()
 
     /// 推出硬盘：内核暂停后仍开着那块盘上的文件，盘会推不出。用 DiskArbitration 在系统批准推出前先处理：
@@ -222,7 +222,6 @@ final class DownloadStore: ObservableObject {
     }
 
     private func volumesChanged() {
-        diskMounted = Folders.diskMounted
         guard !pausedForEject.isEmpty, engineState == .running else { return }
         Task {
             guard let tasks = try? await host.client.tasks() else { return }
@@ -339,6 +338,9 @@ final class DownloadStore: ObservableObject {
             }
             UserDefaults.standard.removeObject(forKey: "resumeOnLaunch")
             restorePending()
+            for job in cloudJobs where job.taskID.isEmpty && job.pulling == nil {
+                cloudFailed(job.id, "云盘提交中断")
+            }
             if !cloudJobs.isEmpty { pollCloud() }
         case .failed(let m): engineState = .failed(m)
         }
@@ -708,16 +710,22 @@ final class DownloadStore: ObservableObject {
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
         var engineID: String?
+        var pendingRecord: PendingRecord?
         switch item.source {
-        case .engine(let id): engineID = id; Task { try? await host.client.pause(id) }
-        case .pending: dropPending(item.id)
+        case .engine(let id): engineID = id
+        case .pending:
+            guard let record = pendingRecords[item.id] else { return }
+            pendingRecord = record
         default: return
         }
         let job = CloudJob(id: "cloud-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
-                           engineID: engineID, partial: base?.path, total: item.total)
-        cloudJobs.append(job); saveCloud(); selectedID = job.id; rebuild()
+                           engineID: engineID, partial: base?.path, total: item.total, pendingRecord: pendingRecord)
+        cloudJobs.append(job); saveCloud()
+        if pendingRecord != nil { dropPending(item.id) }
+        selectedID = job.id; rebuild()
         Task {
             do {
+                if let engineID { try await host.client.pause(engineID) }
                 let t = try await PikPak.shared.offline(item.link)
                 if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                     cloudJobs[k].taskID = t.id; cloudJobs[k].fileID = t.fileID; cloudJobs[k].progress = t.progress; saveCloud()
@@ -731,9 +739,19 @@ final class DownloadStore: ObservableObject {
     private func cloudFailed(_ id: String, _ message: String) {
         guard let job = cloudJobs.first(where: { $0.id == id }) else { return }
         cloudJobs.removeAll { $0.id == id }; saveCloud()
-        if let e = job.engineID { Task { try? await host.client.resume(e) } }   // 退回 BT 接着下
-        notice = "云盘离线失败：\(message)，已改回 BT 继续"
         rebuild()
+        if let e = job.engineID {
+            Task {
+                do { try await host.client.resume(e); notice = "云盘离线失败：\(message)，已恢复原下载" }
+                catch { notice = "云盘离线失败：\(message)；原任务恢复失败，请手动继续" }
+                await poll()
+            }
+        } else if let r = job.pendingRecord {
+            start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles)
+            notice = "云盘离线失败：\(message)，已恢复原任务解析"
+        } else {
+            notice = "云盘离线失败：\(message)，请重新添加任务"
+        }
     }
 
     /// 每 5 秒查一次云端进度；下好后取直链交给内核，删掉原来的 BT 任务和它下的那一点

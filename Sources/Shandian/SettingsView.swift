@@ -51,6 +51,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.autoThunderKey) private var autoThunder = false
     @AppStorage(Prefs.autoCloudKey) private var autoCloud = false
     @State private var pkState = PikPak.loggedInUser
+    @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ClipboardWatcher.enabledKey) private var watchClipboard = true
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
@@ -88,23 +89,24 @@ struct SettingsView: View {
 
             Section("云盘离线（PikPak）") {
                 if let u = pkState {
-                    LabeledContent("已登录") {
+                    LabeledContent(pkProblem ? "关联需检查" : "已关联") {
                         HStack { Text(u).foregroundStyle(Theme.sub); Button("退出") { Task { await PikPak.shared.logout(); pkState = nil } } }
                     }
+                    Text(pkProblem ? "会话刷新失败，请检查网络或重新关联账号。" : "已保存账号关联，实际登录状态会在使用时验证。")
+                        .font(.system(size: 12)).foregroundStyle(Theme.sub)
+                    HStack {
+                        Button("从浏览器重新关联") { linkPikPakFromBrowser() }
+                        Button("在窗口里登录…") { openWindow(id: "pikpak-login"); NSApp.activate(ignoringOtherApps: true) }
+                    }
+                    Text("浏览器已登录 PikPak 时可直接重新关联，需安装闪电全能下载扩展。关联后浏览器中的 PikPak 可能退出登录。")
+                        .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
                     Toggle("磁力、种子太慢时自动交给云盘离线", isOn: $autoCloud)
                         .help("BT 网络里几乎没人传的资源，交给 PikPak 服务器下好，再从云盘满速拉回")
                     Text("免费账号每天约 3 次，默认不自动用；卡住的任务右键「交给云盘离线」。").font(.system(size: 12)).foregroundStyle(Theme.sub)
                 } else {
                     LabeledContent("PikPak 账号") {
                         HStack {
-                            // 浏览器里登录着 PikPak：扩展把登录交给闪电全能下载，什么都不用输
-                            // Chrome、Edge 都打开：哪个里登录着 PikPak 就从哪个关联（默认浏览器不一定是登录的那个）
-                            Button("从浏览器关联") {
-                                let u = URL(string: "https://mypikpak.com/drive/#shandian-link")!
-                                for app in ["/Applications/Google Chrome.app", "/Applications/Microsoft Edge.app"] where FileManager.default.fileExists(atPath: app) {
-                                    NSWorkspace.shared.open([u], withApplicationAt: URL(fileURLWithPath: app), configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
-                                }
-                            }
+                            Button("从浏览器关联") { linkPikPakFromBrowser() }
                                 .buttonStyle(.borderedProminent)
                             Button("在窗口里登录…") { openWindow(id: "pikpak-login"); NSApp.activate(ignoringOtherApps: true) }
                         }
@@ -128,10 +130,17 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser }
+        .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser; pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .tint(Theme.tint)
+    }
+
+    private func linkPikPakFromBrowser() {
+        let url = URL(string: "https://mypikpak.com/drive/#shandian-link")!
+        for app in ["/Applications/Google Chrome.app", "/Applications/Microsoft Edge.app"] where FileManager.default.fileExists(atPath: app) {
+            NSWorkspace.shared.open([url], withApplicationAt: URL(fileURLWithPath: app), configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+        }
     }
 
     private func dirRow(_ title: String, key: String, current: URL) -> some View {
