@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.3"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.4"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -12,8 +12,10 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Apple Development}"
 security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_IDENTITY" || CODESIGN_IDENTITY="-"
 
 TRIPLE="$ARCH-apple-macosx14.0"
-swift build -c release --triple "$TRIPLE"
-BIN="$(swift build -c release --triple "$TRIPLE" --show-bin-path)/$EXECUTABLE_NAME"
+# 有外层沙箱（如编辑器内置终端）时 sandbox-exec 无法嵌套，可传 SWIFT_FLAGS=--disable-sandbox
+SWIFT_FLAGS="${SWIFT_FLAGS:-}"
+swift build -c release --triple "$TRIPLE" $SWIFT_FLAGS
+BIN="$(swift build -c release --triple "$TRIPLE" --show-bin-path $SWIFT_FLAGS)/$EXECUTABLE_NAME"
 
 # 图标：AppIcon-source.png 更新过才重做 icns
 ICNS="$ROOT/Resources/AppIcon.icns"

@@ -7,4 +7,6 @@ logs/
 .build/
 engine/bin/
 engine/data/
+.torrent.db
+data/
 .DS_Store

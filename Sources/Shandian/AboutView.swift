@@ -6,6 +6,10 @@ import SwiftUI
 enum AppInfo {
     static let author = "@沉默者之二"
     static let feedbackEmail = "327529709@qq.com"
+    static let repository = URL(string: "https://github.com/chenmozhe008/shandian-download")!
+    static let issues = URL(string: "https://github.com/chenmozhe008/shandian-download/issues")!
+    /// 卡片里显示的仓库地址，不用把整条 URL 塞进提示里
+    static let repoLabel = "github.com/chenmozhe008/shandian-download"
 
     static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "开发版" }
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-" }
@@ -78,8 +82,20 @@ private struct Header: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("闪电全能下载").font(.system(size: 26, weight: .bold))
                 Text("磁力、种子、网盘与视频网站，一个窗口下载").font(.system(size: 14, weight: .medium))
-                Text("版本 \(AppInfo.version)（\(AppInfo.build)）　作者 \(AppInfo.author)")
-                    .font(.system(size: 12)).opacity(0.75).monospacedDigit().padding(.top, 2)
+                HStack(spacing: 12) {
+                    Text("版本 \(AppInfo.version)（\(AppInfo.build)）　作者 \(AppInfo.author)")
+                        .font(.system(size: 12)).opacity(0.75).monospacedDigit()
+                    Button { NSWorkspace.shared.open(AppInfo.repository) } label: {
+                        HStack(spacing: 6) { GitHubMark(size: 13); Text("GitHub") }
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.60, green: 0.35, blue: 0.0))
+                            .padding(.horizontal, 11).frame(height: 24)
+                            .background(Capsule().fill(.white.opacity(0.92)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("在 GitHub 查看源代码：\(AppInfo.repoLabel)")
+                }
+                .padding(.top, 2)
             }
             .foregroundStyle(.white)
             Spacer()
@@ -130,6 +146,36 @@ private struct IconTile: View {
     }
 }
 
+/// 「代码完全开源」入口：开源是下载工具的信任基础，把仓库做成一眼能点的卡片
+private struct OpenSourceCard: View {
+    var body: some View {
+        Button { NSWorkspace.shared.open(AppInfo.repository) } label: {
+            HStack(spacing: 12) {
+                GitHubMark(size: 20).foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(red: 0.14, green: 0.16, blue: 0.18)))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("代码完全开源").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.text)
+                    Text(AppInfo.repoLabel).font(.system(size: 12)).foregroundStyle(Theme.sub)
+                }
+                Spacer(minLength: 8)
+                Label("在 GitHub 查看", systemImage: "arrow.up.right")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).frame(height: 34)
+                    .background(Capsule().fill(Theme.tint))
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("在 GitHub 查看源代码")
+    }
+}
+
 private struct IntroPage: View {
     private let points: [(String, String, String)] = [
         ("globe", "海外资源可连接", "下载经本机代理连接，可访问海外的 Tracker 和下载服务器。"),
@@ -154,6 +200,10 @@ private struct IntroPage: View {
                 SectionTitle("它是什么")
                 Text("闪电全能下载是一款 Mac 下载工具。磁力链接、种子文件、ed2k、HTTP 直链、网盘直链，以及 B 站、YouTube 等视频网站的内容，都在同一个窗口下载。链接类型自动识别，文件按类型保存到不同位置；关闭窗口后下载继续，菜单栏显示当前速度。")
                     .font(.system(size: 13.5)).foregroundStyle(Theme.text).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                OpenSourceCard().padding(.top, 4)
+                Text("全部代码以 GPL-3.0 许可公开，下载内核为开源项目 Gopeed 的定制版本，视频下载由 yt-dlp 提供。欢迎在 GitHub 提交问题、建议或代码。")
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.sub).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -271,10 +321,15 @@ private struct FeedbackPage: View {
             Card {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("使用中遇到问题，欢迎反馈").font(.system(size: 17, weight: .bold))
-                    Text("请描述问题并附上截图，便于定位。").font(.system(size: 13)).foregroundStyle(Theme.sub)
+                    Text("请描述问题并附上截图，便于定位。可在 GitHub 提交问题（公开、便于他人查阅），也可直接发邮件。").font(.system(size: 13)).foregroundStyle(Theme.sub)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 10) {
+                        Button { NSWorkspace.shared.open(AppInfo.issues) } label: {
+                            Label("在 GitHub 提交问题", systemImage: "arrow.up.right")
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
                         Button { AppInfo.sendFeedback() } label: { Label("发反馈邮件", systemImage: "envelope.fill") }
-                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .controlSize(.large)
                         Button { AppInfo.copy(AppInfo.feedbackEmail); copied = AppInfo.feedbackEmail } label: {
                             Label(copied == AppInfo.feedbackEmail ? "已复制邮箱" : AppInfo.feedbackEmail,
                                   systemImage: copied == AppInfo.feedbackEmail ? "checkmark" : "doc.on.doc")
