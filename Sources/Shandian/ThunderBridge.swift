@@ -18,6 +18,11 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     var bytes: Int64 = 0
     var speed: Int64 = 0
     var measuredAt: Date?
+    /// 迅雷写在任务文件夹里 `.<infohash>.js` 的进度：已完成字节 / 任务总字节。
+    /// 文件实际占用按 4K 对齐，4 GB 的片子会比真实大小多出几 MB，靠它判「满」永远差一点（11-01 实测），
+    /// 完成后迅雷也照旧留着这个文件，所以「.js 没了才算完」也不成立。这两个数是迅雷自己记的真值
+    var checked: Int64?
+    var dlSize: Int64?
 }
 
 @MainActor
@@ -106,7 +111,28 @@ enum ThunderBridge {
         return nil
     }
 
-    /// 量一次进度：迅雷边下边写，文件实际占用的空间就是已下的量；隐藏的 .js 是迅雷的进度文件，没了就是下完
+    /// 读迅雷的任务进度文件 `.<infohash>.js`：base64 包着的 JSON
+    /// `{"infohash":"…","subinfo0":{"checkedsize":4030002163,"dlsize":4030002163}}`。
+    /// 多文件任务是 subinfo0、subinfo1…，逐个加起来。checkedsize 追上 dlsize 就是下完了
+    static func session(in folder: URL) -> (checked: Int64, total: Int64)? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        guard let js = names.first(where: { $0.hasPrefix(".") && $0.hasSuffix(".js") }) else { return nil }
+        guard let raw = FileManager.default.contents(atPath: folder.appendingPathComponent(js).path),
+              var text = String(data: raw, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        while text.count % 4 != 0 { text += "=" }
+        guard let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        var checked: Int64 = 0, total: Int64 = 0
+        for (k, v) in obj where k.hasPrefix("subinfo") {
+            guard let d = v as? [String: Any] else { continue }
+            if let n = (d["checkedsize"] as? NSNumber)?.int64Value { checked += n }
+            if let n = (d["dlsize"] as? NSNumber)?.int64Value { total += n }
+        }
+        return total > 0 ? (checked, total) : nil
+    }
+
+    /// 量一次进度：优先用迅雷 `.js` 里记的真值；文件占用只用来估速度
     static func measure(_ job: inout ThunderJob) {
         let fm = FileManager.default
         if job.folder == nil {
@@ -139,8 +165,14 @@ enum ThunderBridge {
             }
         }
         guard let folder = job.folder else { return }
+        let folderURL = URL(fileURLWithPath: folder)
+        if let s = session(in: folderURL) {
+            job.checked = s.checked
+            job.dlSize = s.total
+            job.total = s.total      // 迅雷记的总大小比种子解析出来的准
+        }
         var bytes: Int64 = 0, hiddenProgress = 0
-        let en = fm.enumerator(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
+        let en = fm.enumerator(at: folderURL, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
         while let f = en?.nextObject() as? URL {
             if f.lastPathComponent.hasPrefix(".") {
                 if f.pathExtension == "js" { hiddenProgress += 1 }
@@ -155,7 +187,13 @@ enum ThunderBridge {
             job.speed = Int64(Double(job.speed) * 0.6 + s * 0.4)
         }
         job.bytes = bytes; job.measuredAt = now
-        if hiddenProgress == 0, bytes > 0 { job.done = true; job.speed = 0; if job.total == 0 { job.total = bytes } }
+        // 迅雷记的已下字节追上任务总大小 = 下完了（.js 完成后仍留着，不能靠它消失来判；留一点容差，
+        // 免得最后一块的尾巴让它永远差一点）；老版本迅雷下完会清掉 .js，那条路也留着
+        if let dl = job.dlSize, dl > 0, let ck = job.checked, ck >= dl - min(64 * 1024, dl / 100) {
+            job.done = true; job.speed = 0; job.bytes = dl
+        } else if hiddenProgress == 0, bytes > 0 {
+            job.done = true; job.speed = 0; if job.total == 0 { job.total = bytes }
+        }
     }
 
     /// 任务文件夹里最大的那个文件（截图、播放用）

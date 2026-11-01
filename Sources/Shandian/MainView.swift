@@ -451,8 +451,10 @@ struct TaskRow: View {
             Thumb(thumbs: store.thumbs, item: item)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title).font(.system(size: 15, weight: .medium)).lineLimit(1).truncationMode(.middle).help(item.rawTitle)
-                HStack(spacing: 12) {
-                    Text(item.origin)
+                HStack(spacing: 10) {
+                    if case .thunder = item.source {
+                        ThunderTag(active: item.isActive, downloaded: item.downloaded, createdAt: item.createdAt)
+                    } else { Text(item.origin) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
@@ -484,6 +486,7 @@ struct TaskRow: View {
                 if case .thunder = item.source, item.isActive {
                     // 迅雷那边的任务：边下边播直接打开迅雷已写好的部分；暂停到迅雷里操作
                     if item.file != nil { CircleIconButton(symbol: "play.tv", help: "边下边播") { store.playThunderFile(item) } }
+                    CircleIconButton(symbol: "arrow.uturn.backward", help: "收回到闪电全能下载（改由这里接着下）") { store.reclaimFromThunder(item) }
                     CircleIconButton(symbol: "arrow.up.forward.app", help: "在迅雷中查看（暂停、继续）") { NSWorkspace.shared.open(ThunderBridge.app) }
                 }
                 if case .engine = item.source {
@@ -494,7 +497,7 @@ struct TaskRow: View {
                 }
                 CircleIconButton(symbol: "xmark", help: "移除") { store.removalTarget = item }
             }
-            .frame(width: 120, alignment: .trailing)
+            .frame(width: 164, alignment: .trailing)
             .opacity(hover.on || selected ? 1 : 0)
         }
         .padding(.vertical, 10).padding(.horizontal, 10)
@@ -506,7 +509,7 @@ struct TaskRow: View {
         .onTapGesture(count: 2) { store.primaryAction(item) }
         .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.isFailed ? "双击重试" : item.status == .paused ? "双击继续" : "双击暂停")
+        .help(item.isThunder && item.isActive ? "双击在迅雷中查看" : item.isFailed ? "双击重试" : item.status == .paused ? "双击继续" : "双击暂停")
     }
 
     private var selected: Bool { store.selectedID == item.id }
@@ -520,6 +523,7 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: "正在解析"
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
+        case .running where item.isThunder: item.avgSpeed > 0 ? item.avgSpeed.speedText : "等待中"
         case .running: item.checking ? "正在校验" : item.avgSpeed.speedText
         case .paused: "已暂停"
         case .waiting: "排队中"
@@ -531,6 +535,7 @@ struct TaskRow: View {
     private var secondary: String {
         switch item.status {
         case .running where item.cloudProgress != nil: "云端下载中 \(item.cloudProgress ?? 0)%"
+        case .running where item.isThunder: item.avgSpeed > 0 ? "在迅雷里下载" : "等迅雷开始"
         case .running where store.buffering.contains(item.id): "正在打开播放器"
         case .running where item.checking: "核对已下载的部分"
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
@@ -549,10 +554,44 @@ struct TaskRow: View {
 private extension Item {
     var isResolving: Bool { if case .resolving = status { return true }; return false }
     var isFailed: Bool { if case .failed = status { return true }; return false }
+    var isThunder: Bool { if case .thunder = source { return true }; return false }
     /// 下载中的 BT 电影可以边下边播
     var canStream: Bool {
         guard case .engine = source, isActive, !isFailed, category == .movie else { return false }
         return origin == "磁力" || origin == "种子文件"
+    }
+}
+
+/// 交给迅雷的任务：标明「这条在迅雷里下」。只写一个「迅雷」看不出是在下、在等还是下完了（11-01 用户反馈）
+private struct ThunderTag: View {
+    let active: Bool
+    let downloaded: Int64
+    let createdAt: Date
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 9.5, weight: .bold))
+            Text(text).font(.system(size: 11.5, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 7).frame(height: 18)
+        .background(Capsule().fill(color.opacity(0.14)))
+        .overlay(Capsule().strokeBorder(color.opacity(0.30), lineWidth: 0.8))
+    }
+
+    private var text: String {
+        guard active else { return "迅雷下载完成" }
+        if downloaded > 0 { return "迅雷下载中" }
+        return Date().timeIntervalSince(createdAt) > 90 ? "等待迅雷开始" : "正在交给迅雷"
+    }
+    private var symbol: String {
+        guard active else { return "checkmark.circle.fill" }
+        return downloaded > 0 ? "bolt.fill" : "clock"
+    }
+    /// 只在真的在迅雷里跑起来时用主题琥珀色，其余灰色，避免「在等」看着像「在跑」
+    private var color: Color {
+        guard active, downloaded > 0 else { return Theme.sub }
+        return Theme.tint
     }
 }
 
@@ -604,7 +643,11 @@ private struct ItemMenu: View {
                 Button(item.status == .paused ? "继续" : "暂停") { store.togglePause(item) }
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
-            if case .thunder = item.source, item.isActive { Button("在迅雷中查看") { NSWorkspace.shared.open(ThunderBridge.app) } }
+            if item.isThunder, item.isActive {
+                Button("在迅雷中查看") { NSWorkspace.shared.open(ThunderBridge.app) }
+                Button("收回到闪电全能下载") { store.reclaimFromThunder(item) }
+                Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
+            }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
                 Button("交给云盘离线（PikPak）") { store.sendToCloud(item) }
                 if ThunderBridge.installed { Button("用迅雷下载") { store.handToThunder(item) } }

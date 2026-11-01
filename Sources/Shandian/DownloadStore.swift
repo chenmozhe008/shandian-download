@@ -562,8 +562,9 @@ final class DownloadStore: ObservableObject {
         return try? await host.client.resolve(url: url, headers: kind == .torrentFile ? [:] : headers)
     }
 
-    /// 真正开始下载。dir / selectFiles 来自确认框；不给就按默认规则（按类型存、种子只选正片）
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil) {
+    /// 真正开始下载。dir / selectFiles 来自确认框；不给就按默认规则（按类型存、种子只选正片）。
+    /// paused 用于从迅雷收回：先建任务但停着，等用户把迅雷那条停了再继续，免得两边同时写同一个文件
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, paused: Bool = false) {
         guard let kind = LinkKind.of(link) else { return }
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key }) { reveal(existing: existing); return }
@@ -613,6 +614,7 @@ final class DownloadStore: ObservableObject {
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select)
                     if selectedID == placeholder.id { selectedID = id }
+                    if paused { try? await host.client.pause(id) }
                 } catch { notice = "添加失败：\(error.localizedDescription)" }
                 dropPending(placeholder.id)
                 await poll()
@@ -620,7 +622,9 @@ final class DownloadStore: ObservableObject {
         } else {
             Task {
                 do {
-                    selectedID = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
+                    let id = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
+                    selectedID = id
+                    if paused { try? await host.client.pause(id) }
                     notice = "已添加：\(name ?? Self.displayName(link))"
                 } catch { notice = "添加失败：\(error.localizedDescription)" }
                 await poll()
@@ -716,6 +720,9 @@ final class DownloadStore: ObservableObject {
         case .pending:
             guard let record = pendingRecords[item.id] else { return }
             pendingRecord = record
+        case .thunder(let id):
+            // 迅雷的进度这边接管不了；云端下好后会整份拉回，那时再把迅雷那份移走（partial）
+            thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs); rebuild()
         default: return
         }
         let job = CloudJob(id: "cloud-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
@@ -822,7 +829,6 @@ final class DownloadStore: ObservableObject {
         }
         var job = ThunderJob(id: "thunder-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
                              hash: ThunderBridge.infoHash(item.link), name: item.rawTitle, total: item.total, createdAt: Date())
-        if let b = base, item.location != item.file { job.folder = nil; _ = b }
         thunderJobs.append(job); ThunderBridge.save(thunderJobs)
         selectedID = job.id
         rebuild()
@@ -830,6 +836,40 @@ final class DownloadStore: ObservableObject {
             self?.notice = clicked ? "已交给迅雷下载「\(item.title)」，进度显示在这里"
                                    : "已在迅雷中打开，请在迅雷窗口点「立即下载」（给闪电全能下载开「辅助功能」权限后可自动点）"
         }
+    }
+
+    /// 收回：不再让迅雷下，改由闪电全能下载接着下。用迅雷文件夹里它自己存的种子建任务、目录指回原处，
+    /// 内核会校验已下好的数据、只补没下的部分。任务建成暂停：迅雷那边还在写同一个文件，
+    /// 得等用户把迅雷那条停掉再点继续，两边同时写会损坏文件
+    func reclaimFromThunder(_ item: Item) {
+        guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
+        let torrent = job.folder.flatMap { folder -> String? in
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+            return names.first { $0.hasPrefix(".magent_") && $0.hasSuffix(".torrent") }
+                .map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }
+        }
+        let link = torrent ?? job.link
+        guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
+        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").isEmpty
+        if running {
+            let alert = NSAlert()
+            alert.messageText = "收回到闪电全能下载？"
+            alert.informativeText = """
+            收回后这条任务改由这里接着下，迅雷已经下好的部分会保留，只补没下的。
+            迅雷正在运行，请先到迅雷里把「\(item.title)」暂停或删除——两边同时写同一个文件会损坏数据。
+            收回后任务先停着，确认迅雷已经停了，再点「继续」。
+            """
+            alert.addButton(withTitle: "收回")
+            alert.addButton(withTitle: "取消")
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
+        rebuild()
+        start(link: link, dir: URL(fileURLWithPath: job.dir), paused: running)
+        notice = running
+            ? "已收回「\(item.title)」：在迅雷里暂停这条，再点继续，就从已下好的部分接着下"
+            : "已收回「\(item.title)」，正在校验已下好的部分"
     }
 
     /// 迅雷任务边下边播：迅雷大体按顺序写文件，直接用播放器打开正在写的文件
@@ -1085,9 +1125,13 @@ final class DownloadStore: ObservableObject {
 
     private static func item(from j: ThunderJob) -> Item {
         let folder = j.folder.map(URL.init(fileURLWithPath:))
+        // 迅雷 `.js` 里记的大小最准；没有就退回种子解析值、再退回文件占用（占用含 4K 对齐，会略大）
+        let total = j.dlSize.flatMap { $0 > 0 ? $0 : nil } ?? (j.total > 0 ? j.total : j.bytes)
+        var got = j.checked.map { min($0, total) } ?? min(j.bytes, total)
+        if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,
-                      status: j.done ? .done : .running, downloaded: j.done ? max(j.bytes, j.total) : j.bytes, total: max(j.total, j.bytes),
-                      speed: j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
+                      status: j.done ? .done : .running, downloaded: got, total: total,
+                      speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
         it.link = j.link
         return it
