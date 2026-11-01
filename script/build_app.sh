@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.4"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.5"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -45,6 +45,10 @@ xcrun actool "$ROOT/Resources/Assets.xcassets" --compile "$APP/Contents/Resource
   --minimum-deployment-target 14.0 --accent-color AccentColor --output-partial-info-plist "$ASSETS_PLIST" >/dev/null
 rm -f "$ASSETS_PLIST" "${ASSETS_PLIST%.plist}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+# 开发版标记：工作区还有没提交的改动（只看已跟踪文件，构建产物不算）就在 Info.plist 里写 1，
+# 「关于」的版本行和更新记录会标成开发版。发版前先提交，打出来的就是正式版本
+DEV_BUILD=0
+[[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]] && DEV_BUILD=1
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -59,6 +63,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSAccentColorName</key><string>AccentColor</string>
   <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>SDDevBuild</key><string>$DEV_BUILD</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>

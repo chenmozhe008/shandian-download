@@ -14,9 +14,19 @@ enum AppInfo {
     static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "开发版" }
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-" }
 
+    /// 本地自己改过、还没提交的构建：打包时 build_app.sh 看到工作区不干净就写这个键，
+    /// 界面上按「开发版」标注，免得把没发布的改动当成正式版本
+    static var isDev: Bool { (Bundle.main.infoDictionary?["SDDevBuild"] as? String) == "1" }
+
+    /// 标题区的版本行，开发版在后面多一句提示
+    static var versionLabel: String {
+        let base = "版本 \(version)（\(build)）"
+        return isDev ? "\(base) · 开发版" : base
+    }
+
     /// 附在反馈邮件里，便于复现
     static var diagnostics: String {
-        "闪电全能下载 \(version)（\(build)），macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+        "闪电全能下载 \(version)（\(build)）\(isDev ? " 开发版" : "")，macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
 
     /// 打开「关于」并停在指定页
@@ -83,7 +93,7 @@ private struct Header: View {
                 Text("闪电全能下载").font(.system(size: 26, weight: .bold))
                 Text("磁力、种子、网盘与视频网站，一个窗口下载").font(.system(size: 14, weight: .medium))
                 HStack(spacing: 12) {
-                    Text("版本 \(AppInfo.version)（\(AppInfo.build)）　作者 \(AppInfo.author)")
+                    Text(AppInfo.versionLabel + "　作者 \(AppInfo.author)")
                         .font(.system(size: 12)).opacity(0.75).monospacedDigit()
                     Button { NSWorkspace.shared.open(AppInfo.repository) } label: {
                         HStack(spacing: 6) { GitHubMark(size: 13); Text("GitHub") }
@@ -287,6 +297,9 @@ private struct ChangelogPage: View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(releases.enumerated()), id: \.element.id) { i, r in
                 let parts = r.id.components(separatedBy: " · ")
+                // 「开发版」两种来源：CHANGELOG 标题里手写的（还没发版的版本），和打包时发现工作区有未提交改动的
+                let dev = parts.dropFirst().contains { $0.contains("开发版") } || (i == 0 && AppInfo.isDev)
+                let date = parts.count > 1 ? parts[1].replacingOccurrences(of: "（开发版）", with: "") : ""
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
@@ -298,8 +311,14 @@ private struct ChangelogPage: View {
                                     .padding(.horizontal, 8).frame(height: 22)
                                     .background(Capsule().strokeBorder(Theme.tint, lineWidth: 1))
                             }
+                            if dev {
+                                Text("开发版").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.sub)
+                                    .padding(.horizontal, 8).frame(height: 22)
+                                    .background(Capsule().fill(Theme.faint))
+                                    .help("本机自己改过、还没发布的版本")
+                            }
                             Spacer()
-                            if parts.count > 1 { Text(parts[1]).font(.system(size: 12)).foregroundStyle(Theme.sub).monospacedDigit() }
+                            if !date.isEmpty { Text(date).font(.system(size: 12)).foregroundStyle(Theme.sub).monospacedDigit() }
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             ForEach(r.notes, id: \.self) { Bullet(text: $0) }
