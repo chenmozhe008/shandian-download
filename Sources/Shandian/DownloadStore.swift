@@ -31,6 +31,7 @@ struct Item: Identifiable, Equatable {
     var fileGone = false        // 下完后文件被用户在访达里删了或移走（硬盘没插不算）
     var avgSpeed: Int64 = 0     // 平滑后的速度，算剩余时间用；瞬时速度跳得厉害，行内和顶部估算会对不上
     var videoStage: VideoJob.Stage?  // 视频站任务下载中处在哪一步
+    var waitingLastPiece = false // 离完成只差一点、速度归零在干等（末块常和没选中的小文件共用，或源很慢）
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
@@ -187,6 +188,11 @@ final class DownloadStore: ObservableObject {
     private var autoHanded = Set<String>()
     /// 退出时各 BT 任务已下的量；重启后低于它就是在校验
     private var checkFloor: [String: Int64] = (UserDefaults.standard.dictionary(forKey: "progressAtQuit") as? [String: Int64]) ?? [:]
+    /// 每个任务上次进度变化的时间和字节数：判断「卡在最后一点」
+    private var lastBytes: [String: (bytes: Int64, at: Date)] = [:]
+    /// 卡在最后一点时自动重新校验的次数与时间
+    private var lastPieceRetries: [String: Int] = [:]
+    private var lastPieceRetryAt: [String: Date] = [:]
     /// 内核任务 id → 原始链接。从迅雷收回的任务是拿本地种子建的（内核那边 url 是 data:），
     /// 原始磁力得另外记着，右键的「交给云盘离线」「用迅雷下载」才有得用
     private var sourceLinks: [String: String] = DownloadStore.loadSourceLinks()
@@ -415,6 +421,35 @@ final class DownloadStore: ObservableObject {
                     checkFloor[id] = nil
                 }
             }
+            // 离完成只差一点、进度却不动了：BT 的末块常常和没选中的小文件（说明 txt、海报图）共用一个分片，
+            // 也可能这一块在网上的源很少。别一直写「正在连接」，照实说在补最后一点（11-01 用户反馈：卡住不动）
+            for k in engineItems.indices {
+                let id = engineItems[k].id
+                let it = engineItems[k]
+                guard it.status == .running, !it.checking, it.total > 0, it.downloaded > 0, it.downloaded < it.total,
+                      Double(it.downloaded) / Double(it.total) > 0.995 else {
+                    lastBytes[id] = nil
+                    engineItems[k].waitingLastPiece = false
+                    continue
+                }
+                if let prev = lastBytes[id], prev.bytes == it.downloaded {
+                    engineItems[k].waitingLastPiece = Date().timeIntervalSince(prev.at) > 30
+                    // 干等超过 1 分钟：让内核把那半块数据重新校验、清掉重下。
+                    // 11-01 实测（4.24 GB 种子只剩最后一块）：卡住 60 秒后一次重新校验，几秒内就以 10–30 KB/s 继续下了。
+                    // 每次最多自动试 3 次、两次间隔 90 秒，免得一直在校验
+                    let tries = lastPieceRetries[id] ?? 0
+                    if Date().timeIntervalSince(prev.at) > 60, it.speed == 0, tries < 3,
+                       Date().timeIntervalSince(lastPieceRetryAt[id] ?? .distantPast) > 90 {
+                        lastPieceRetries[id] = tries + 1
+                        lastPieceRetryAt[id] = Date()
+                        Task { try? await host.client.verifyExisting(id: id) }
+                    }
+                } else {
+                    lastBytes[id] = (it.downloaded, Date())
+                    engineItems[k].waitingLastPiece = false
+                    if lastPieceRetries[id] != nil { lastPieceRetries[id] = nil }
+                }
+            }
         }
         // 指数平滑，约 5 次轮询的窗口；行内剩余时间和顶部「全部完成」用同一个值
         var next: [String: Double] = [:]
@@ -443,7 +478,9 @@ final class DownloadStore: ObservableObject {
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
             let i = all[k]
             let isBT = i.origin == "磁力" || i.origin == "种子文件"
-            let stuck = isBT && !i.checking && (i.isResolvingState || (i.status == .running && i.avgSpeed < 50 << 10))
+            // 只差最后一点的不算「冷门」：这时候交出去（迅雷 / 云盘）会把几 GB 重下一遍，得不偿失
+            let nearlyDone = i.total > 0 && Double(i.downloaded) / Double(i.total) > 0.99
+            let stuck = isBT && !i.checking && !nearlyDone && (i.isResolvingState || (i.status == .running && i.avgSpeed < 50 << 10))
             if stuck { slowSince[i.id] = slowSince[i.id] ?? Date() } else { slowSince[i.id] = nil }
             all[k].slow = stuck && Date().timeIntervalSince(slowSince[i.id] ?? Date()) > 180
             if all[k].slow, !all[k].link.isEmpty, !autoHanded.contains(i.id) {

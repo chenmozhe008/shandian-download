@@ -602,6 +602,7 @@ struct TaskRow: View {
         case .running where item.isThunder: item.avgSpeed > 0 ? "在迅雷里下载" : "等迅雷开始"
         case .running where store.buffering.contains(item.id): "正在打开播放器"
         case .running where item.checking: "核对已下载的部分"
+        case .running where item.waitingLastPiece: "漏了最后一小块，正在补"
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: "合并视频和音频"
         case .running where item.videoStage == .converting: "转换为 M4A"

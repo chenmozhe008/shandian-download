@@ -17,6 +17,8 @@
 9. 任务字段 `shandianError` 存失败原因（App `EngineTask.failureText` 翻成人话）
 10. **按需校验磁盘上已有的数据**（`opts.extra.shandianVerifyExisting = true`，创建任务和 PATCH 任务都认）——2026-11-01 实测：anacrolix v1.60 的 `queueInitialPieceCheck` 只要块完成记录报得出状态就不读磁盘，所以把迅雷下了一半的目录交给内核，它会把整份重新下一遍（4.2 GB 完整文件也一样）。带这个标记时 `Fetcher.verifyExisting` 在 `Start()` 里先 `VerifyDataContext` 再放行下载，磁盘上认得的块直接算完成。收回迅雷、换内核后找回进度都走它；8 MB 自造种子实测：完整文件 1 秒 done、内容未改；半成品只算前 4 MB（`/tmp/recheck`）
 
+11. **末块卡住自动解卡**（App 侧，`DownloadStore.poll`）——2026-11-01 实测：4.24 GB 种子下到只剩最后一块（该块和没选中的 71 字节说明文件共用一个分片）后速度归零、进度条钉在 99.87% 不动，两个隔离实例都复现。原因是这一块收到一半后请求状态卡死（同一块再等 5 分钟也不动）。App 侧的处理：进到 99.5% 以上、字节数 60 秒没变且速度为 0 时，自动 PATCH 一次 `shandianVerifyExisting`（最多 3 次、间隔 90 秒），实测几秒内就以 10–30 KB/s 继续补最后一块；界面这一行写「漏了最后一小块，正在补」，不再写「正在连接」。只差最后一点的任务也不再算「冷门」自动交迅雷 / 云盘，否则几 GB 会白重下一遍。
+
 编译环境：Go 工具链、Gopeed 源码、编译缓存都在作者移动硬盘 `Applications/ShandianBuild/`；必须开 CGO（不开时 anacrolix 用纯 Go uTP，2026-10-28 实测只剩 1 个连接）；本机命令行工具的链接器和 SDK 对不上，`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链。
 
 推出移动硬盘：DiskArbitration 推出审批回调里查内核是否开着那块盘上的文件（`EngineHost.holdsFiles`），开着就暂停 → 结束内核 → 批准 → 2 秒后重启，插回自动续。
