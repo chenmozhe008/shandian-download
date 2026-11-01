@@ -21,6 +21,8 @@
   - 固定 `--concurrent-fragments 4`、`-S res,vcodec:h264,acodec:aac`（不设会挑 AV1）；别设 `--http-chunk-size`。依据见 `docs/internals.md`
 - **网盘**：浏览器里的 LinkSwift 油猴脚本拿直链 → 交给内核。**只装 Greasy Fork 上 hmjz100 的版本**；GitHub `Mario82del/LinkSwift` 发安装包，疑似冒名，别碰
 - 客户端界面（P2）：原生 SwiftUI，`NavigationSplitView` 系统侧栏 + 系统工具栏/搜索框（10-27 用户嫌手搓侧栏和红绿灯对不齐，别再手工画侧栏）；侧栏顶部 App 图标+名字，技术约定沿用小清（`Coding Project/mac-cleanup-manager/CLAUDE.md`）：本机 SwiftUI 宏编译不过，状态放 `ObservableObject @Published`；文案像专业 Mac 软件
+  - 重复投同一个链接（已在下载 / 已下过）：**切到列表、滚到那条任务并高亮**，顶部提示带「定位任务」按钮停 15 秒；只弹一条小字、人还留在新建界面上是不行的（11-01 用户反馈）。实现集中在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
+  - 顶栏提示统一 9 秒（带按钮 15 秒）、48pt 高、带图标和描边；别退回一行小灰字
 
 ## 入口与本机端口
 

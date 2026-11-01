@@ -15,6 +15,12 @@ final class NewTaskPanels {
 
     private var panels: [NSPanel] = []
 
+    /// 收掉所有确认框：重复链接时要把用户带回列表看那条任务，框还浮在上面就挡住了
+    func dismissAll() {
+        for p in panels { p.orderOut(nil) }
+        panels.removeAll()
+    }
+
     func present(links: [String], headers: [String: String], name: String?, store: DownloadStore) {
         let model = NewTaskModel(links: links, headers: headers, name: name, store: store)
         let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)

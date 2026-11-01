@@ -31,6 +31,7 @@ struct Item: Identifiable, Equatable {
     var fileGone = false        // 下完后文件被用户在访达里删了或移走（硬盘没插不算）
     var avgSpeed: Int64 = 0     // 平滑后的速度，算剩余时间用；瞬时速度跳得厉害，行内和顶部估算会对不上
     var videoStage: VideoJob.Stage?  // 视频站任务下载中处在哪一步
+    var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
     var isResolvingState: Bool { if case .resolving = status { return true }; return false }
@@ -61,21 +62,35 @@ final class DownloadStore: ObservableObject {
     @Published var showNewSheet = false
     @Published var newLinksText = ""
     @Published var clipboardLinks: [String]?     // 剪贴板里发现的新链接（一段文字里可能有多个）
-    /// 顶部一行提示（重复链接、失败原因），6 秒后自动收起
+    /// 顶部提示（重复链接、失败原因）。默认停 9 秒；带按钮的（重复链接 → 定位任务）停 15 秒，
+    /// 给用户看清字、也来得及点按钮（11-01 用户反馈：原来 6 秒一闪、太小，根本没注意到）
     @Published var notice: String? {
         didSet {
             noticeTimer?.cancel()
             guard notice != nil else { return }
+            let seconds = noticeAction?.forText == notice ? 15 : 9
             noticeTimer = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-                if !Task.isCancelled { self?.notice = nil }
+                try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+                if !Task.isCancelled { self?.notice = nil; self?.noticeAction = nil }
             }
         }
     }
+    /// 提示右侧的按钮：重复链接时是「定位任务」，点了滚到那条任务并选中。
+    /// 记着它属于哪条提示（forText），提示换了就不再显示，免得点在旧任务上
+    struct NoticeAction {
+        var title: String
+        var forText: String
+        var run: () -> Void
+    }
+    @Published var noticeAction: NoticeAction?
     private var noticeTimer: Task<Void, Never>?
     @Published var hoveredID: String?
     @Published var removalTarget: Item?          // 等待确认移除的任务
     @Published var selectedID: String?           // 列表里单击选中的任务（高亮、键盘操作对象）
+    /// 要让列表滚过去的任务 id（重复添加时定位到已有那条）
+    @Published var scrollTarget: String?
+    /// 刚跳过去的任务：高亮闪两下，眼睛能跟上（值变化才会重放动画）
+    @Published var flashID: String?
 
     let thumbs = Thumbnails()
     private var watcher: ClipboardWatcher?
@@ -556,26 +571,61 @@ final class DownloadStore: ObservableObject {
     /// headers/name 来自浏览器（自带扩展、LinkSwift 经网关传来），网盘直链靠它们鉴权
     func add(link: String, headers: [String: String], name: String?) { request([link], headers: headers, name: name) }
 
-    /// 重复添加：不再静默忽略，跳到那条任务并提示（10-29 自查：重复投链接时界面毫无反应）
-    private func reveal(existing: Item) {
-        section = existing.isActive ? .active : .done
-        selectedID = existing.id
-        notice = existing.isActive ? "「\(existing.title)」已在下载" : "「\(existing.title)」已下载过"
+    /// 重复添加：不再静默忽略，切到列表、滚到那条任务并高亮，再给一条能停留的提示
+    /// （10-29 自查重复投链接时毫无反应；11-01 用户反馈只弹一条小提示、人还留在新建下载界面）
+    private func reveal(existing: Item) { reveal(existingID: existing.id) }
+
+    private func reveal(existingID id: String) {
+        guard let existing = items.first(where: { $0.id == id }) else { return }
+        NewTaskPanels.shared.dismissAll()   // 确认框盖在窗口上，不收起就看不到列表
+        showNewSheet = false
+        focus(id)
+        let state = existing.isActive ? "正在下载" : "已经下载过"
+        let text = "「\(existing.title)」\(state)，没有重复下载"
+        // 先放按钮再放文字：notice 的存活时间看有没有按钮（带按钮停久一点）
+        noticeAction = NoticeAction(title: "定位任务", forText: text, run: { [weak self] in self?.focus(id) })
+        notice = text
+    }
+
+    /// 切到这条任务所在的页面、选中并滚过去（提示里的「定位任务」也走这里）
+    func focus(_ id: String) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        section = item.isActive ? .active : .done
+        selectedID = id
+        scrollTarget = id
+        flashID = nil
+        flashID = id
+        // 从浏览器复制的链接常常是「App 在后台」：把主窗口提到前面，否则跳了也看不见
+        NSApp.activate(ignoringOtherApps: true)
+        for w in NSApp.windows where !(w is NSPanel) && w.canBecomeMain { w.makeKeyAndOrderFront(nil) }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_600_000_000)
+            if self?.flashID == id { self?.flashID = nil }
+        }
     }
 
     /// 所有入口都走这里：去掉已在列表里的，再弹新建任务确认框（关掉询问时直接下载）
     func request(_ links: [String], headers: [String: String] = [:], name: String? = nil) {
         var fresh: [String] = []
+        var dupes: [String] = []      // 已在列表里的任务（按出现顺序，用来定位）
         for l in links where LinkKind.of(l) != nil {
             seenClipboard.insert(l)
             if let existing = items.first(where: { $0.linkKey == Self.linkKey(l) }) {
                 // 之前失败的同一个链接再交过来：当作重试，不挡
                 if case .failed = existing.status { retry(existing); notice = "重新下载「\(existing.title)」"; continue }
-                reveal(existing: existing); continue
+                dupes.append(existing.id); continue
             }
             if !fresh.contains(l) { fresh.append(l) }
         }
-        guard !fresh.isEmpty else { return }
+        guard !fresh.isEmpty else {
+            // 全是老链接：直接跳到第一条，不再留在新建/确认界面
+            if let id = dupes.first { reveal(existingID: id) }
+            return
+        }
+        // 有新有旧：新链接照常走确认框，旧的只在提示里说一句，别把人从这里拉走
+        if !dupes.isEmpty {
+            notice = "\(dupes.count) 个链接已在列表里，已跳过"
+        }
         if fresh.contains(where: { LinkKind.of($0) != .videoSite }), engineState != .running {
             notice = "下载内核未运行"
             return
@@ -901,9 +951,21 @@ final class DownloadStore: ObservableObject {
         }
         let job = ThunderJob(id: "thunder-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
                              hash: ThunderBridge.infoHash(item.link), name: item.rawTitle, total: item.total, createdAt: Date())
-        thunderJobs.append(job); ThunderBridge.save(thunderJobs)
+        // 迅雷里以前下过同一个种子时，它会沿用原来的文件夹、不再新建，先把已有文件夹认下来，
+        // 交过去的一瞬间就能显示进度（11-01 用户反馈：迅雷跑得飞快，这边一直「等待迅雷开始」）
+        var ready = job
+        if let folder = ThunderBridge.locateNow(job) {
+            ready.folder = folder
+            ThunderBridge.measure(&ready)   // 迅雷那边早就下完了就当场标成已完成，不用等下一次轮询
+        }
+        thunderJobs.append(ready)
+        ThunderBridge.save(thunderJobs)
         selectedID = job.id
         rebuild()
+        if ready.done {
+            notice = "迅雷里已经有「\(item.title)」，已放进「已完成」"
+            return
+        }
         ThunderBridge.open(link: item.link, saveDir: dir) { [weak self] clicked in
             self?.notice = clicked ? "已交给迅雷下载「\(item.title)」，进度显示在这里"
                                    : "已在迅雷中打开，请在迅雷窗口点「立即下载」（给闪电全能下载开「辅助功能」权限后可自动点）"
@@ -916,22 +978,32 @@ final class DownloadStore: ObservableObject {
     /// 建个暂停的任务等用户去停，用户看到的是「暂停 + 进度 0」，像从头重下（11-01 用户反馈）
     func reclaimFromThunder(_ item: Item) {
         guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
-        let torrent = job.folder.flatMap { folder -> String? in
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
-            return names.first { $0.hasPrefix(".magent_") && $0.hasSuffix(".torrent") }
-                .map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }
-        }
-        let link = torrent ?? job.link
-        guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
         notice = "正在确认迅雷已经停下…"
         Task {
-            if await ThunderBridge.isWriting(job) {
-                notice = nil
-                let alert = ThunderBridge.writingAlert()
-                NSApp.activate(ignoringOtherApps: true)
-                alert.runModal()
-                return
+            // 先尽量把迅雷的任务文件夹找到，否则判不了它停没停
+            var probe = job
+            if probe.folder == nil, let found = ThunderBridge.locateNow(probe) {
+                probe.folder = found
+                if let i = thunderJobs.firstIndex(where: { $0.id == id }) {
+                    thunderJobs[i].folder = found; ThunderBridge.save(thunderJobs); rebuild()
+                }
             }
+            let state = await ThunderBridge.state(of: probe)
+            if state != .idle {
+                notice = nil
+                NSApp.activate(ignoringOtherApps: true)
+                let answer = ThunderBridge.reclaimAlert(state).runModal()
+                // 在写：只能等用户去暂停；找不到文件夹：默认再等等，用户坚持才往下走
+                if state == .writing || answer != .alertSecondButtonReturn { return }
+            }
+            guard let job = thunderJobs.first(where: { $0.id == id }) else { return }
+            let torrent = job.folder.flatMap { folder -> String? in
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+                return names.first { $0.hasPrefix(".magent_") && $0.hasSuffix(".torrent") }
+                    .map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }
+            }
+            let link = torrent ?? job.link
+            guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
             thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
             rebuild()
             // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
@@ -1218,6 +1290,7 @@ final class DownloadStore: ObservableObject {
                       speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
         it.link = j.link
+        it.thunderLocated = j.folder != nil
         return it
     }
 
