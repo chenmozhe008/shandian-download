@@ -11,7 +11,8 @@
 - **内核**：Gopeed headless v1.9.3 **打了闪电全能下载补丁**（`engine/shandian-gopeed-v1.9.3.patch`，`script/build_engine.sh` 编译，产物打进 App、启动时换上），REST API `127.0.0.1:9999`，请求头 `X-Api-Token`；token 由 App 首次运行生成，存 `~/Library/Application Support/ShandianDownload/engine.json`（600 权限，不在仓库里），脚本也读这里
   - 内核程序和任务库在本机 `Application Support/ShandianDownload/engine/`（10-28 用户同意从移动硬盘挪来；硬盘上的旧副本 `/Volumes/Jack Feng/Applications/MacDownloader/` 没删，等用户定）
   - App 启动时没有就拉起；退出 App 只暂停任务、不关内核
-  - 补丁 9 项（块记录落盘免重校验、全局限速、边下边播、429/5xx 退避、每段≥20 MB、probe 只探测、失败原因字段等），逐条见 `docs/internals.md`；补丁测试 `internal/protocol/http/shandian_test.go`
+  - 补丁 10 项（块记录落盘免重校验、全局限速、边下边播、429/5xx 退避、每段≥20 MB、probe 只探测、失败原因字段、按需校验磁盘已有数据等），逐条见 `docs/internals.md`；补丁测试 `internal/protocol/http/shandian_test.go`
+  - **内核默认不看磁盘上已有的文件**（anacrolix 只信自己的块完成记录），所以「接手迅雷没下完的文件」「换内核后找回进度」都要显式让内核校验：创建任务 / PATCH 任务时带 `opts.extra.shandianVerifyExisting = true`（11-01 实测：不带时 4.2 GB 完整文件也会从 0 重下）
   - Go 工具链、Gopeed 源码、编译缓存都在移动硬盘 `Applications/ShandianBuild/`（不装全局）；**必须开 CGO**；`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链（本机命令行工具链接器和 SDK 对不上）
   - 推出移动硬盘时内核会被暂停→结束→2 秒后重启（`EngineHost.holdsFiles`），插回自动续
   - 只监听 127.0.0.1，不开 0.0.0.0

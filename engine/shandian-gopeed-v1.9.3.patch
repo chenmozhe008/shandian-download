@@ -37,7 +37,7 @@ index 7b27ae9..0c4c7c8 100644
  	gopkg.in/warnings.v0 v0.1.2 // indirect
  	lukechampine.com/blake3 v1.4.1 // indirect
 diff --git a/internal/protocol/bt/fetcher.go b/internal/protocol/bt/fetcher.go
-index d9202dd..d23b19e 100644
+index d9202dd..5aabc95 100644
 --- a/internal/protocol/bt/fetcher.go
 +++ b/internal/protocol/bt/fetcher.go
 @@ -15,9 +15,11 @@ import (
@@ -52,15 +52,19 @@ index d9202dd..d23b19e 100644
  	"github.com/anacrolix/torrent"
  	"github.com/anacrolix/torrent/metainfo"
  	"github.com/anacrolix/torrent/storage"
-@@ -42,6 +44,7 @@ type Fetcher struct {
+@@ -42,8 +44,11 @@ type Fetcher struct {
  	torrentReady    atomic.Bool
  	torrentUpload   atomic.Bool
  	torrentDropCtx  context.Context
 +	streaming       atomic.Bool
  	torrentDropFunc func()
  	uploadDoneCh    chan any
++	// 闪电下载：App 要求先把磁盘上已有的数据校验一遍（从迅雷收回），Start 时先校验再放行下载
++	verifyExisting bool
  }
-@@ -77,6 +80,7 @@ func (f *Fetcher) initClient() (err error) {
+ 
+ func (f *Fetcher) Setup(ctl *controller.Controller) {
+@@ -77,6 +82,7 @@ func (f *Fetcher) initClient() (err error) {
  	cfg.ExtendedHandshakeClientVersion = fmt.Sprintf("Gopeed %s", base.Version)
  	cfg.ListenPort = f.config.ListenPort
  	cfg.HTTPProxy = f.ctl.GetProxy(f.meta.Req.Proxy)
@@ -68,7 +72,21 @@ index d9202dd..d23b19e 100644
  	dnsResolver := &DnsCacheResolver{RefreshTimeout: 5 * time.Minute}
  	cfg.TrackerDialContext = dnsResolver.DialContext
  	client, err = torrent.NewClient(cfg)
-@@ -134,6 +138,81 @@ func (f *Fetcher) Start() (err error) {
+@@ -130,10 +136,95 @@ func (f *Fetcher) Start() (err error) {
+ 			file.Download()
+ 		}
+ 	}
++	// 闪电下载：目录里已经有下好的数据（从迅雷收回、或换回本地接着下）时，anacrolix 只信自己记的
++	// 块完成记录、不读磁盘，会把整份重新下一遍。先校验一遍再放行下载，磁盘上已经下好的块直接算完成
++	if f.verifyExisting {
++		f.verifyExisting = false
++		go func() {
++			_ = f.torrent.VerifyDataContext(f.torrentDropCtx)
++			f.torrent.AllowDataDownload()
++		}()
++		return
++	}
+ 	f.torrent.AllowDataDownload()
  	return
  }
  
@@ -150,7 +168,19 @@ index d9202dd..d23b19e 100644
  func (f *Fetcher) Pause() (err error) {
  	f.torrent.DisallowDataDownload()
  	return
-@@ -451,7 +530,19 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+@@ -282,6 +373,11 @@ func (f *Fetcher) Patch(req *base.Request, opts *base.Options) error {
+ 		f.data.Progress = make(fetcher.Progress, len(validSelectFiles))
+ 	}
+ 
++	// 闪电下载：App 要求重新校验磁盘上已有的数据（换内核后进度丢了、或从迅雷收回后想重新对一遍）
++	if wantedVerify(opts) && f.torrentReady.Load() {
++		go func() { _ = f.torrent.VerifyDataContext(f.torrentDropCtx) }()
++	}
++
+ 	return nil
+ }
+ 
+@@ -451,7 +547,19 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
  		TorrentDirMaker: func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
  			return f.meta.Opts.Path
  		},
@@ -170,6 +200,32 @@ index d9202dd..d23b19e 100644
  	f.torrent, _, err = client.AddTorrentSpec(spec)
  	if err != nil {
  		return
+@@ -484,11 +592,25 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 	}
+ 	<-f.torrent.GotInfo()
+ 	f.torrentReady.Store(true)
++	f.verifyExisting = wantedVerify(f.meta.Opts)
+ 
+ 	go f.doUpload(fromUpload)
+ 	return
+ }
+ 
++// wantedVerify App 在 opts.extra 里要求先校验磁盘上已有的数据吗（只有「从迅雷收回」会要）
++func wantedVerify(opts *base.Options) bool {
++	if opts == nil || opts.Extra == nil {
++		return false
++	}
++	m, ok := opts.Extra.(map[string]any)
++	if !ok {
++		return false
++	}
++	v, _ := m["shandianVerifyExisting"].(bool)
++	return v
++}
++
+ func (f *Fetcher) seedRadio() float64 {
+ 	var bytesRead int64
+ 	if f.Meta().Res != nil {
 diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
 index a9ed14a..87c251f 100644
 --- a/internal/protocol/http/fetcher.go

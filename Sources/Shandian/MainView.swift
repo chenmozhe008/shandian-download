@@ -645,6 +645,9 @@ private struct ItemMenu: View {
                 Button(item.status == .paused ? "继续" : "暂停") { store.togglePause(item) }
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
+            if case .engine = item.source, item.isActive {
+                Button("重新校验已下的数据") { store.reverify(item) }
+            }
             if item.isThunder, item.isActive {
                 if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
                 Button("收回到闪电全能下载") { store.reclaimFromThunder(item) }

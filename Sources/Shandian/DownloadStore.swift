@@ -86,7 +86,9 @@ final class DownloadStore: ObservableObject {
     private var videoJobs: [VideoJob] = []
     private var pending: [Item] = []
     /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢（10-28 「抓特务」就这么丢了）
-    struct PendingRecord: Codable, Equatable { var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]? }
+    /// originLink：这条任务的原始链接（磁力 / 网页）。从迅雷收回时用本地种子建任务，但菜单里的
+    /// 「交给云盘离线」「用迅雷下载」还得靠原始链接，不记下来这两项就没了（11-01 用户反馈右键菜单变空）
+    struct PendingRecord: Codable, Equatable { var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]?; var originLink: String? = nil }
     private var pendingRecords: [String: PendingRecord] = [:]
     private var pendingFile: URL { EngineConfig.supportDir.appendingPathComponent("pending.json") }
 
@@ -170,6 +172,19 @@ final class DownloadStore: ObservableObject {
     private var autoHanded = Set<String>()
     /// 退出时各 BT 任务已下的量；重启后低于它就是在校验
     private var checkFloor: [String: Int64] = (UserDefaults.standard.dictionary(forKey: "progressAtQuit") as? [String: Int64]) ?? [:]
+    /// 内核任务 id → 原始链接。从迅雷收回的任务是拿本地种子建的（内核那边 url 是 data:），
+    /// 原始磁力得另外记着，右键的「交给云盘离线」「用迅雷下载」才有得用
+    private var sourceLinks: [String: String] = DownloadStore.loadSourceLinks()
+    private static var sourceLinkFile: URL { EngineConfig.supportDir.appendingPathComponent("source-links.json") }
+    private static func loadSourceLinks() -> [String: String] {
+        (try? Data(contentsOf: sourceLinkFile)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+    }
+    private func saveSourceLinks() {
+        if let d = try? JSONEncoder().encode(sourceLinks) { try? d.write(to: Self.sourceLinkFile) }
+    }
+    /// 从迅雷收回的任务：内核校验磁盘上已下的数据期间报的是 0，先按迅雷记的量显示，别让用户以为从头下。
+    /// at 用来兜底：迅雷记的量和磁盘上的实际数据对不上时，几分钟后交回给内核报的真实值，不一直显示假进度
+    private var reclaimFloor: [String: (got: Int64, total: Int64, at: Date)] = [:]
     private var seenClipboard = Set<String>()
     private var pollTask: Task<Void, Never>?
     private let videosFile = EngineConfig.supportDir.appendingPathComponent("videos.json")
@@ -350,9 +365,32 @@ final class DownloadStore: ObservableObject {
         var firstLoad = false
         if engineState == .running, let tasks = try? await host.client.tasks() {
             firstLoad = !engineSeeded
-            engineItems = tasks.map(Self.item(from:))
+            engineItems = tasks.map { t in
+                var it = Self.item(from: t)
+                // 从迅雷收回的任务是拿本地种子建的，内核那边没有原始链接；补回去，菜单才完整
+                if it.link.isEmpty, let o = sourceLinks[t.id] { it.link = o }
+                return it
+            }
+            // 已经不在内核里的任务，别再留着链接
+            let alive = Set(tasks.map(\.id))
+            if sourceLinks.contains(where: { !alive.contains($0.key) }) {
+                sourceLinks = sourceLinks.filter { alive.contains($0.key) }; saveSourceLinks()
+            }
             for k in engineItems.indices {
                 let id = engineItems[k].id
+                // 从迅雷收回：内核要先把磁盘上已下的数据校验一遍，这期间它报的是 0。
+                // 先按迅雷记的量显示（并标「正在校验」），等内核报的追上来了再交回给内核
+                if let f = reclaimFloor[id] {
+                    let got = engineItems[k].downloaded
+                    if !engineItems[k].isActive || got >= f.got - f.got / 50 || Date().timeIntervalSince(f.at) > 300 {
+                        reclaimFloor[id] = nil
+                    } else if engineItems[k].status == .running || engineItems[k].status == .waiting {
+                        engineItems[k].checking = true
+                        engineItems[k].speed = 0
+                        engineItems[k].downloaded = max(got, f.got)
+                        engineItems[k].total = max(engineItems[k].total, f.total)
+                    }
+                }
                 guard let floor = checkFloor[id] else { continue }
                 if engineItems[k].status == .running, engineItems[k].downloaded < floor - floor / 50 {
                     engineItems[k].checking = true; engineItems[k].speed = 0
@@ -564,8 +602,9 @@ final class DownloadStore: ObservableObject {
 
     /// 真正开始下载。dir / selectFiles 来自确认框；不给就按默认规则（按类型存、种子只选正片）。
     /// carry 用于从迅雷收回：任务解析、校验期间先把迅雷已经下好的量显示出来，别让用户以为从头再来；
-    /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil) {
+    /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
+    /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false) {
         guard let kind = LinkKind.of(link) else { return }
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key }) { reveal(existing: existing); return }
@@ -592,9 +631,9 @@ final class DownloadStore: ObservableObject {
                                    origin: kind == .magnet ? "磁力" : "种子文件", category: .movie, status: .resolving(Date()),
                                    downloaded: carry?.downloaded ?? 0, total: max(carry?.total ?? 0, carry?.downloaded ?? 0),
                                    speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
-            if !localTorrent { placeholder.link = link }
+            placeholder.link = originLink ?? (localTorrent ? "" : link)
             pending.append(placeholder); rebuild()
-            pendingRecords[placeholder.id] = PendingRecord(link: link, headers: headers, name: name, dir: dir.path, selectFiles: chosenFiles)
+            pendingRecords[placeholder.id] = PendingRecord(link: link, headers: headers, name: name, dir: dir.path, selectFiles: chosenFiles, originLink: originLink)
             savePending()
             selectedID = placeholder.id
             notice = "已添加：\(placeholder.title)"
@@ -615,8 +654,9 @@ final class DownloadStore: ObservableObject {
                 }
                 guard pending.contains(where: { $0.id == placeholder.id }) else { return }  // 解析期间被移除了
                 do {
-                    let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select)
+                    let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select, verifyExisting: verifyExisting)
                     if selectedID == placeholder.id { selectedID = id }
+                    remember(id, originLink: originLink, carry: carry)
                 } catch { notice = "添加失败：\(error.localizedDescription)" }
                 dropPending(placeholder.id)
                 await poll()
@@ -631,6 +671,13 @@ final class DownloadStore: ObservableObject {
                 await poll()
             }
         }
+    }
+
+    /// 建好内核任务后记两件事：原始链接（右键的「交给云盘离线」「用迅雷下载」靠它，从迅雷收回的任务
+    /// 内核那边只有本地种子的 data: 地址）、收回时的起始进度（校验期间进度不跳回 0）
+    private func remember(_ id: String, originLink: String?, carry: (downloaded: Int64, total: Int64)?) {
+        if let originLink, !originLink.isEmpty { sourceLinks[id] = originLink; saveSourceLinks() }
+        if let carry, carry.downloaded > 0 { reclaimFloor[id] = (carry.downloaded, max(carry.total, carry.downloaded), Date()) }
     }
 
     func submitNewSheet() {
@@ -887,10 +934,25 @@ final class DownloadStore: ObservableObject {
             }
             thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
             rebuild()
-            // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0
+            // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
+            // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
+            let origin = job.link != link && !job.link.isEmpty ? job.link : nil
             start(link: link, dir: URL(fileURLWithPath: job.dir),
-                  carry: (job.checked ?? job.bytes, job.dlSize ?? job.total), title: item.title)
+                  carry: (job.checked ?? job.bytes, job.dlSize ?? job.total), title: item.title,
+                  originLink: origin, verifyExisting: true)
             notice = "已收回「\(item.title)」，正在校验已下好的部分"
+        }
+    }
+
+    /// 重新校验：让内核把磁盘上已经下好的数据对一遍。换内核后进度归零、或者想确认文件完整时用
+    func reverify(_ item: Item) {
+        guard case .engine(let id) = item.source else { return }
+        if item.downloaded > 0 { reclaimFloor[id] = (item.downloaded, item.total, Date()) }
+        notice = "正在重新校验「\(item.title)」已下的数据…"
+        Task {
+            do { try await host.client.verifyExisting(id: id) }
+            catch { notice = "校验请求没成功：\(error.localizedDescription)" }
+            await poll()
         }
     }
 

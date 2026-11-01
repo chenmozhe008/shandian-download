@@ -140,11 +140,14 @@ final class EngineClient: @unchecked Sendable {
     }
 
     /// 新建任务。注意参数名是 opts（写成 opt 不报错但设置不生效）
+    /// verifyExisting：目录里已有下好的数据（从迅雷收回）时，让内核先校验磁盘上的块再下，
+    /// 不然它只信自己记的完成记录、把整份重新下一遍（内核补丁 opts.extra.shandianVerifyExisting）
     @discardableResult
-    func create(url: String, directory: String, selectFiles: [Int]? = nil, headers: [String: String] = [:], name: String? = nil) async throws -> String {
+    func create(url: String, directory: String, selectFiles: [Int]? = nil, headers: [String: String] = [:], name: String? = nil, verifyExisting: Bool = false) async throws -> String {
         var opts: [String: Any] = ["path": directory]
         if let selectFiles { opts["selectFiles"] = selectFiles }
         if let name, !name.isEmpty { opts["name"] = name }
+        if verifyExisting { opts["extra"] = ["shandianVerifyExisting": true] }
         var req: [String: Any] = ["url": url]
         // 磁力 / 种子不设：内核全局代理已关，BT 直连
         if url.lowercased().hasPrefix("http") { req["proxy"] = LocalProxy.engineRequest(for: url) }
@@ -164,6 +167,11 @@ final class EngineClient: @unchecked Sendable {
 
     func pause(_ id: String) async throws { let _: String? = try await call("PUT", "tasks/\(id)/pause") }
     func resume(_ id: String) async throws { let _: String? = try await call("PUT", "tasks/\(id)/continue") }
+    /// 让内核重新校验磁盘上已经下好的数据（内核补丁 opts.extra.shandianVerifyExisting）。
+    /// 换内核后任务进度归零、或从迅雷收回时要对一遍磁盘，都用它
+    func verifyExisting(id: String) async throws {
+        let _: String? = try await call("PATCH", "tasks/\(id)", body: ["opts": ["extra": ["shandianVerifyExisting": true]]])
+    }
     /// 边下边送的播放地址（内核补丁 /play/{id}/{key}/{文件名}）；key 由 token 和任务 id 派生，和内核里 shandian.PlayKey 一致
     func playURL(id: String, fileName: String) -> URL? {
         let digest = SHA256.hash(data: Data("shandian-play:\(token):\(id)".utf8)).map { String(format: "%02x", $0) }.joined()

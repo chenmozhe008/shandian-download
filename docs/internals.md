@@ -15,6 +15,7 @@
 7. 每段至少 20 MB（同 aria2 min-split-size），小文件 1 个连接
 8. `/resolve?probe=1` 只探测、立即关掉（原版解析会把 HTTP 文件整个预下载到 $TMPDIR 且不清，App 不用 rid 等于下两遍）
 9. 任务字段 `shandianError` 存失败原因（App `EngineTask.failureText` 翻成人话）
+10. **按需校验磁盘上已有的数据**（`opts.extra.shandianVerifyExisting = true`，创建任务和 PATCH 任务都认）——2026-11-01 实测：anacrolix v1.60 的 `queueInitialPieceCheck` 只要块完成记录报得出状态就不读磁盘，所以把迅雷下了一半的目录交给内核，它会把整份重新下一遍（4.2 GB 完整文件也一样）。带这个标记时 `Fetcher.verifyExisting` 在 `Start()` 里先 `VerifyDataContext` 再放行下载，磁盘上认得的块直接算完成。收回迅雷、换内核后找回进度都走它；8 MB 自造种子实测：完整文件 1 秒 done、内容未改；半成品只算前 4 MB（`/tmp/recheck`）
 
 编译环境：Go 工具链、Gopeed 源码、编译缓存都在作者移动硬盘 `Applications/ShandianBuild/`；必须开 CGO（不开时 anacrolix 用纯 Go uTP，2026-10-28 实测只剩 1 个连接）；本机命令行工具的链接器和 SDK 对不上，`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链。
 
