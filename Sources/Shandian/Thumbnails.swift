@@ -20,8 +20,7 @@ struct PosterHit: Decodable { var id: String?; var img: String?; var type: Strin
 
     init() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // 旧版本只按年份挑海报，不同的片子配到了同一张（11-01 实测：《蜘蛛侠：崭新之日》和《一个部门的诞生》
-        // 都是《Unknown》的海报）。没有匹配记录的旧海报一律丢掉重查：宁可暂时没海报，也不要错的
+        // 旧版本只按年份挑海报，不同影片可能配到同一张。没有匹配记录的旧海报一律丢掉重查。
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for f in files where f.lastPathComponent.hasSuffix(".poster.jpg") {
             if !FileManager.default.fileExists(atPath: Self.metaURL(id: String(f.lastPathComponent.dropLast(11)), dir: dir).path) {
@@ -125,7 +124,7 @@ struct PosterHit: Decodable { var id: String?; var img: String?; var type: Strin
     }
 
     /// 宁缺毋滥：片名要对得上（查询串里含这个片名，或者片名含查询串），标题带年份就要求年份也对得上；
-    /// 豆瓣的默认占位图和同名多部都跳过。以前只按年份挑，两部不同的电影配到了同一张《Unknown》海报
+    /// 豆瓣的默认占位图和同名多部都跳过。以前只按年份挑，可能将不同影片配到同一张占位海报
     nonisolated private static func pick(_ hits: [PosterHit], query: String, year: String?) -> PosterHit? {
         let q = key(query)
         func names(_ h: PosterHit) -> [String] { [h.title, h.sub_title].compactMap { $0 } }
@@ -148,7 +147,7 @@ struct PosterHit: Decodable { var id: String?; var img: String?; var type: Strin
         return named.count == 1 ? named[0] : nil
     }
 
-    /// 片名里的中文部分（"一个部门的诞生 Dog Day Evening" → "一个部门的诞生"）
+    /// 从名称中提取中文部分
     nonisolated private static func cjkPart(_ s: String) -> String? {
         let cjk = s.unicodeScalars.filter { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) }
         guard !cjk.isEmpty else { return nil }

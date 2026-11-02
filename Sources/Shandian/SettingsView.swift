@@ -58,14 +58,8 @@ struct SettingsView: View {
     @State private var dirsVersion = 0   // 改了位置后刷新显示
 
     var body: some View {
-        Form {
-            Section("保存位置") {
-                dirRow("磁力、种子", key: "dir.movie", current: Folders.movies)
-                dirRow("视频网站", key: "dir.video", current: Folders.videos)
-                dirRow("其他文件", key: "dir.other", current: Folders.others)
-            }
-            .id(dirsVersion)
-
+        TabView {
+            Form {
             Section("下载") {
                 Picker("同时下载", selection: $maxRunning) {
                     ForEach([1, 2, 3, 5, 8, 10], id: \.self) { Text("\($0) 个任务").tag($0) }
@@ -80,8 +74,27 @@ struct SettingsView: View {
                 .onChange(of: limit) { store.reapplyEngineSettings() }
                 Toggle("新建任务时显示确认框", isOn: $confirmNew)
                 Toggle("复制链接后弹出下载提示", isOn: $watchClipboard)
+                    .onChange(of: watchClipboard) { if !watchClipboard { store.clipboardLinks = nil } }
+                Text("仅提示磁力、视频页面和常见文件链接；不会自动开始下载。关闭后仍可手动粘贴。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("下载", systemImage: "arrow.down.circle") }
+
+            Form {            Section("保存位置") {
+                dirRow("磁力、种子", key: "dir.movie", current: Folders.movies)
+                dirRow("视频网站", key: "dir.video", current: Folders.videos)
+                dirRow("其他文件", key: "dir.other", current: Folders.others)
+            }
+            .id(dirsVersion)
+
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("保存位置", systemImage: "folder") }
+
+            Form {
             ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {
@@ -113,6 +126,11 @@ struct SettingsView: View {
                 }
             }
 
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("下载加速", systemImage: "bolt") }
+
+            Form {
             Section("系统") {
                 Toggle("下载时不让 Mac 进入睡眠", isOn: $preventSleep)
                     .help("只阻止闲置睡眠；合上盖子或手动睡眠照常")
@@ -125,12 +143,13 @@ struct SettingsView: View {
                     }
                 UpdateToggle(checker: store.updates)
             }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("通用", systemImage: "gearshape") }
         }
-        .formStyle(.grouped)
         .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser; pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
         .onAppear { ThunderBridge.recheck() }
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 600, height: 430)
         .tint(Theme.tint)
     }
 

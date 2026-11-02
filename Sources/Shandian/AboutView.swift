@@ -193,9 +193,9 @@ private struct IntroPage: View {
         ("film.stack", "只下载需要的文件", "种子只选正片和字幕，跳过样片、海报；同一影片多种格式只下一个。"),
         ("play.rectangle.fill", "视频网站最高画质", "默认最高分辨率，优先 H.264，可直接导入剪辑软件；可选字幕和仅音频。"),
         ("photo.on.rectangle", "影片一目了然", "自动整理影片名称，显示影片画面或视频封面。"),
-        ("checkmark.seal.fill", "无广告，无需账号", "下载核心为开源项目 Gopeed 和 yt-dlp，视频网站组件每周自动更新。"),
+        ("checkmark.seal.fill", "无广告", "下载核心为开源项目 Gopeed 和 yt-dlp；部分网站需要登录。"),
     ]
-    private let sources = ["磁力", "种子", "ed2k", "HTTP 直链", "网盘直链", "YouTube", "X", "B 站", "微博", "小红书", "新片场", "抖音"]
+    private let sources = ["磁力", "种子", "ed2k", "HTTP 直链", "网盘直链", "YouTube", "X", "B 站", "微博", "小红书", "新片场", "抖音", "豆瓣预告", "微信视频号"]
     private let notes: [(String, String)] = [
         ("doc.on.clipboard", "复制链接后在窗口中按 ⌘V 即可下载，也可拖入链接或种子文件；装好浏览器扩展后，网页上点下载会直接交给闪电全能下载。"),
         ("externaldrive", "磁力、种子和其他下载默认存到「下载」，可在设置中选择保存位置。"),
@@ -236,7 +236,8 @@ private struct IntroPage: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle("支持的来源")
                 FlowChips(items: sources)
-                Text("小红书、新片场、抖音：在浏览器里打开视频页，点扩展里的「下载这个视频」。").font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+                Text("小红书、新片场、抖音：在浏览器里打开视频页，点扩展里的「下载这个视频」。视频号：粘贴分享链接后按提示操作，需要登录腾讯元宝。")
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
             }
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle("使用说明")
@@ -255,7 +256,7 @@ private struct IntroPage: View {
 }
 
 /// 一行排不下自动换行的标签
-private struct FlowChips: View {
+struct FlowChips: View {
     let items: [String]
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -279,31 +280,48 @@ private struct Bullet: View {
 }
 
 private struct ChangelogPage: View {
-    private struct Release: Identifiable { var id: String; var notes: [String] }
+    @State private var online: [HistoryEntry] = []
+    @State private var message: String?
+    @State private var loading = false
+    private let cacheKey = "shandianReleaseHistory"
 
-    /// 解析 App 里的 CHANGELOG.md（「## 版本 · 日期」标题、「- 」条目），唯一的版本记录来源
-    private var releases: [Release] {
-        guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-        var out: [Release] = []
-        for line in text.split(separator: "\n").map(String.init) {
-            if line.hasPrefix("## ") { out.append(Release(id: String(line.dropFirst(3)), notes: [])) }
-            else if line.hasPrefix("- "), !out.isEmpty { out[out.count - 1].notes.append(String(line.dropFirst(2))) }
+    private var releases: [HistoryEntry] {
+        let text = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        return ReleaseHistory.merge(local: ReleaseHistory.local(text, currentVersion: AppInfo.version, isDevelopment: AppInfo.isDev), online: online)
+    }
+
+    @MainActor private func loadHistory() async {
+        guard !loading else { return }
+        loading = true
+        defer { loading = false }
+        if online.isEmpty, let data = UserDefaults.standard.data(forKey: cacheKey), let cached = ReleaseHistory.online(data) { online = cached }
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/chenmozhe008/shandian-download/releases?per_page=100")!, timeoutInterval: 15)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200, let rows = ReleaseHistory.online(data) else { throw URLError(.badServerResponse) }
+            online = rows
+            UserDefaults.standard.set(data, forKey: cacheKey)
+            message = rows.isEmpty ? "GitHub 暂无正式发布记录，下面显示本机记录。" : nil
+        } catch {
+            message = "未能刷新 GitHub 发布记录，显示本机记录和已有缓存。"
         }
-        return out
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button(loading ? "正在获取…" : "刷新发布记录") { Task { await loadHistory() } }.disabled(loading)
+                Spacer()
+                Link("GitHub 发布页", destination: URL(string: "https://github.com/chenmozhe008/shandian-download/releases")!)
+            }
+            if let message { Text(message).font(.callout).foregroundStyle(Theme.sub) }
             ForEach(Array(releases.enumerated()), id: \.element.id) { i, r in
-                let parts = r.id.components(separatedBy: " · ")
-                // 「开发版」两种来源：CHANGELOG 标题里手写的（还没发版的版本），和打包时发现工作区有未提交改动的
-                let dev = parts.dropFirst().contains { $0.contains("开发版") } || (i == 0 && AppInfo.isDev)
-                let date = parts.count > 1 ? parts[1].replacingOccurrences(of: "（开发版）", with: "") : ""
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
-                            Text("v" + (parts.first ?? r.id)).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                            Text("v" + r.version).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                                 .padding(.horizontal, 10).frame(height: 24)
                                 .background(Capsule().fill(Theme.tint))
                             if i == 0 {
@@ -311,14 +329,15 @@ private struct ChangelogPage: View {
                                     .padding(.horizontal, 8).frame(height: 22)
                                     .background(Capsule().strokeBorder(Theme.tint, lineWidth: 1))
                             }
-                            if dev {
+                            if r.isDevelopment {
                                 Text("开发版").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.sub)
                                     .padding(.horizontal, 8).frame(height: 22)
                                     .background(Capsule().fill(Theme.faint))
                                     .help("本机自己改过、还没发布的版本")
                             }
                             Spacer()
-                            if !date.isEmpty { Text(date).font(.system(size: 12)).foregroundStyle(Theme.sub).monospacedDigit() }
+                            if let page = r.page { Link("发布页", destination: page).font(.caption) }
+                            if !r.date.isEmpty { Text(r.date).font(.system(size: 12)).foregroundStyle(Theme.sub).monospacedDigit() }
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             ForEach(r.notes, id: \.self) { Bullet(text: $0) }
@@ -329,6 +348,7 @@ private struct ChangelogPage: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 28).padding(.bottom, 28)
+        .task { await loadHistory() }
     }
 }
 

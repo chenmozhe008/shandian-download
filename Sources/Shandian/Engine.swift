@@ -49,6 +49,7 @@ struct EngineTask: Decodable {
     var progress: Progress
     var createdAt: String?
     var updatedAt: String?
+    var shandianVerification: String? // 内核实际校验状态
     var shandianError: String?   // 内核补丁：最近一次失败的原因
 
     /// 失败原因翻译成人话（内核原话如 http request fail, code:429 / connection 2 failed: retries=3, status=403）

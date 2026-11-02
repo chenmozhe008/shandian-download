@@ -6,6 +6,7 @@
   :root { --tint: #E0992F; --text: #222; --sub: #888; --bg: #FBF9F6; --line: #EAE5DD; }
   @media (prefers-color-scheme: dark) { :root { --text: #EEE; --sub: #999; --bg: #2A2723; --line: #3A3631; } }
   body { margin: 0; width: 300px; font: 13px -apple-system, "PingFang SC", sans-serif; color: var(--text); background: var(--bg); }
+  body.batch-mode { width: 540px; }
   .head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
   .head img { width: 28px; height: 28px; }
   .head b { font-size: 15px; }
@@ -14,6 +15,18 @@
   button.main { width: 100%; height: 40px; border: 0; border-radius: 10px; background: var(--tint); color: #fff;
     font-size: 15px; font-weight: 600; cursor: pointer; }
   button.main:disabled { opacity: .6; cursor: default; }
+  button.scan { margin-top: 8px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; }
+  .results { max-height: 210px; overflow-y: auto; margin-top: 6px; }
+  .result { display: block; width: 100%; text-align: left; margin-top: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: transparent; cursor: pointer; }
+  .batch-row { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+  .batch-row span.name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .batch-row small { color: var(--sub); white-space: nowrap; }
+  .batch-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; gap: 8px; }
+  .batch-actions[hidden] { display: none; }
+  .batch-actions button { padding: 6px 10px; border: 0; border-radius: 7px; background: var(--tint); color: white; cursor: pointer; }
+  .batch-actions button:disabled { opacity: .5; cursor: default; }
+  .batch-row input, .batch-actions input { width: auto; height: auto; accent-color: var(--tint); }
+  .wechat-input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); }
   .hint { color: var(--sub); font-size: 12px; margin-top: 8px; line-height: 1.5; }
   .row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); }
   .row small { display: block; color: var(--sub); font-size: 11.5px; margin-top: 2px; }
@@ -24,7 +37,18 @@
   <div class="head"><img src="icons/icon48.png" alt=""><b>闪电全能下载</b></div>
   <div class="page" id="page">
     <div class="title" id="title"></div>
+    <button class="scan" id="wechat-toggle" hidden>下载视频号 ›</button>
+    <div id="wechat" hidden><input class="wechat-input" id="wechat-link" placeholder="粘贴微信视频号分享链接"><button class="main" id="wechat-download">解析并下载视频号</button><div class="hint">链接将交给已登录的腾讯元宝解析，不读取聊天记录。</div></div>
     <button class="main" id="dl">下载这个视频</button>
+    <button class="scan" id="capture" title="仅在本页侦测媒体类型，5 分钟后自动停止；首次启用需要浏览器授权">开始侦测本页播放资源</button>
+    <div class="hint" id="capture-note">浏览器会为扩展授予网站网络请求访问权限；侦测只处理当前标签页，5 分钟后停止并撤销授权。</div>
+    <button class="scan" id="scan">查找页面中的视频和字幕</button>
+    <button class="scan" id="batch">批量抓取页面下载链接</button>
+    <div class="results" id="results"></div>
+    <div class="batch-actions" id="batch-actions" hidden>
+      <label><input type="checkbox" id="select-all" checked> 全选</label>
+      <button id="download-selected">下载所选</button>
+    </div>
     <div class="hint" id="hint"></div>
   </div>
   <label class="row">
@@ -32,5 +56,6 @@
     <input type="checkbox" id="takeover">
   </label>
   <script src="popup.js"></script>
+  <script src="batch-ui.js"></script>
 </body>
 </html>

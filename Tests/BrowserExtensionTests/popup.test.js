@@ -1,0 +1,40 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('browser-extension/popup.js', 'utf8');
+async function run(url, reply) {
+  const elements = Object.fromEntries(['title', 'dl', 'hint', 'takeover', 'scan', 'capture', 'capture-note', 'results', 'batch-actions', 'wechat', 'wechat-toggle', 'wechat-link', 'wechat-download'].map(id => [id, { textContent: '', style: {} }]));
+  let request;
+  const chrome = { tabs: { query: async () => [{ id: 5, url, title: '页面标题' }] }, runtime: { sendMessage: async msg => { request = msg; return reply; } }, storage: { local: { get: async () => ({}) } } };
+  const page = { querySelector: key => elements[key.slice(1)] };
+  const document = { getElementById: id => id === 'page' ? page : elements[id] };
+  vm.runInNewContext(source, { chrome, document, URL, setTimeout() {}, window: {} });
+  await new Promise(resolve => setImmediate(resolve));
+  return { elements, click: async () => { await elements.dl.onclick(); return request; } };
+}
+(async () => {
+  let p = await run('https://movie.douban.com/trailer/326598/#content', { ok: true });
+  assert.equal((await p.click()).requireVideo, false);
+  assert.match(p.elements.dl.textContent, /已交给/);
+  p = await run('https://example.com/article', { ok: false, noVideo: true });
+  assert.equal((await p.click()).requireVideo, true);
+  assert.match(p.elements.hint.textContent, /没有找到/);
+  assert.equal(p.elements.dl.disabled, false);
+  p = await run('edge://settings', {});
+  assert.equal(p.elements.dl.style.display, 'none');
+  p = await run('https://yuanbao.tencent.com/', { ok: true });
+  assert.equal(p.elements['wechat-toggle'].hidden, false);
+  p.elements.wechat.hidden = true;
+  p.elements['wechat-toggle'].onclick();
+  assert.equal(p.elements.wechat.hidden, false);
+  p.elements['wechat-toggle'].onclick();
+  assert.equal(p.elements.wechat.hidden, true);
+  p.elements['wechat-toggle'].onclick();
+  p.elements['wechat-link'].value = 'https://weixin.qq.com/sph/AnYC9T2a4d';
+  await p.elements['wechat-download'].onclick();
+  assert.match(p.elements.hint.textContent, /已交给/);
+  p.elements['wechat-link'].value = 'https://example.com/sph/test';
+  await p.elements['wechat-download'].onclick();
+  assert.match(p.elements.hint.textContent, /完整的/);
+  console.log('扩展弹窗测试通过：豆瓣、普通网页无视频、浏览器内部页面');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -27,11 +27,15 @@ struct Item: Identifiable, Equatable {
     var cloudProgress: Int?     // 云盘离线中：云端进度（0–100）
     var slow = false            // BT 连续 3 分钟几乎没速度（或解析超过 3 分钟）：界面上建议交给迅雷
     var link = ""               // 原始链接（交给迅雷用）
-    var checking = false        // 重启后内核在校验已下载部分：进度从 0 涨回去，那段「速度」是读本地硬盘，不算下载
+    var checking = false        // 正在检查本地已下载的数据
+    var verificationFailed = false
+    var fromThunder = false
     var fileGone = false        // 下完后文件被用户在访达里删了或移走（硬盘没插不算）
     var avgSpeed: Int64 = 0     // 平滑后的速度，算剩余时间用；瞬时速度跳得厉害，行内和顶部估算会对不上
     var videoStage: VideoJob.Stage?  // 视频站任务下载中处在哪一步
     var waitingLastPiece = false // 离完成只差一点、速度归零在干等（末块常和没选中的小文件共用，或源很慢）
+    var thunderHasOriginal = false
+    var thunderDiskEstimate = false // 迅雷记录滞后时显示的是磁盘占用，不作为完成依据
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
@@ -69,12 +73,15 @@ final class DownloadStore: ObservableObject {
         didSet {
             noticeTimer?.cancel()
             guard notice != nil else { return }
-            let seconds = noticeAction?.forText == notice ? 15 : 9
+            let seconds = Self.noticeNeedsAttention(notice ?? "") ? 20 : (noticeAction?.forText == notice ? 15 : 9)
             noticeTimer = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
                 if !Task.isCancelled { self?.notice = nil; self?.noticeAction = nil }
             }
         }
+    }
+    static func noticeNeedsAttention(_ text: String) -> Bool {
+        ["失败", "无法", "出错", "不足", "过期", "没找到", "未运行"].contains { text.contains($0) }
     }
     /// 提示右侧的按钮：重复链接时是「定位任务」，点了滚到那条任务并选中。
     /// 记着它属于哪条提示（forText），提示换了就不再显示，免得点在旧任务上
@@ -98,13 +105,18 @@ final class DownloadStore: ObservableObject {
     private var gateway: Gateway?
     private let host = EngineHost()
     private let videoRunner = VideoSiteRunner()
+    private var weChatTasks: [UUID: Task<Void, Never>] = [:]
     private let sleepGuard = SleepGuard()
     private var videoJobs: [VideoJob] = []
     private var pending: [Item] = []
-    /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢（10-28 「抓特务」就这么丢了）
+    /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢，避免解析期间重启后丢失
     /// originLink：这条任务的原始链接（磁力 / 网页）。从迅雷收回时用本地种子建任务，但菜单里的
     /// 「交给云盘离线」「用迅雷下载」还得靠原始链接，不记下来这两项就没了（11-01 用户反馈右键菜单变空）
-    struct PendingRecord: Codable, Equatable { var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]?; var originLink: String? = nil }
+    struct PendingRecord: Codable, Equatable {
+        var link: String; var headers: [String: String]; var name: String?; var dir: String; var selectFiles: [Int]?
+        var originLink: String? = nil; var carryDownloaded: Int64? = nil; var carryTotal: Int64? = nil
+        var title: String? = nil; var verifyExisting: Bool? = nil; var replacingThunderID: String? = nil
+    }
     private var pendingRecords: [String: PendingRecord] = [:]
     private var pendingFile: URL { EngineConfig.supportDir.appendingPathComponent("pending.json") }
 
@@ -124,7 +136,10 @@ final class DownloadStore: ObservableObject {
               let list = try? JSONDecoder().decode([PendingRecord].self, from: data), !list.isEmpty else { return }
         try? FileManager.default.removeItem(at: pendingFile)
         for r in list {
-            start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles)
+            let carry = r.carryDownloaded.map { (downloaded: $0, total: r.carryTotal ?? $0) }
+            start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles,
+                  carry: carry, title: r.title, originLink: r.originLink, verifyExisting: r.verifyExisting ?? false,
+                  replacingThunderID: r.replacingThunderID)
         }
     }
     private var engineItems: [Item] = []
@@ -141,9 +156,14 @@ final class DownloadStore: ObservableObject {
         var engineID: String?; var partial: String?; var total: Int64
         var taskID = ""; var fileID = ""; var progress = 0; var createdAt = Date()
         var pendingRecord: PendingRecord?
+        var thunderJob: ThunderJob?
         var pulling: [String]?      // 已在从云盘拉回的内核任务；都下完后删云端文件（免费账号只有 6 GB）
     }
     private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
+    private var protectedEngineIDs: Set<String> {
+        Set(thunderJobs.compactMap(\.sourceEngineID) + cloudJobs.compactMap(\.engineID)
+            + cloudJobs.compactMap { $0.thunderJob?.sourceEngineID })
+    }
     private var cloudPolling = false
     private static var cloudFile: URL { EngineConfig.supportDir.appendingPathComponent("cloud.json") }
     private static func loadCloud() -> [CloudJob] {
@@ -180,6 +200,7 @@ final class DownloadStore: ObservableObject {
     }
     func redownload(_ r: RemovedRecord) {
         guard !r.link.isEmpty else { notice = "这条记录没有保存链接，无法重新下载"; return }
+        if LinkKind.isWeChatChannelShare(r.link) { request([r.link]); return }
         removedRecords.removeAll { $0.id == r.id }; saveRemoved()
         request([r.link])
     }
@@ -203,9 +224,6 @@ final class DownloadStore: ObservableObject {
     private func saveSourceLinks() {
         if let d = try? JSONEncoder().encode(sourceLinks) { try? d.write(to: Self.sourceLinkFile) }
     }
-    /// 从迅雷收回的任务：内核校验磁盘上已下的数据期间报的是 0，先按迅雷记的量显示，别让用户以为从头下。
-    /// at 用来兜底：迅雷记的量和磁盘上的实际数据对不上时，几分钟后交回给内核报的真实值，不一直显示假进度
-    private var reclaimFloor: [String: (got: Int64, total: Int64, at: Date)] = [:]
     private var seenClipboard = Set<String>()
     private var pollTask: Task<Void, Never>?
     private let videosFile = EngineConfig.supportDir.appendingPathComponent("videos.json")
@@ -244,7 +262,7 @@ final class DownloadStore: ObservableObject {
         // 直接看内核开着哪些文件：任务删了、完成了，内核也可能还开着
         // 刚启动、内核状态还没就绪时也要处理，只看内核实际开着的文件
         guard host.holdsFiles(on: vol) else { return }
-        let running = engineItems.filter { $0.isActive && $0.status != .paused }
+        let running = engineItems.filter { $0.isActive && $0.status != .paused && !protectedEngineIDs.contains($0.id) }
         for i in running { if case .engine(let id) = i.source { pausedForEject.insert(id) } }
         host.suspend()
         host.kill()
@@ -261,7 +279,7 @@ final class DownloadStore: ObservableObject {
         guard !pausedForEject.isEmpty, engineState == .running else { return }
         Task {
             guard let tasks = try? await host.client.tasks() else { return }
-            for t in tasks where pausedForEject.contains(t.id) && Self.volumeAvailable(t.meta.opts?.path) {
+            for t in tasks where pausedForEject.contains(t.id) && !protectedEngineIDs.contains(t.id) && Self.volumeAvailable(t.meta.opts?.path) {
                 try? await host.client.resume(t.id); pausedForEject.remove(t.id)
             }
         }
@@ -334,7 +352,7 @@ final class DownloadStore: ObservableObject {
 
     /// 退出时暂停所有任务（内核不关），记下正在下的，下次打开接着下
     func shutdown() {
-        let running = engineItems.filter { $0.isActive && $0.status != .paused }.compactMap { i -> String? in
+        let running = engineItems.filter { $0.isActive && $0.status != .paused && !protectedEngineIDs.contains($0.id) }.compactMap { i -> String? in
             if case .engine(let id) = i.source { return id }; return nil
         }
         UserDefaults.standard.set(running, forKey: "resumeOnLaunch")
@@ -343,6 +361,8 @@ final class DownloadStore: ObservableObject {
         for i in engineItems where i.isActive { floor[i.id] = max(i.downloaded, checkFloor[i.id] ?? 0) }
         UserDefaults.standard.set(floor, forKey: "progressAtQuit")
         videoRunner.cancelAll()
+        weChatTasks.values.forEach { $0.cancel() }
+        weChatTasks.removeAll()
         host.suspend()
     }
 
@@ -352,7 +372,7 @@ final class DownloadStore: ObservableObject {
         // App 带了新内核而旧内核还在跑：暂停→记下在下的→停旧的→换新的（start 里装）→续上
         if host.bundledEngineIsNewer, await host.client.isAlive() {
             let tasks = (try? await host.client.tasks()) ?? []
-            let running = tasks.filter { $0.status == "running" || $0.status == "ready" || $0.status == "wait" }.map(\.id)
+            let running = tasks.filter { ($0.status == "running" || $0.status == "ready" || $0.status == "wait") && !protectedEngineIDs.contains($0.id) }.map(\.id)
             try? await host.client.pauseAll()
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             host.kill()
@@ -368,7 +388,7 @@ final class DownloadStore: ObservableObject {
             // 存在没插着的硬盘上的不续，等插上（diskMounted 通知）再续
             let ids = UserDefaults.standard.stringArray(forKey: "resumeOnLaunch") ?? []
             if let tasks = try? await host.client.tasks() {
-                for t in tasks where ids.contains(t.id) {
+                for t in tasks where ids.contains(t.id) && !protectedEngineIDs.contains(t.id) {
                     if Self.volumeAvailable(t.meta.opts?.path) { try? await host.client.resume(t.id) } else { pausedForEject.insert(t.id) }
                 }
             }
@@ -389,7 +409,10 @@ final class DownloadStore: ObservableObject {
             engineItems = tasks.map { t in
                 var it = Self.item(from: t)
                 // 从迅雷收回的任务是拿本地种子建的，内核那边没有原始链接；补回去，菜单才完整
-                if it.link.isEmpty, let o = sourceLinks[t.id] { it.link = o }
+                if let o = sourceLinks[t.id] {
+                    if it.link.isEmpty { it.link = o }
+                    it.fromThunder = true
+                }
                 return it
             }
             // 已经不在内核里的任务，别再留着链接
@@ -399,19 +422,7 @@ final class DownloadStore: ObservableObject {
             }
             for k in engineItems.indices {
                 let id = engineItems[k].id
-                // 从迅雷收回：内核要先把磁盘上已下的数据校验一遍，这期间它报的是 0。
-                // 先按迅雷记的量显示（并标「正在校验」），等内核报的追上来了再交回给内核
-                if let f = reclaimFloor[id] {
-                    let got = engineItems[k].downloaded
-                    if !engineItems[k].isActive || got >= f.got - f.got / 50 || Date().timeIntervalSince(f.at) > 300 {
-                        reclaimFloor[id] = nil
-                    } else if engineItems[k].status == .running || engineItems[k].status == .waiting {
-                        engineItems[k].checking = true
-                        engineItems[k].speed = 0
-                        engineItems[k].downloaded = max(got, f.got)
-                        engineItems[k].total = max(engineItems[k].total, f.total)
-                    }
-                }
+                if engineItems[k].checking || engineItems[k].verificationFailed { continue }
                 guard let floor = checkFloor[id] else { continue }
                 if engineItems[k].status == .running, engineItems[k].downloaded < floor - floor / 50 {
                     engineItems[k].checking = true; engineItems[k].speed = 0
@@ -457,8 +468,8 @@ final class DownloadStore: ObservableObject {
             next[i.id] = smoothSpeed[i.id].map { $0 * 0.8 + Double(i.speed) * 0.2 } ?? Double(i.speed)
         }
         smoothSpeed = next
-        if thunderJobs.contains(where: { !$0.done }) {
-            for k in thunderJobs.indices where !thunderJobs[k].done { ThunderBridge.measure(&thunderJobs[k]) }
+        if thunderJobs.contains(where: { !$0.done || ($0.completionVerified != true && $0.legacyCompletionPreserved != true && $0.folder.map { FileManager.default.fileExists(atPath: $0) } == true) }) {
+            for k in thunderJobs.indices where !thunderJobs[k].done || (thunderJobs[k].completionVerified != true && thunderJobs[k].legacyCompletionPreserved != true && thunderJobs[k].folder.map { FileManager.default.fileExists(atPath: $0) } == true) { ThunderBridge.measure(&thunderJobs[k]) }
             ThunderBridge.save(thunderJobs)
         }
         rebuild()
@@ -470,11 +481,15 @@ final class DownloadStore: ObservableObject {
 
     private func rebuild() {
         let videos = videoJobs.map(Self.item(from:))
-        var all = pending + engineItems.filter { e in !cloudJobs.contains { "\($0.engineID ?? "")" == e.id } }
+        var all = pending + engineItems.filter { e in
+            !cloudJobs.contains { $0.engineID == e.id || $0.thunderJob?.sourceEngineID == e.id }
+                && !thunderJobs.contains { $0.sourceEngineID == e.id }
+        }
             + videos + thunderJobs.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
         all.sort { $0.createdAt > $1.createdAt }
         for k in all.indices {
-            all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0)
+            if case .thunder = all[k].source { all[k].avgSpeed = all[k].speed }
+            else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
             let i = all[k]
             let isBT = i.origin == "磁力" || i.origin == "种子文件"
@@ -535,7 +550,10 @@ final class DownloadStore: ObservableObject {
     // MARK: 视图用
 
     /// 顶部和菜单栏的总速度：用平滑后的值，瞬时值一秒一变看着闹心（10-29 用户反馈）
-    var totalSpeed: Int64 { items.reduce(0) { $0 + ($1.isActive ? $1.avgSpeed : 0) } }
+    var totalSpeed: Int64 { items.reduce(0) { sum, item in
+        if case .thunder = item.source { return sum }
+        return sum + (item.isActive ? item.avgSpeed : 0)
+    } }
     var activeItems: [Item] { filtered(items.filter(\.isActive)) }
     var doneItems: [Item] { filtered(items.filter { !$0.isActive }) }
     func items(in c: Category) -> [Item] { filtered(items.filter { $0.category == c }) }
@@ -554,6 +572,12 @@ final class DownloadStore: ObservableObject {
 
     /// 剩余时间按最近 5 秒的平均速度估，不跟着瞬时速度乱跳
     var etaAll: Double {
+        // 无法准确判断迅雷网络速度和完成时间，不能把它算成全部任务的预计时间。
+        if items.contains(where: { item in
+            guard item.isActive else { return false }
+            if case .thunder = item.source { return true }
+            return item.status != .running || item.checking
+        }) { return .infinity }
         let left = items.filter(\.isActive).reduce(Int64(0)) { $0 + max(0, $1.total - $1.downloaded) }
         let avg = items.filter(\.isActive).reduce(Int64(0)) { $0 + $1.avgSpeed }
         return avg > 0 ? Double(left) / Double(avg) : .infinity
@@ -606,7 +630,7 @@ final class DownloadStore: ObservableObject {
     func add(link: String) { add(link: link, headers: [:], name: nil) }
 
     /// headers/name 来自浏览器（自带扩展、LinkSwift 经网关传来），网盘直链靠它们鉴权
-    func add(link: String, headers: [String: String], name: String?) { request([link], headers: headers, name: name) }
+    func add(link: String, headers: [String: String], name: String?, forceVideo: Bool = false) { request([link], headers: headers, name: name, forceVideo: forceVideo) }
 
     /// 重复添加：不再静默忽略，切到列表、滚到那条任务并高亮，再给一条能停留的提示
     /// （10-29 自查重复投链接时毫无反应；11-01 用户反馈只弹一条小提示、人还留在新建下载界面）
@@ -641,11 +665,25 @@ final class DownloadStore: ObservableObject {
         }
     }
 
+    /// 批量抓取时仅返回所查询链接中已有的项，不向扩展暴露完整历史。
+    func existingLinks(in links: [String]) -> [String] {
+        let keys = Set(items.map(\.linkKey))
+        return links.filter { keys.contains(Self.linkKey($0)) }
+    }
+
     /// 所有入口都走这里：去掉已在列表里的，再弹新建任务确认框（关掉询问时直接下载）
-    func request(_ links: [String], headers: [String: String] = [:], name: String? = nil) {
+    func request(_ links: [String], headers: [String: String] = [:], name: String? = nil, forceVideo: Bool = false) {
+        let weChatLinks = links.filter(LinkKind.isWeChatChannelShare)
+        if let share = weChatLinks.first {
+            seenClipboard.insert(share)
+            WeChatGuide.present(share: share)
+        }
+        let otherLinks = links.filter { !LinkKind.isWeChatChannelShare($0) }
+        guard !otherLinks.isEmpty else { return }
+        if weChatLinks.count > 1 { notice = "视频号链接请逐个通过浏览器扩展下载" }
         var fresh: [String] = []
         var dupes: [String] = []      // 已在列表里的任务（按出现顺序，用来定位）
-        for l in links where LinkKind.of(l) != nil {
+        for l in otherLinks where LinkKind.of(l) != nil {
             seenClipboard.insert(l)
             if let existing = items.first(where: { $0.linkKey == Self.linkKey(l) }) {
                 // 之前失败的同一个链接再交过来：当作重试，不挡
@@ -663,14 +701,14 @@ final class DownloadStore: ObservableObject {
         if !dupes.isEmpty {
             notice = "\(dupes.count) 个链接已在列表里，已跳过"
         }
-        if fresh.contains(where: { LinkKind.of($0) != .videoSite }), engineState != .running {
+        if !forceVideo, fresh.contains(where: { LinkKind.of($0) != .videoSite }), engineState != .running {
             notice = "下载内核未运行"
             return
         }
         if NewTaskPanels.ask {
-            NewTaskPanels.shared.present(links: fresh, headers: headers, name: name, store: self)
+            NewTaskPanels.shared.present(links: fresh, headers: headers, name: name, store: self, forceVideo: forceVideo)
         } else {
-            fresh.forEach { start(link: $0, headers: headers, name: fresh.count == 1 ? name : nil) }
+            fresh.forEach { start(link: $0, headers: headers, name: fresh.count == 1 ? name : nil, forceVideo: forceVideo) }
         }
     }
 
@@ -691,10 +729,11 @@ final class DownloadStore: ObservableObject {
     /// carry 用于从迅雷收回：任务解析、校验期间先把迅雷已经下好的量显示出来，别让用户以为从头再来；
     /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
     /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false) {
-        guard let kind = LinkKind.of(link) else { return }
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil) {
+        guard let detectedKind = LinkKind.of(link) else { return }
+        let kind: LinkKind = forceVideo ? .videoSite : detectedKind
         let key = Self.linkKey(link)
-        if let existing = items.first(where: { $0.linkKey == key }) { reveal(existing: existing); return }
+        if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); return }
         let dir = chosen ?? Folders.directory(for: kind)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -703,7 +742,7 @@ final class DownloadStore: ObservableObject {
             videoJobs.append(job); saveVideos(); rebuild()
             selectedID = job.id.uuidString
             notice = "已添加：\(VideoSiteRunner.siteName(link)) 视频"
-            videoRunner.start(job, into: dir) { [weak self] updated in
+            videoRunner.start(job, into: dir, headers: headers) { [weak self] updated in
                 Task { @MainActor in self?.updateVideo(updated) }
             }
             return
@@ -720,7 +759,9 @@ final class DownloadStore: ObservableObject {
                                    speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
             placeholder.link = originLink ?? (localTorrent ? "" : link)
             pending.append(placeholder); rebuild()
-            pendingRecords[placeholder.id] = PendingRecord(link: link, headers: headers, name: name, dir: dir.path, selectFiles: chosenFiles, originLink: originLink)
+            pendingRecords[placeholder.id] = PendingRecord(link: link, headers: headers, name: name, dir: dir.path, selectFiles: chosenFiles, originLink: originLink,
+                                                          carryDownloaded: carry?.downloaded, carryTotal: carry?.total, title: givenTitle,
+                                                          verifyExisting: verifyExisting, replacingThunderID: replacingThunderID)
             savePending()
             selectedID = placeholder.id
             notice = "已添加：\(placeholder.title)"
@@ -744,7 +785,14 @@ final class DownloadStore: ObservableObject {
                     let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select, verifyExisting: verifyExisting)
                     if selectedID == placeholder.id { selectedID = id }
                     remember(id, originLink: originLink, carry: carry)
-                } catch { notice = "添加失败：\(error.localizedDescription)" }
+                    if let replacingThunderID, let previous = thunderJobs.first(where: { $0.id == replacingThunderID }) {
+                        if let old = previous.sourceEngineID { try? await host.client.delete(old, withFiles: false) }
+                        thunderJobs.removeAll { $0.id == replacingThunderID }; ThunderBridge.save(thunderJobs)
+                        notice = "已收回，正在检查迅雷已下载的文件；闪电只显示已选文件的大小"
+                    }
+                } catch {
+                    notice = replacingThunderID == nil ? "添加失败：\(error.localizedDescription)" : "收回失败，迅雷任务仍保留：\(error.localizedDescription)"
+                }
                 dropPending(placeholder.id)
                 await poll()
             }
@@ -764,7 +812,6 @@ final class DownloadStore: ObservableObject {
     /// 内核那边只有本地种子的 data: 地址）、收回时的起始进度（校验期间进度不跳回 0）
     private func remember(_ id: String, originLink: String?, carry: (downloaded: Int64, total: Int64)?) {
         if let originLink, !originLink.isEmpty { sourceLinks[id] = originLink; saveSourceLinks() }
-        if let carry, carry.downloaded > 0 { reclaimFloor[id] = (carry.downloaded, max(carry.total, carry.downloaded), Date()) }
     }
 
     func submitNewSheet() {
@@ -789,7 +836,11 @@ final class DownloadStore: ObservableObject {
 
     func toggleAll() {
         Task {
-            if allPaused { try? await host.client.resumeAll() } else { try? await host.client.pauseAll() }
+            if allPaused {
+                for item in engineItems where item.status == .paused && !protectedEngineIDs.contains(item.id) {
+                    if case .engine(let id) = item.source { try? await host.client.resume(id) }
+                }
+            } else { try? await host.client.pauseAll() }
             await poll()
         }
     }
@@ -822,6 +873,7 @@ final class DownloadStore: ObservableObject {
             }
         case .video(let id):
             videoRunner.cancel(id)
+            weChatTasks.removeValue(forKey: id)?.cancel()
             videoJobs.removeAll { $0.id == id }; saveVideos()
             if moveFiles, let f = file { Self.trash(f) }
             rebuild()
@@ -868,19 +920,28 @@ final class DownloadStore: ObservableObject {
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
         var engineID: String?
         var pendingRecord: PendingRecord?
+        var thunderJob: ThunderJob?
         switch item.source {
         case .engine(let id): engineID = id
         case .pending:
             guard let record = pendingRecords[item.id] else { return }
             pendingRecord = record
         case .thunder(let id):
-            // 迅雷的进度这边接管不了；云端下好后会整份拉回，那时再把迅雷那份移走（partial）
-            thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs); rebuild()
+            guard let original = thunderJobs.first(where: { $0.id == id }) else { return }
+            thunderJob = original
         default: return
         }
-        let job = CloudJob(id: "cloud-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
-                           engineID: engineID, partial: base?.path, total: item.total, pendingRecord: pendingRecord)
+        let cloudID = "cloud-" + UUID().uuidString
+        let cloudDir = thunderJob == nil ? dir : URL(fileURLWithPath: dir).appendingPathComponent("PikPak 下载").appendingPathComponent(cloudID).path
+        if thunderJob != nil {
+            do { try FileManager.default.createDirectory(atPath: cloudDir, withIntermediateDirectories: true) }
+            catch { notice = "无法创建云盘保存位置，迅雷任务仍保留"; return }
+        }
+        let job = CloudJob(id: cloudID, title: item.title, link: item.link, dir: cloudDir,
+                           engineID: engineID, partial: thunderJob == nil ? base?.path : nil, total: item.total,
+                           pendingRecord: pendingRecord, thunderJob: thunderJob)
         cloudJobs.append(job); saveCloud()
+        if let thunderJob { thunderJobs.removeAll { $0.id == thunderJob.id }; ThunderBridge.save(thunderJobs) }
         if pendingRecord != nil { dropPending(item.id) }
         selectedID = job.id; rebuild()
         Task {
@@ -890,7 +951,7 @@ final class DownloadStore: ObservableObject {
                 if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                     cloudJobs[k].taskID = t.id; cloudJobs[k].fileID = t.fileID; cloudJobs[k].progress = t.progress; saveCloud()
                 }
-                notice = "已交给 PikPak 云盘离线「\(item.title)」"
+                notice = thunderJob == nil ? "已交给 PikPak 云盘离线「\(item.title)」" : "已交给 PikPak；迅雷任务请在迅雷中暂停"
                 pollCloud()
             } catch { cloudFailed(job.id, error.localizedDescription) }
         }
@@ -906,8 +967,14 @@ final class DownloadStore: ObservableObject {
                 catch { notice = "云盘离线失败：\(message)；原任务恢复失败，请手动继续" }
                 await poll()
             }
+        } else if let previous = job.thunderJob {
+            if !thunderJobs.contains(where: { $0.id == previous.id }) { thunderJobs.append(previous); ThunderBridge.save(thunderJobs) }
+            rebuild(); notice = "云盘离线失败：\(message)，已恢复迅雷任务记录"
         } else if let r = job.pendingRecord {
-            start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles)
+            let carry = r.carryDownloaded.map { (downloaded: $0, total: r.carryTotal ?? $0) }
+            start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles,
+                  carry: carry, title: r.title, originLink: r.originLink, verifyExisting: r.verifyExisting ?? false,
+                  replacingThunderID: r.replacingThunderID)
             notice = "云盘离线失败：\(message)，已恢复原任务解析"
         } else {
             notice = "云盘离线失败：\(message)，请重新添加任务"
@@ -924,7 +991,7 @@ final class DownloadStore: ObservableObject {
                 // 拉回完成的：删云端文件、结束这个云盘任务
                 for job in cloudJobs where job.pulling != nil {
                     let ids = job.pulling ?? []
-                    let finished = ids.allSatisfy { id in engineItems.first { $0.id == id }.map { !$0.isActive } ?? true }
+                    let finished = !ids.isEmpty && ids.allSatisfy { id in engineItems.first { $0.id == id }?.status == .done }
                     if finished {
                         if !job.fileID.isEmpty { await PikPak.shared.deleteForever(job.fileID) }
                         cloudJobs.removeAll { $0.id == job.id }; saveCloud()
@@ -973,39 +1040,64 @@ final class DownloadStore: ObservableObject {
             else { notice = "没找到迅雷，「\(item.title)」继续由闪电全能下载下（设置里可关掉「自动交给迅雷」）" }
             return
         }
-        let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
+        let sourceID: String?
+        let pendingRecord: PendingRecord?
         switch item.source {
-        case .engine(let id):
-            Task {
-                try? await host.client.delete(id, withFiles: false)
-                if let b = base, FileManager.default.fileExists(atPath: b.path) { try? FileManager.default.trashItem(at: b, resultingItemURL: nil) }
-                await poll()
-            }
-        case .pending: dropPending(item.id)
+        case .engine(let id): sourceID = id; pendingRecord = nil
+        case .pending:
+            guard let record = pendingRecords[item.id] else { return }
+            sourceID = nil; pendingRecord = record
         default: return
         }
-        let job = ThunderJob(id: "thunder-" + UUID().uuidString, title: item.title, link: item.link, dir: dir,
-                             hash: ThunderBridge.infoHash(item.link), name: item.rawTitle, total: item.total, createdAt: Date())
-        // 迅雷里以前下过同一个种子时，它会沿用原来的文件夹、不再新建，先把已有文件夹认下来，
-        // 交过去的一瞬间就能显示进度（11-01 用户反馈：迅雷跑得飞快，这边一直「等待迅雷开始」）
-        var ready = job
-        if let folder = ThunderBridge.locateNow(job) {
-            ready.folder = folder
-            ThunderBridge.measure(&ready)   // 迅雷那边早就下完了就当场标成已完成，不用等下一次轮询
+        let jobID = "thunder-" + UUID().uuidString
+        let hash = ThunderBridge.infoHash(item.link)
+        let candidate = ThunderJob(id: jobID, title: item.title, link: item.link, dir: dir,
+                                   hash: hash, total: item.total, createdAt: Date())
+        let existingFolder = ThunderBridge.locateNow(candidate)
+        var useExisting = false
+        if existingFolder != nil {
+            guard promptIfMissing else {
+                notice = "发现迅雷已有下载文件，请手动选择是否关联迅雷任务"
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "发现迅雷已有下载文件"
+            alert.informativeText = "如果迅雷里仍有这条任务，可关联已有文件，再到迅雷中继续下载；如果任务已从迅雷移除，可以重新提交。"
+            alert.addButton(withTitle: "关联已有任务")
+            alert.addButton(withTitle: "重新提交")
+            alert.addButton(withTitle: "取消")
+            NSApp.activate(ignoringOtherApps: true)
+            let answer = alert.runModal()
+            guard answer == .alertFirstButtonReturn || answer == .alertSecondButtonReturn else { return }
+            useExisting = answer == .alertFirstButtonReturn
         }
-        thunderJobs.append(ready)
-        ThunderBridge.save(thunderJobs)
-        selectedID = job.id
-        rebuild()
-        if ready.done {
-            notice = "迅雷里已经有「\(item.title)」，已放进「已完成」"
-            return
-        }
-        ThunderBridge.open(link: item.link, saveDir: dir) { [weak self] clicked in
-            self?.notice = clicked ? "已交给迅雷下载「\(item.title)」，进度显示在这里"
-                                   : "已在迅雷中打开，请在迅雷窗口点「立即下载」（给闪电全能下载开「辅助功能」权限后可自动点）"
+        let safeDir = ThunderBridge.handoffBase(URL(fileURLWithPath: dir)).appendingPathComponent("迅雷下载", isDirectory: true)
+            .appendingPathComponent(jobID, isDirectory: true).path
+        Task {
+            do {
+                if !useExisting { try FileManager.default.createDirectory(atPath: safeDir, withIntermediateDirectories: true) }
+                if let sourceID { try await host.client.pause(sourceID) }
+            } catch {
+                notice = "无法交给迅雷：\(error.localizedDescription)，原任务仍保留"
+                return
+            }
+            let job = ThunderJob(id: jobID, title: item.title, link: item.link, dir: useExisting ? dir : safeDir,
+                                 folder: useExisting ? existingFolder : nil, hash: hash, name: item.rawTitle, total: item.total,
+                                 createdAt: Date(), sourceEngineID: sourceID, sourcePending: pendingRecord)
+            thunderJobs.append(job); ThunderBridge.save(thunderJobs)
+            if pendingRecord != nil { dropPending(item.id) }
+            selectedID = job.id; rebuild()
+            if useExisting {
+                notice = "已关联迅雷下载文件；请在迅雷中确认任务并继续下载"
+                openThunder()
+                return
+            }
+            ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] clicked in
+                self?.notice = clicked ? "已交给迅雷下载「\(item.title)」，原任务已保留"
+                                       : "请在迅雷中确认下载；原任务和文件仍保留"
+            }
         }
     }
 
@@ -1031,32 +1123,38 @@ final class DownloadStore: ObservableObject {
                 NSApp.activate(ignoringOtherApps: true)
                 let answer = ThunderBridge.reclaimAlert(state).runModal()
                 // 在写：只能等用户去暂停；找不到文件夹：默认再等等，用户坚持才往下走
-                if state == .writing || answer != .alertSecondButtonReturn { return }
+                if state == .writing || answer != .alertFirstButtonReturn { return }
             }
             guard let job = thunderJobs.first(where: { $0.id == id }) else { return }
             let torrent = job.folder.flatMap { folder -> String? in
                 let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
-                return names.first { $0.hasPrefix(".magent_") && $0.hasSuffix(".torrent") }
-                    .map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }
+                guard let hash = job.hash else { return nil }
+                return names.filter { $0.hasPrefix(".magent_") && $0.hasSuffix(".torrent") }
+                    .map { URL(fileURLWithPath: folder).appendingPathComponent($0) }
+                    .first { url in
+                        guard let data = try? Data(contentsOf: url) else { return false }
+                        return TorrentMetadata.totalSize(data: data, expectedHash: hash) != nil
+                    }?.path
             }
             let link = torrent ?? job.link
             guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
-            thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
-            rebuild()
             // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
             // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
             let origin = job.link != link && !job.link.isEmpty ? job.link : nil
-            start(link: link, dir: URL(fileURLWithPath: job.dir),
-                  carry: (job.checked ?? job.bytes, job.dlSize ?? job.total), title: item.title,
-                  originLink: origin, verifyExisting: true)
-            notice = "已收回「\(item.title)」，正在校验已下好的部分"
+            // 复用旧迅雷任务时，已下载文件在定位出的目录，而非本次预设的新目录。
+            let downloadDir = job.folder.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+                ?? URL(fileURLWithPath: job.dir)
+            start(link: link, dir: downloadDir,
+                  carry: (job.checked ?? 0, job.dlSize ?? job.total), title: item.title,
+                  originLink: origin, verifyExisting: true, replacingThunderID: id)
+            notice = "正在收回「\(item.title)」并校验已下好的部分"
         }
     }
 
     /// 重新校验：让内核把磁盘上已经下好的数据对一遍。换内核后进度归零、或者想确认文件完整时用
     func reverify(_ item: Item) {
         guard case .engine(let id) = item.source else { return }
-        if item.downloaded > 0 { reclaimFloor[id] = (item.downloaded, item.total, Date()) }
+        guard !item.checking else { return }
         notice = "正在重新校验「\(item.title)」已下的数据…"
         Task {
             do { try await host.client.verifyExisting(id: id) }
@@ -1070,6 +1168,25 @@ final class DownloadStore: ObservableObject {
         guard let f = item.file else { return }
         guard let player = Self.streamPlayer else { notice = "边下边播需要 IINA 或 VLC 播放器"; return }
         NSWorkspace.shared.open([f], withApplicationAt: player, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+    }
+
+    func restoreOriginalFromThunder(_ item: Item) {
+        guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
+        if let engineID = job.sourceEngineID {
+            Task {
+                do {
+                    try await host.client.resume(engineID)
+                    thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
+                    notice = "已恢复交给迅雷前的下载；迅雷中的任务请自行暂停"
+                    await poll()
+                } catch { notice = "恢复原下载失败：\(error.localizedDescription)，任务仍保留" }
+            }
+        } else if let record = job.sourcePending {
+            thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs); rebuild()
+            start(link: record.link, headers: record.headers, name: record.name,
+                  dir: URL(fileURLWithPath: record.dir), selectFiles: record.selectFiles, originLink: record.originLink)
+            notice = "已恢复交给迅雷前的任务；迅雷中的任务请自行暂停"
+        } else { notice = "没有可恢复的原任务，请使用收回功能" }
     }
 
     func forgetThunder(_ id: String) {
@@ -1133,8 +1250,8 @@ final class DownloadStore: ObservableObject {
     // MARK: 剪贴板
 
     func checkClipboard() {
-        guard let s = NSPasteboard.general.string(forType: .string) else { return }
-        let links = newClipboardLinks(in: s)
+        guard ClipboardWatcher.enabled, let s = NSPasteboard.general.string(forType: .string) else { return }
+        let links = newClipboardLinks(in: s).filter(LinkKind.worthPopup)
         guard !links.isEmpty else { return }
         markSeen(links)
         clipboardLinks = links
@@ -1224,6 +1341,36 @@ final class DownloadStore: ObservableObject {
 
     // MARK: 视频站记录
 
+    func startWeChat(share: String, playable: String, title: String) {
+        if let existing = items.first(where: { item in
+            guard item.linkKey == Self.linkKey(share) else { return false }
+            if case .failed = item.status { return false }; return true
+        }) {
+            reveal(existing: existing); return
+        }
+        if let index = videoJobs.firstIndex(where: { $0.url == share && $0.state == .failed }) {
+            videoJobs.remove(at: index)
+        }
+        var job = VideoJob(url: share, title: title.isEmpty ? "微信视频号" : title, site: "微信视频号")
+        job.stage = .preparing
+        videoJobs.append(job); saveVideos(); rebuild(); selectedID = job.id.uuidString
+        let initial = job
+        weChatTasks[job.id] = Task { [weak self] in
+            var result = initial
+            do {
+                let file = try await WeChatChannels.download(playable: playable, title: initial.title, directory: Folders.videos)
+                result.filePath = file.path; result.state = .done
+                result.total = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64) ?? 0
+                result.downloaded = result.total
+            } catch {
+                result.state = .failed
+                result.error = (error as? WeChatChannels.Failure)?.localizedDescription ?? "视频下载失败，请在浏览器扩展重新解析后重试"
+            }
+            self?.weChatTasks.removeValue(forKey: initial.id)
+            self?.updateVideo(result)
+        }
+    }
+
     private func updateVideo(_ job: VideoJob) {
         guard let i = videoJobs.firstIndex(where: { $0.id == job.id }) else { return }
         videoJobs[i] = job
@@ -1247,6 +1394,7 @@ final class DownloadStore: ObservableObject {
         case .video(let id):
             // 原地重新开始；先删再 add 会被去重挡掉，任务直接消失
             guard let i = videoJobs.firstIndex(where: { $0.id == id }) else { return }
+            if LinkKind.isWeChatChannelShare(videoJobs[i].url) { notice = "请在已登录的腾讯元宝页面，通过浏览器扩展重新解析此链接。"; return }
             videoJobs[i].state = .running; videoJobs[i].error = nil
             videoJobs[i].downloaded = 0; videoJobs[i].total = 0; videoJobs[i].speed = 0
             saveVideos(); rebuild()
@@ -1273,8 +1421,10 @@ final class DownloadStore: ObservableObject {
         if let idx = selected.max(by: { files[$0].size < files[$1].size }) {
             let f = files[idx]
             let rel = [f.path ?? "", f.name].filter { !$0.isEmpty }.joined(separator: "/")
-            let candidates = [dir.appendingPathComponent(resName).appendingPathComponent(rel), dir.appendingPathComponent(rel)]
-            main = candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? (files.count > 1 ? candidates[0] : candidates[1])
+            let candidates = EngineFilePaths.candidates(directory: dir, responseName: resName, relativeFile: rel,
+                                                        overrideName: t.meta.opts?.name, singleHTTP: files.count == 1 && ["http", "https"].contains(URL(string: url)?.scheme?.lowercased() ?? ""))
+            let renamedHTTP = files.count == 1 && ["http", "https"].contains(URL(string: url)?.scheme?.lowercased() ?? "") && !(t.meta.opts?.name ?? "").isEmpty
+            main = candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? (files.count > 1 || renamedHTTP ? candidates[0] : candidates.last)
         } else if !resName.isEmpty { main = dir.appendingPathComponent(resName) }
         let location = files.count > 1 && !resName.isEmpty ? dir.appendingPathComponent(resName) : main
 
@@ -1302,6 +1452,9 @@ final class DownloadStore: ObservableObject {
                     total: total, speed: status == .running ? t.progress.speed : 0, file: main, createdAt: created, thumbRemote: nil,
                     linkKey: linkKey(lower.hasPrefix("magnet:") || t.meta.res?.hash == nil ? url : "btih:" + (t.meta.res?.hash ?? "")),
                     location: location)
+        it.checking = t.shandianVerification == "checking"
+        it.verificationFailed = t.shandianVerification == "failed"
+        if it.checking || it.verificationFailed { it.speed = 0 }
         // 迅雷只认磁力和网页链接；本地种子交给内核时是 data: 地址，交不了
         if lower.hasPrefix("magnet:") || lower.hasPrefix("http") { it.link = url }
         return it
@@ -1319,14 +1472,18 @@ final class DownloadStore: ObservableObject {
     private static func item(from j: ThunderJob) -> Item {
         let folder = j.folder.map(URL.init(fileURLWithPath:))
         // 迅雷 `.js` 里记的大小最准；没有就退回种子解析值、再退回文件占用（占用含 4K 对齐，会略大）
-        let total = j.dlSize.flatMap { $0 > 0 ? $0 : nil } ?? (j.total > 0 ? j.total : j.bytes)
-        var got = j.checked.map { min($0, total) } ?? min(j.bytes, total)
+        let total = max(j.verifiedTotal ?? 0, j.dlSize ?? 0, j.total)
+        let diskEstimate = !j.done && j.folder != nil && j.bytes > (j.checked ?? 0) + (1 << 20)
+        var got = diskEstimate ? j.bytes : (j.checked ?? 0)
+        if total > 0 { got = min(got, total) }
         if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,
                       status: j.done ? .done : .running, downloaded: got, total: total,
                       speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
         it.link = j.link
+        it.thunderHasOriginal = j.sourceEngineID != nil || j.sourcePending != nil
+        it.thunderDiskEstimate = diskEstimate
         it.thunderLocated = j.folder != nil
         return it
     }
@@ -1386,4 +1543,16 @@ extension ISO8601DateFormatter {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+}
+
+/// 单文件 HTTP 任务可由用户指定文件名，磁盘上的名字以下载选项为准。
+enum EngineFilePaths {
+    static func candidates(directory: URL, responseName: String, relativeFile: String, overrideName: String?, singleHTTP: Bool) -> [URL] {
+        var paths = [directory.appendingPathComponent(responseName).appendingPathComponent(relativeFile),
+                     directory.appendingPathComponent(relativeFile)]
+        if singleHTTP, let name = overrideName, !name.isEmpty {
+            paths.insert(directory.appendingPathComponent(name), at: 0)
+        }
+        return paths
+    }
 }

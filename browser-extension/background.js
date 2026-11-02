@@ -1,3 +1,5 @@
+importScripts("network-capture.js");
+
 // 闪电全能下载浏览器扩展：把浏览器里的下载交给本机的闪电全能下载（127.0.0.1:6800）。
 // App 没开时什么都不拦，浏览器照常下载；App 只认本扩展的来源（manifest 里的 key 固定了扩展 ID），不需要填密钥。
 
@@ -5,13 +7,11 @@ const APP = "http://127.0.0.1:6800/extension/add";
 const PING = "http://127.0.0.1:6800/extension/ping";
 const STATUS = "http://127.0.0.1:6800/extension/status";
 
-// 告诉 App 扩展已装好（设置页显示「已连接」）；App 带的扩展版本比现在的新就自己重新加载
-// （已解压的扩展浏览器不会自动刷新，App 更新时已把新文件写进扩展文件夹）
+// 告诉 App 扩展已装好（设置页显示「已连接」）。扩展版本不匹配时不能反复
+// 调用 reload：浏览器可能加载的是另一份目录，重载也不会改变其版本。
 async function ping() {
   try {
-    const r = await fetch(PING, { method: "POST" });
-    const { version } = await r.json();
-    if (version && version !== chrome.runtime.getManifest().version) chrome.runtime.reload();
+    await fetch(PING, { method: "POST" });
   } catch (_) {}
 }
 chrome.alarms.create("shandian-ping", { periodInMinutes: 10 });
@@ -105,6 +105,112 @@ async function pickInTab(tabId) {
   }
 }
 
+// 用户主动扫描时只读取页面上已有的媒体标签，不监听浏览历史或后台网络。
+function collectPageMedia() {
+  const result = [];
+  const add = (src, kind, label, mime = "") => {
+    try {
+      const url = new URL(src, location.href);
+      if (!["http:", "https:"].includes(url.protocol)) return;
+      const ext = url.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || "";
+      const allowed = kind === "字幕" ? ["vtt", "srt", "ass", "ssa", "ttml"] : ["mp4", "m4v", "webm", "mov", "mp3", "m4a", "aac", "ogg", "wav", "m3u8", "mpd"];
+      // 无扩展名的二进制内容无法可靠识别，不猜测格式。
+      if (!allowed.includes(ext)) return;
+      result.push({ url: url.href, referrer: location.href, kind, label, ext, title: document.title });
+    } catch (_) {}
+  };
+  for (const element of document.querySelectorAll("video, audio")) {
+    const kind = element.tagName.toLowerCase() === "audio" ? "音频" : "视频";
+    const size = element.videoHeight ? `${element.videoWidth}×${element.videoHeight}` : "";
+    const label = [kind, size].filter(Boolean).join(" · ");
+    add(element.currentSrc, kind, label);
+    add(element.src, kind, label);
+    for (const source of element.querySelectorAll("source")) add(source.src, kind, label, source.type);
+    for (const track of element.querySelectorAll("track[src]")) {
+      add(track.src, "字幕", ["字幕", track.label || track.srclang || ""].filter(Boolean).join(" · "));
+    }
+  }
+  // 播放器可能通过 JS 动态加载清单并把 blob: 给 video；只在手动扫描时读取本页已有资源。
+  for (const entry of performance.getEntriesByType("resource")) {
+    try {
+      const url = new URL(entry.name, location.href);
+      if (/\.(m3u8|mpd)$/i.test(url.pathname)) add(url.href, "视频", "视频 · 分片流");
+    } catch (_) {}
+  }
+  return result.slice(0, 100);
+}
+
+async function scanPageMedia(tabId) {
+  try {
+    let frames;
+    try {
+      frames = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: collectPageMedia });
+    } catch (_) {
+      // 部分嵌入页面可能禁止扩展访问，至少尝试主页面。
+      frames = await chrome.scripting.executeScript({ target: { tabId }, func: collectPageMedia });
+    }
+    const unique = new Map();
+    for (const frame of frames) for (const item of frame.result || []) {
+      if (!unique.has(item.url)) unique.set(item.url, item);
+    }
+    return [...unique.values()].slice(0, 100);
+  } catch (_) { return []; }
+}
+
+// 只在用户点击时读取当前页面的链接，不监听或遍历其他页面。
+function collectDownloadLinks() {
+  const extensions = new Set(["torrent", "zip", "rar", "7z", "gz", "tgz", "bz2", "xz", "dmg", "pkg", "exe", "msi", "iso", "img", "apk", "ipa", "mp4", "mkv", "avi", "mov", "m4v", "ts", "flv", "wmv", "webm", "mp3", "flac", "wav", "m4a", "aac"]);
+  const found = [];
+  for (const anchor of document.querySelectorAll("a[href]")) {
+    const href = anchor.href;
+    let kind;
+    if (/^magnet:\?/i.test(href)) kind = "磁力";
+    else if (/^ed2k:\/\//i.test(href)) kind = "电驴";
+    else {
+      try {
+        const url = new URL(href, location.href);
+        if (!["http:", "https:"].includes(url.protocol)) continue;
+        const ext = url.pathname.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+        if (!extensions.has(ext)) continue;
+        kind = ext === "torrent" ? "种子" : "直链";
+      } catch (_) { continue; }
+    }
+    let title = (anchor.textContent || anchor.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+    if (!title && kind === "磁力") {
+      try { title = new URL(href).searchParams.get("dn") || ""; } catch (_) {}
+    }
+    if (!title) {
+      try { title = decodeURIComponent(new URL(href).pathname.split("/").pop()) || kind; } catch (_) { title = kind; }
+    }
+    found.push({ url: href, title: title.slice(0, 180), kind });
+    if (found.length >= 500) break;
+  }
+  return found;
+}
+
+async function scanDownloadLinks(tabId) {
+  let frames;
+  try { frames = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: collectDownloadLinks }); }
+  catch (_) { frames = await chrome.scripting.executeScript({ target: { tabId }, func: collectDownloadLinks }); }
+  const unique = new Map();
+  for (const frame of frames) for (const item of frame.result || []) {
+    let key = item.url;
+    if (item.kind === "磁力") {
+      try { key = new URL(item.url).searchParams.getAll("xt").find(x => /^urn:btih:/i.test(x))?.toLowerCase() || key; } catch (_) {}
+    }
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  return [...unique.values()].slice(0, 100);
+}
+
+async function extensionBatchRequest(path, data) {
+  const response = await fetch("http://127.0.0.1:6800/extension/" + path, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error("交接失败");
+  return response.json();
+}
+
 // 刷新标签页并等它加载完，再多等一会儿让页面把视频数据请求回来
 async function reloadAndWait(tabId, extraMs) {
   await new Promise((resolve) => {
@@ -116,18 +222,22 @@ async function reloadAndWait(tabId, extraMs) {
   await new Promise((r) => setTimeout(r, extraMs));
 }
 
-async function downloadVideoInTab(tab) {
+async function downloadVideoInTab(tab, requireVideo = false) {
   let picked = await pickInTab(tab.id);
   // 抖音页面如果是扩展装好 / 更新之前打开的，douyin-hook.js 没挂上、什么都没记：刷新一次再取（10-29 用户：点了没下成）
   if (!picked && /(^|\.)douyin\.com$/.test(new URL(tab.url).hostname)) {
     await reloadAndWait(tab.id, 4000);
     picked = await pickInTab(tab.id);
   }
+  if (picked && /\.(m3u8|mpd)$/i.test(new URL(picked.src).pathname)) {
+    return sendToApp(picked.src, tab.url, undefined, tab.id);
+  }
   if (picked) {
     const title = (picked.title || "视频").replace(/\s*[-|]\s*(抖音|小红书|哔哩哔哩.*|YouTube)\s*$/, "").trim().slice(0, 80) || "视频";
     return sendToApp(picked.src, tab.url, title.replace(/[\\/:*?"<>|]/g, " ") + ".mp4", tab.id);
   }
-  return sendToApp(videoPageURL(tab.url), tab.url, undefined, tab.id);   // 页面上找不到能直接下的视频，交页面地址给 yt-dlp
+  if (requireVideo) return null; // 普通网页找不到视频时，不把网页误当文件下载
+  return sendToApp(videoPageURL(tab.url), tab.url, undefined, tab.id);   // 已支持的网站交给 yt-dlp
 }
 
 // 抖音网页版看视频时地址常是 ?modal_id=…，换成视频页地址下载工具才认
@@ -160,13 +270,13 @@ async function launchApp(tabId) {
 }
 
 // tabId：传了就表示是用户主动点的，App 没开时自动打开它；浏览器自动接管的下载不传，App 没开就让浏览器自己下
-async function sendToApp(url, referrer, name, tabId) {
+async function sendToApp(url, referrer, name, tabId, mediaType) {
   const headers = url.startsWith("http") ? await headersFor(url, referrer) : {};
   const cookies = url.startsWith("http") ? await loginCookies(referrer || url) : undefined;
   const post = () => fetch(APP, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, headers, cookies, name }),
+    body: JSON.stringify({ url, headers, cookies, name, mediaType }),
   }).then((r) => r.ok);
   try {
     return await post();
@@ -240,9 +350,75 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // 弹出面板发来的请求
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (msg.type === "downloadWeChat") {
+    (async () => {
+      const tab = await chrome.tabs.get(msg.tabId);
+      if (new URL(tab.url).origin !== "https://yuanbao.tencent.com") return { ok: false };
+      const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "MAIN", args: [msg.share], func: async (share) => {
+        const response = await fetch("/api/weixin/get_parse_result", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "video_channel_url", url: share, scene: 1 }) });
+        if (response.status === 401) return { login: true };
+        if (!response.ok) return {};
+        const result = await response.json();
+        return { playable: result?.data?.playable_url, title: result?.data?.desc || "微信视频号" };
+      }});
+      const parsed = result?.[0]?.result;
+      if (!parsed?.playable) return { ok: false, login: !!parsed?.login };
+      return await extensionBatchRequest("wechat", { share: msg.share, playable: parsed.playable, title: parsed.title });
+    })().then(reply).catch(() => reply({ ok: false }));
+    return true;
+  }
   if (msg.type === "downloadPage") {
-    chrome.tabs.get(msg.tabId).then(downloadVideoInTab).then((ok) => reply({ ok }));
+    chrome.tabs.get(msg.tabId).then((tab) => downloadVideoInTab(tab, msg.requireVideo)).then((ok) => reply({ ok: ok === true, noVideo: ok === null })).catch(() => reply({ ok: false }));
     return true; // 异步回复
+  }
+  if (msg.type === "startCapture") {
+    chrome.tabs.get(msg.tabId).then(tab => startNetworkCapture(tab.id, tab.url, tab.title)).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "stopCapture") {
+    stopNetworkCapture().then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "captureStatus") {
+    capturedForTab(msg.tabId).then(reply).catch(() => reply({ active: false, items: [] }));
+    return true;
+  }
+  if (msg.type === "scanLinks") {
+    scanDownloadLinks(msg.tabId).then(async items => {
+      let known = [], checked = false;
+      if (items.length) try { const result = await extensionBatchRequest("known", { urls: items.map(x => x.url) }); known = result.known || []; checked = true; } catch (_) {}
+      reply({ items, known, checked });
+    }).catch(() => reply({ error: true }));
+    return true;
+  }
+  if (msg.type === "downloadLinks") {
+    chrome.tabs.get(msg.tabId).then(async tab => {
+      // 不用当前标签页打开自定义协议，避免覆盖用户正在查看的网页。
+      if (!(await appReady())) return { ok: false };
+      return extensionBatchRequest("batch", { urls: msg.urls, referrer: tab.url });
+    }).then(reply).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "scanMedia") {
+    Promise.all([scanPageMedia(msg.tabId), capturedForTab(msg.tabId)]).then(([items, captured]) => {
+      const seen = new Set(items.map(x => x.url));
+      reply({ items: [...items, ...captured.items.filter(x => !seen.has(x.url))], captureActive: captured.active });
+    }).catch(() => reply({ items: [] }));
+    return true;
+  }
+  if (msg.type === "downloadMedia") {
+    const item = msg.item;
+    if (!item || !/^https?:/i.test(item.url) || !["视频", "音频", "字幕"].includes(item.kind) || !/^[a-z0-9]{2,5}$/.test(item.ext)) { reply({ ok: false }); return; }
+    const clean = text => text.replace(/[\\/:*?"<>|]/g, " ").trim();
+    const stem = clean(item.title || item.kind).slice(0, 70) || item.kind;
+    const label = clean(item.label || item.kind).slice(0, 30);
+    let hash = 2166136261;
+    for (const char of item.url) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    const suffix = " - " + label + " - " + (hash >>> 0).toString(16).padStart(8, "0");
+    const stream = item.stream === true || ["m3u8", "mpd"].includes(item.ext);
+    const name = stream ? undefined : stem + suffix + "." + item.ext;
+    sendToApp(item.url, item.referrer, name, msg.tabId, stream ? "stream" : undefined).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
+    return true;
   }
   if (msg.type === "refreshBadge") refreshBadge();
   if (msg.type === "linkPikPak") {

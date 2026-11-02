@@ -21,8 +21,8 @@ final class NewTaskPanels {
         panels.removeAll()
     }
 
-    func present(links: [String], headers: [String: String], name: String?, store: DownloadStore) {
-        let model = NewTaskModel(links: links, headers: headers, name: name, store: store)
+    func present(links: [String], headers: [String: String], name: String?, store: DownloadStore, forceVideo: Bool = false) {
+        let model = NewTaskModel(links: links, headers: headers, name: name, store: store, forceVideo: forceVideo)
         let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         model.close = { [weak self, weak panel] in
             panel?.orderOut(nil)
@@ -52,6 +52,7 @@ final class NewTaskModel: ObservableObject {
     let links: [String]
     let headers: [String: String]
     let kind: LinkKind?
+    let forceVideo: Bool
     weak var store: DownloadStore?
     var close: () -> Void = {}
 
@@ -68,12 +69,13 @@ final class NewTaskModel: ObservableObject {
     private let nameFromBrowser: String?
     private let defaultDir: URL
 
-    init(links: [String], headers: [String: String], name: String?, store: DownloadStore) {
+    init(links: [String], headers: [String: String], name: String?, store: DownloadStore, forceVideo: Bool = false) {
         self.links = links
         self.headers = headers
+        self.forceVideo = forceVideo
         self.store = store
         nameFromBrowser = name
-        kind = LinkKind.of(links[0])
+        kind = forceVideo ? .videoSite : LinkKind.of(links[0])
         defaultDir = kind.map(Folders.directory(for:)) ?? Folders.downloads
         dir = defaultDir
         // 片名整理只给磁力/种子；普通文件用原文件名——这里的名字会直接当文件名交给内核，整理过会丢掉后缀
@@ -150,7 +152,7 @@ final class NewTaskModel: ObservableObject {
         if kind == .videoSite { VideoOptions.current = video }
         let rename = single && !isTorrent && title != (nameFromBrowser ?? "") && !title.isEmpty ? title : nameFromBrowser
         for l in links {
-            store.start(link: l, headers: headers, name: single ? rename : nil, dir: dir,
+            store.start(link: l, headers: headers, name: single ? rename : nil, dir: dir, forceVideo: forceVideo,
                         selectFiles: single && isTorrent && !files.isEmpty ? selected.sorted() : nil)
         }
         close()
@@ -307,7 +309,7 @@ struct NewTaskView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(model.links, id: \.self) { l in
-                    Text(PrettyTitle.clean(DownloadStore.displayName(l))).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle)
+                    Text(DownloadStore.displayName(l)).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(10)

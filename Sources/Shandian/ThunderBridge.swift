@@ -14,6 +14,8 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     var name: String?            // 种子里的名字（迅雷建的文件夹通常就叫这个）
     var total: Int64
     var createdAt: Date
+    var sourceEngineID: String? = nil
+    var sourcePending: DownloadStore.PendingRecord? = nil
     var done = false
     var bytes: Int64 = 0
     var speed: Int64 = 0
@@ -25,6 +27,9 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     var dlSize: Int64?
     /// 文件夹里最后一个字节都没变化的时间：判「老版本迅雷下完删了 .js」用，刚建文件夹时不至于立刻算完成
     var lastChangeAt: Date?
+    var verifiedTotal: Int64? = nil
+    var completionVerified: Bool? = nil
+    var legacyCompletionPreserved: Bool? = nil
 }
 
 @MainActor
@@ -153,9 +158,9 @@ enum ThunderBridge {
     /// 读迅雷的任务进度文件 `.<infohash>.js`：base64 包着的 JSON
     /// `{"infohash":"…","subinfo0":{"checkedsize":4030002163,"dlsize":4030002163}}`。
     /// 多文件任务是 subinfo0、subinfo1…，逐个加起来。checkedsize 追上 dlsize 就是下完了
-    static func session(in folder: URL) -> (checked: Int64, total: Int64)? {
+    static func session(in folder: URL, hash: String?) -> (checked: Int64, total: Int64)? {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        guard let js = names.first(where: { $0.hasPrefix(".") && $0.hasSuffix(".js") }) else { return nil }
+        guard let hash, let js = names.first(where: { $0.lowercased() == ".\(hash.lowercased()).js" }) else { return nil }
         guard let raw = FileManager.default.contents(atPath: folder.appendingPathComponent(js).path),
               var text = String(data: raw, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return nil }
@@ -181,10 +186,10 @@ enum ThunderBridge {
             alert.informativeText = "先在迅雷里暂停它，再点收回。两边同时写同一个文件会损坏。"
             alert.addButton(withTitle: "知道了")
         case .unknown:
-            alert.messageText = "还没找到迅雷下的文件"
-            alert.informativeText = "迅雷可能刚建任务，或者换过保存位置。确认迅雷里这条已经暂停或下完，再收回。"
+            alert.messageText = "请先在迅雷中暂停任务"
+            alert.informativeText = "闪电暂时无法确认迅雷是否已暂停。请先到迅雷暂停这条任务，再回来确认，避免两个程序同时写入文件。"
+            alert.addButton(withTitle: "我已暂停，继续收回")
             alert.addButton(withTitle: "再等等")
-            alert.addButton(withTitle: "仍然收回")
         case .idle:
             break
         }
@@ -211,8 +216,8 @@ enum ThunderBridge {
     /// 收回到本地前判断迅雷停没停。找不到文件夹时不能当「已停」——那样会在迅雷还在写的时候
     /// 另建一条任务抢同一个文件（11-01 实测：进度只有 0.6 MB，迅雷那边其实已经下完 589 MB）
     static func state(of job: ThunderJob) async -> WriteState {
-        guard let folder = job.folder else { return .unknown }
-        return await isChanging(folder) ? .writing : .idle
+        guard let folder = job.folder, FileManager.default.fileExists(atPath: folder) else { return .unknown }
+        return await isChanging(folder) ? .writing : .unknown
     }
 
     private static func isChanging(_ folder: String) async -> Bool {
@@ -247,35 +252,36 @@ enum ThunderBridge {
     private static func locate(_ job: ThunderJob) -> String? {
         if let t = lookupAt[job.id], Date().timeIntervalSince(t) < 2 { return nil }
         lookupAt[job.id] = Date()
-        let fm = FileManager.default
         let roots = searchRoots(job)
         if let h = job.hash?.uppercased() {
             for root in roots {
                 if let hit = match(root, hash: h, depth: root.path == Folders.downloads.path ? 2 : 1) { return hit }
             }
         }
-        // 不一定有 .<hash>.js（10-28《抓特务》就没有）：按种子名找
-        if let n = job.name, !n.isEmpty {
-            for root in roots where fm.fileExists(atPath: root.appendingPathComponent(n).path) {
-                return root.appendingPathComponent(n).path
-            }
-        }
-        // 「交给迅雷之后新建、里面有迅雷 .magent_ 种子」的那个文件夹
-        for root in roots {
-            let kids = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.creationDateKey])) ?? []
-            if let hit = kids.first(where: { k in
-                let created = (try? k.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                guard created > job.createdAt.addingTimeInterval(-180) else { return false }
-                let files = (try? fm.contentsOfDirectory(atPath: k.path)) ?? []
-                return files.contains { $0.hasPrefix(".magent_") }
-            }) { return hit.path }
-        }
+        // 没有确定的任务标识时不猜目录，避免多个任务并行时关联错文件。
         return nil
+    }
+
+    /// 重复转交时回到原保存目录，避免不断叠加“迅雷下载/任务编号”。
+    static func handoffBase(_ directory: URL) -> URL {
+        var base = directory
+        while base.lastPathComponent.hasPrefix("thunder-"),
+              base.deletingLastPathComponent().lastPathComponent == "迅雷下载" {
+            base = base.deletingLastPathComponent().deletingLastPathComponent()
+        }
+        return base
     }
 
     /// 迅雷可能把任务放在哪：我们指定的位置、迅雷记的上次保存位置、系统「下载」
     private static func searchRoots(_ job: ThunderJob) -> [URL] {
         var list = [URL(fileURLWithPath: job.dir)]
+        // 迅雷可能复用之前交接的同一任务，数据仍留在较早的交接目录中。
+        var ancestor = URL(fileURLWithPath: job.dir, isDirectory: true)
+        while ancestor.lastPathComponent.hasPrefix("thunder-"),
+              ancestor.deletingLastPathComponent().lastPathComponent == "迅雷下载" {
+            ancestor = ancestor.deletingLastPathComponent().deletingLastPathComponent()
+            list.append(ancestor)
+        }
         if let p = savedPath, !p.isEmpty { list.append(URL(fileURLWithPath: p)) }
         list.append(Folders.downloads)
         var seen = Set<String>()
@@ -301,6 +307,15 @@ enum ThunderBridge {
         return nil
     }
 
+    static func torrentTotal(in folder: URL, hash: String?) -> Int64? {
+        guard let hash, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return nil }
+        for name in names where name.hasPrefix(".magent_") && name.hasSuffix(".torrent") {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)) else { continue }
+            if let total = TorrentMetadata.totalSize(data: data, expectedHash: hash) { return total }
+        }
+        return nil
+    }
+
     /// 量一次进度：优先用迅雷 `.js` 里记的真值；文件占用只用来估速度
     static func measure(_ job: inout ThunderJob) {
         let fm = FileManager.default
@@ -310,16 +325,19 @@ enum ThunderBridge {
         }
         guard let folder = job.folder else { return }
         let folderURL = URL(fileURLWithPath: folder)
-        if let s = session(in: folderURL) {
+        if job.verifiedTotal == nil { job.verifiedTotal = torrentTotal(in: folderURL, hash: job.hash) }
+        let previousChecked = job.checked
+        if let s = session(in: folderURL, hash: job.hash) {
             job.checked = s.checked
             job.dlSize = s.total
-            job.total = s.total      // 迅雷记的总大小比种子解析出来的准
+            job.total = max(job.verifiedTotal ?? 0, s.total)
+        } else {
+            job.checked = nil; job.dlSize = nil
         }
-        var bytes: Int64 = 0, hiddenProgress = 0
+        var bytes: Int64 = 0
         let en = fm.enumerator(at: folderURL, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
         while let f = en?.nextObject() as? URL {
             if f.lastPathComponent.hasPrefix(".") {
-                if f.pathExtension == "js" { hiddenProgress += 1 }
                 continue
             }
             let v = try? f.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
@@ -328,22 +346,20 @@ enum ThunderBridge {
         let now = Date()
         if bytes != job.bytes { job.lastChangeAt = now }
         if let t = job.measuredAt, now.timeIntervalSince(t) > 0.5 {
-            let s = Double(max(0, bytes - job.bytes)) / now.timeIntervalSince(t)
+            let checkedDelta = (job.checked != nil && previousChecked != nil) ? max(0, job.checked! - previousChecked!) : 0
+            // 迅雷进度记录可能只在暂停时落盘；文件占用变化只能作为写入速度估算。
+            let delta = max(checkedDelta, max(0, bytes - job.bytes))
+            let s = Double(delta) / now.timeIntervalSince(t)
             job.speed = Int64(Double(job.speed) * 0.6 + s * 0.4)
         }
         job.bytes = bytes; job.measuredAt = now
-        // 迅雷记的已下字节追上任务总大小 = 下完了（.js 完成后仍留着，不能靠它消失来判；留一点容差，
-        // 免得最后一块的尾巴让它永远差一点）；老版本迅雷下完会清掉 .js，那条路也留着
-        if let dl = job.dlSize, dl > 0, let ck = job.checked, ck >= dl - min(64 * 1024, dl / 100) {
-            job.done = true; job.speed = 0; job.bytes = dl
-        } else if hiddenProgress == 0, bytes > 0 {
-            // 没有 .js 时别一看到文件就判完成：迅雷刚建好文件夹、还没写进度文件的那几秒也长这样。
-            // 大小到齐，或者二十秒没再长，才算它下完了
-            let complete = job.total > 0 && bytes >= job.total - min(64 * 1024, job.total / 100)
-            let quiet = job.lastChangeAt.map { now.timeIntervalSince($0) > 20 } ?? false
-            if complete || quiet {
-                job.done = true; job.speed = 0; if job.total == 0 { job.total = bytes }
-            }
+        // 只在对应任务的进度记录明确到达总量时判完成；无法读取记录时保持未知。
+        if let expected = job.verifiedTotal, expected > 0, let dl = job.dlSize, let ck = job.checked {
+            job.done = dl >= expected && ck >= expected
+            job.completionVerified = job.done
+            if job.done { job.speed = 0; job.bytes = expected }
+        } else if job.completionVerified != true {
+            job.done = false
         }
     }
 

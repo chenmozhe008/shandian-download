@@ -7,7 +7,7 @@ import SwiftUI
 enum BrowserExtension {
     static let folder = EngineConfig.supportDir.appendingPathComponent("BrowserExtension")
 
-    /// App 带的扩展版本（扩展用它判断要不要自己重新加载）
+    /// App 带的扩展版本；扩展和应用的版本号分别管理。
     static var bundledVersion: String {
         guard let u = Bundle.main.resourceURL?.appendingPathComponent("BrowserExtension/manifest.json"),
               let d = try? Data(contentsOf: u), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return "" }
@@ -61,7 +61,7 @@ struct BrowserSetupView: View {
                     Button("Edge") { openPage("edge://extensions", app: "Microsoft Edge") }.controlSize(.small)
                 }
                 step(2, "打开「开发者模式」", "Chrome 在页面右上角，Edge 在左侧栏") { EmptyView() }
-                step(3, "把扩展文件夹拖进页面", "拖进去即安装完成，以后自动更新") {
+                step(3, "把扩展文件夹拖进页面", "安装后软件会更新扩展文件；请在扩展管理页点「重新加载」。扩展与软件版本号分别编号。") {
                     Button("显示文件夹") { BrowserExtension.install(); NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder]) }
                         .controlSize(.small)
                 }

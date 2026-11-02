@@ -80,18 +80,21 @@ private struct ClipboardPopup: View {
         HStack(alignment: .top, spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 4) {
-                Text(links.count > 1 ? "检测到 \(links.count) 个下载链接" : "检测到下载链接")
+                Text(LinkKind.isWeChatChannelShare(first) ? "检测到视频号链接" : links.count > 1 ? "检测到 \(links.count) 个下载链接" : "检测到下载链接")
                     .font(.system(size: 15, weight: .semibold))
                 Text(PrettyTitle.clean(DownloadStore.displayName(first)))
                     .font(.system(size: 14)).lineLimit(1).truncationMode(.middle)
-                if let kind {
+                if LinkKind.isWeChatChannelShare(first) {
+                    Text("需要登录腾讯元宝，并通过浏览器扩展下载")
+                        .font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(1)
+                } else if let kind {
                     Text("\(kind.label)　存到「\(Folders.displayName(Folders.directory(for: kind)))」")
                         .font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(spacing: 8) {
                     // 浮窗不是活动窗口，系统按钮会变灰；自己画琥珀色，始终醒目
                     Button(action: onDownload) {
-                        Text(links.count > 1 ? "全部下载" : "下载").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text(LinkKind.isWeChatChannelShare(first) ? "查看方法" : links.count > 1 ? "全部下载" : "下载").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                             .frame(minWidth: 72).padding(.horizontal, 12).frame(height: 30)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.tint))
                     }

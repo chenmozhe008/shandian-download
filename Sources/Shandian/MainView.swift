@@ -165,13 +165,14 @@ private struct Sidebar: View {
 
 private struct DetailPane: View {
     @ObservedObject var store: DownloadStore
+    @AppStorage("completedRowLayout") private var completedRowLayout = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Banners(store: store)
             switch store.section {
             case .active: ActivePage(store: store)
-            case .done: DonePage(store: store, items: store.doneItems).padding(.top, 8)
+            case .done: DonePage(store: store, items: store.doneItems, rowLayout: completedRowLayout).padding(.top, 8)
             case .trash: TrashPage(store: store)
             case .category(let c): CategoryPage(store: store, category: c)
             }
@@ -232,8 +233,16 @@ private struct VersionBadge: View {
 
 private struct ToolbarItems: ToolbarContent {
     @ObservedObject var store: DownloadStore
+    @AppStorage("completedRowLayout") private var completedRowLayout = true
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            if store.section != .active {
+                Button { completedRowLayout.toggle() } label: {
+                    Label(completedRowLayout ? "切换为卡片排列" : "切换为逐行排列",
+                          systemImage: completedRowLayout ? "square.grid.2x2" : "list.bullet")
+                }
+                .help(completedRowLayout ? "切换为卡片排列" : "切换为逐行排列")
+            }
             Button { store.toggleAll() } label: {
                 Label(store.allPaused ? "全部继续" : "全部暂停", systemImage: store.allPaused ? "play.fill" : "pause.fill")
             }
@@ -256,13 +265,14 @@ private struct Banners: View {
     var body: some View {
         VStack(spacing: 8) {
             if let links = store.clipboardLinks {
-                bar(icon: "doc.on.clipboard", text: links.count > 1 ? "剪贴板中有 \(links.count) 个链接" : "剪贴板中有链接：" + DownloadStore.displayName(links[0]), tint: Theme.tint) {
-                    Button("下载") { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
+                bar(icon: "doc.on.clipboard", text: links.count > 1 ? "剪贴板中有 \(links.count) 个链接" : LinkKind.isWeChatChannelShare(links[0]) ? "检测到视频号分享链接" : "剪贴板中有链接：" + DownloadStore.displayName(links[0]), tint: Theme.tint) {
+                    Button(links.count == 1 && LinkKind.isWeChatChannelShare(links[0]) ? "查看方法" : "下载") { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
                     Button("忽略") { store.clipboardLinks = nil }.buttonStyle(.plain).foregroundStyle(Theme.sub).font(.system(size: 12))
                 }
             }
             if let n = store.notice {
-                bar(icon: "info.circle.fill", text: n, tint: Theme.tint) {
+                bar(icon: DownloadStore.noticeNeedsAttention(n) ? "exclamationmark.circle.fill" : "info.circle.fill", text: n,
+                    tint: DownloadStore.noticeNeedsAttention(n) ? Theme.failed : Theme.tint) {
                     if let action = store.noticeAction, action.forText == n {
                         Button(action.title) { action.run() }
                             .buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
@@ -285,11 +295,11 @@ private struct Banners: View {
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(tint.opacity(0.16)))
             Text(text).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.text)
-                .lineLimit(1).truncationMode(.middle).help(text)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true).help(text)
             Spacer(minLength: 8)
             actions()
         }
-        .padding(.horizontal, 14).frame(height: 48)
+        .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 48)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.10)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
@@ -367,7 +377,7 @@ private struct SpeedHero: View {
                 .opacity(store.speedHistory.contains { $0 > 0 } ? 1 : 0.0)
                 .clipShape(shape)
             VStack(alignment: .leading, spacing: 0) {
-                Text("当前速度").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.sub)
+                Text("本机下载速度").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.sub)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(parts.first.map(String.init) ?? "0").font(.system(size: 52, weight: .bold, design: .rounded)).monospacedDigit()
                         .contentTransition(.numericText())
@@ -425,7 +435,7 @@ private struct SpeedChart: View {
 /// 空闲页：带暖光的放置区（⌘V 或拖入），下面列支持的来源和累计下载
 private struct EmptyState: View {
     @ObservedObject var store: DownloadStore
-    private let sources = ["磁力", "种子", "ed2k", "直链", "网盘", "B 站", "YouTube", "X", "微博", "小红书", "新片场", "抖音"]
+    private let sources = ["磁力", "种子", "ed2k", "直链", "网盘", "B 站", "YouTube", "X", "微博", "小红书", "新片场", "抖音", "豆瓣预告", "微信视频号"]
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -434,15 +444,8 @@ private struct EmptyState: View {
                 Image(nsImage: BrandGlyph.image(height: 60)).foregroundStyle(Theme.tint)
                     .shadow(color: Theme.tint.opacity(0.45), radius: 14)
                 Text("复制链接后按 ⌘V 开始下载").font(.system(size: 20, weight: .bold))
-                Text("也可以把链接或种子文件拖到这里").font(.system(size: 13.5)).foregroundStyle(Theme.sub)
-                HStack(spacing: 6) {
-                    ForEach(sources, id: \.self) { s in
-                        Text(s).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.text.opacity(0.75))
-                            .padding(.horizontal, 10).frame(height: 24)
-                            .background(Capsule().fill(Theme.faint))
-                    }
-                }
-                .padding(.top, 6)
+                Text("也可以拖入链接或种子文件；视频号会显示操作指引").font(.system(size: 13.5)).foregroundStyle(Theme.sub)
+                FlowChips(items: sources)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 48)
             .background(
@@ -580,6 +583,8 @@ struct TaskRow: View {
 
     private var sizeText: String {
         if item.total == 0 { return "" }
+        if item.thunderDiskEstimate { return "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
+        if item.fromThunder, item.isActive { return "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
         return item.downloaded >= item.total ? item.total.bytesText : "\(item.downloaded.bytesText) / \(item.total.bytesText)"
     }
     private var primary: String {
@@ -587,8 +592,8 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: "正在解析"
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
-        case .running where item.isThunder: item.avgSpeed > 0 ? item.avgSpeed.speedText : "等待中"
-        case .running: item.checking ? "正在校验" : item.avgSpeed.speedText
+        case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
+        case .running: item.verificationFailed ? "检查失败" : item.checking ? "正在检查" : item.avgSpeed.speedText
         case .paused: "已暂停"
         case .waiting: "排队中"
         case .resolving: "正在解析"
@@ -599,15 +604,17 @@ struct TaskRow: View {
     private var secondary: String {
         switch item.status {
         case .running where item.cloudProgress != nil: "云端下载中 \(item.cloudProgress ?? 0)%"
-        case .running where item.isThunder: item.avgSpeed > 0 ? "在迅雷里下载" : "等迅雷开始"
+        case .running where item.isThunder: item.avgSpeed > 0 ? "写入约 \(item.avgSpeed.speedText)" : "状态以迅雷为准"
         case .running where store.buffering.contains(item.id): "正在打开播放器"
-        case .running where item.checking: "核对已下载的部分"
+        case .running where item.verificationFailed: "请重新检查已下载文件"
+        case .running where item.checking: item.fromThunder ? "正在检查迅雷已下载的文件" : "正在检查已下载的文件"
         case .running where item.waitingLastPiece: "漏了最后一小块，正在补"
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: "合并视频和音频"
         case .running where item.videoStage == .converting: "转换为 M4A"
         case .running where item.videoStage == .audio && item.avgSpeed == 0: "正在下载音频"
-        case .running: item.avgSpeed > 0 ? remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)) : "正在连接"
+        case .running:
+            item.avgSpeed >= 1024 ? (remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)).isEmpty ? "速度较慢" : remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed))) : "正在连接"
         case .resolving(let since):
             Date().timeIntervalSince(since) > 180 ? "资源较冷门，仍在尝试" : "正在寻找资源"
         case .paused, .waiting: item.total > 0 ? "\(Int(item.progress * 100))%" : ""
@@ -650,9 +657,8 @@ private struct ThunderTag: View {
 
     private var text: String {
         guard active else { return "迅雷下载完成" }
-        if downloaded > 0 { return "迅雷下载中" }
-        if !located, Date().timeIntervalSince(createdAt) > 20 { return "已交给迅雷" }
-        return Date().timeIntervalSince(createdAt) > 90 ? "等待迅雷开始" : "正在交给迅雷"
+        if downloaded > 0 { return "迅雷任务" }
+        return "请在迅雷查看"
     }
     private var symbol: String {
         guard active else { return "checkmark.circle.fill" }
@@ -666,8 +672,7 @@ private struct ThunderTag: View {
     }
     private var help: String {
         guard active, downloaded == 0 else { return text }
-        return located ? "迅雷还没开始写文件；可以点右边的箭头到迅雷里看"
-                       : "已在迅雷里下载，还没找到它写的文件，进度稍后自动补上；点右边的箭头可到迅雷里看"
+        return "尚未读取到可靠进度，请到迅雷中查看任务状态"
     }
 }
 
@@ -720,11 +725,13 @@ private struct ItemMenu: View {
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
             if case .engine = item.source, item.isActive {
-                Button("重新校验已下的数据") { store.reverify(item) }
+                Button("重新检查已下载文件") { store.reverify(item) }
+                    .disabled(item.checking)
             }
-            if item.isThunder, item.isActive {
+            if item.isThunder {
                 if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
-                Button("收回到闪电全能下载") { store.reclaimFromThunder(item) }
+                Button("收回到闪电继续下载") { store.reclaimFromThunder(item) }
+                if item.thunderHasOriginal { Button("恢复交给迅雷前的下载") { store.restoreOriginalFromThunder(item) } }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
@@ -743,6 +750,7 @@ private struct DonePage: View {
     @ObservedObject var store: DownloadStore
     let items: [Item]
     var subtitle: String?       // 分类页里「已完成」小标题；页面标题在窗口工具栏
+    var rowLayout = true
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let subtitle { Text(subtitle).font(.system(size: 15, weight: .semibold)).padding(.bottom, 10) }
@@ -752,16 +760,72 @@ private struct DonePage: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18, alignment: .top)], spacing: 22) {
-                            ForEach(items) { DoneCard(store: store, item: $0).id($0.id) }
+                        if rowLayout {
+                            LazyVStack(spacing: 4) {
+                                ForEach(items) { DoneRow(store: store, item: $0).id($0.id) }
+                            }
+                            .padding(.bottom, 24)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18, alignment: .top)], spacing: 22) {
+                                ForEach(items) { DoneCard(store: store, item: $0).id($0.id) }
+                            }
+                            .padding(.bottom, 24)
                         }
-                        .padding(.bottom, 24)
                     }
                     .modifier(ScrollToTask(store: store, ids: items.map(\.id), proxy: proxy))
                 }
             }
         }
     }
+}
+
+private struct DoneRow: View {
+    @ObservedObject var store: DownloadStore
+    let item: Item
+    @State private var hovering = false
+    var body: some View {
+        HStack(spacing: 14) {
+            Thumb(thumbs: store.thumbs, item: item, width: 112)
+                .opacity(item.fileGone ? 0.45 : 1)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(item.title).font(.system(size: 14.5, weight: .medium))
+                        .lineLimit(1).truncationMode(.middle).help(item.rawTitle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 6) {
+                        if !item.fileGone {
+                            CircleIconButton(symbol: "folder", help: "在访达中显示") { store.reveal(item) }
+                        }
+                        CircleIconButton(symbol: "trash", help: "移除") { store.removalTarget = item }
+                    }
+                    .frame(width: 66, alignment: .trailing)
+                    .opacity(hovering || store.selectedID == item.id ? 1 : 0)
+                    .allowsHitTesting(hovering || store.selectedID == item.id)
+                    Text(item.fileGone ? "文件不在原位置" : "已完成")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+                        .fixedSize()
+                }
+                HStack(spacing: 8) {
+                    if !item.origin.isEmpty { Text(item.origin) }
+                    if item.total > 0 { Text(item.total.bytesText) }
+                    if item.createdAt != .distantPast {
+                        Text("添加于 " + item.createdAt.formatted(.dateTime.month().day().hour().minute()))
+                    }
+                }
+                .font(.system(size: 12.5)).foregroundStyle(Theme.sub).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tint.opacity(store.selectedID == item.id ? 0.12 : (hovering ? 0.04 : 0))))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(count: 2) { store.primaryAction(item) }
+        .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
+        .contextMenu { ItemMenu(store: store, item: item) }
+        .help(item.fileGone ? "文件已不在原位置，可右键从列表移除" : "双击打开")
+    }
+
 }
 
 private struct DoneCard: View {
@@ -777,7 +841,6 @@ private struct DoneCard: View {
                         .strokeBorder(Theme.tint,
                                       lineWidth: store.selectedID == item.id ? 3 : (store.flashID == item.id ? 2 : 0))
                 }
-                .animation(.easeInOut(duration: 0.45), value: store.flashID == item.id)
             Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1).truncationMode(.middle).padding(.top, 8).help(item.rawTitle)
             HStack(spacing: 10) {
                 if item.fileGone {
@@ -801,6 +864,7 @@ private struct DoneCard: View {
 private struct CategoryPage: View {
     @ObservedObject var store: DownloadStore
     let category: Category
+    @AppStorage("completedRowLayout") private var rowLayout = true
     var body: some View {
         let all = store.items(in: category)
         let active = all.filter(\.isActive)
@@ -809,9 +873,9 @@ private struct CategoryPage: View {
                 Text("进行中").font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
                 ForEach(active) { TaskRow(store: store, item: $0) }
                 Spacer().frame(height: 20)
-                DonePage(store: store, items: all.filter { !$0.isActive }, subtitle: "已完成")
+                DonePage(store: store, items: all.filter { !$0.isActive }, subtitle: "已完成", rowLayout: rowLayout)
             } else {
-                DonePage(store: store, items: all).padding(.top, 8)
+                DonePage(store: store, items: all, rowLayout: rowLayout).padding(.top, 8)
             }
         }
     }
@@ -886,6 +950,8 @@ private struct NewDownloadSheet: View {
 private struct TrashPage: View {
     @ObservedObject var store: DownloadStore
     @State private var confirmClear = false
+    @State private var selectedID: String?
+    @AppStorage("completedRowLayout") private var rowLayout = true
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -912,8 +978,14 @@ private struct TrashPage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 80)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.removedRecords) { r in TrashRow(store: store, r: r) }
+                    if rowLayout {
+                        LazyVStack(spacing: 0) {
+                            ForEach(store.removedRecords) { r in TrashRow(store: store, r: r, selectedID: $selectedID) }
+                        }
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18)], spacing: 18) {
+                            ForEach(store.removedRecords) { r in TrashCard(store: store, r: r, selectedID: $selectedID) }
+                        }
                     }
                 }
             }
@@ -924,6 +996,8 @@ private struct TrashPage: View {
 private struct TrashRow: View {
     @ObservedObject var store: DownloadStore
     let r: DownloadStore.RemovedRecord
+    @Binding var selectedID: String?
+    @State private var hovering = false
     var body: some View {
         let exists = r.path.map { FileManager.default.fileExists(atPath: $0) } ?? false
         HStack(spacing: 14) {
@@ -947,13 +1021,49 @@ private struct TrashRow: View {
                 CircleIconButton(symbol: "xmark", help: "从回收站删除这条记录") { store.deleteRecord(r) }
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tint.opacity(selectedID == r.id ? 0.12 : (hovering ? 0.04 : 0))))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { selectedID = r.id }
         .contextMenu {
             if !r.link.isEmpty { Button("重新下载") { store.redownload(r) } }
             if exists, let p = r.path { Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
             Divider()
             Button("从回收站删除") { store.deleteRecord(r) }
         }
-        .padding(.vertical, 12)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5) }
+    }
+}
+
+private struct TrashCard: View {
+    @ObservedObject var store: DownloadStore
+    let r: DownloadStore.RemovedRecord
+    @Binding var selectedID: String?
+    @State private var hovering = false
+    var body: some View {
+        let exists = r.path.map { FileManager.default.fileExists(atPath: $0) } ?? false
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "doc.fill").font(.system(size: 26)).foregroundStyle(Theme.sub)
+                .frame(maxWidth: .infinity, minHeight: 88)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.faint))
+            Text(r.title).font(.system(size: 14, weight: .medium)).lineLimit(2).help(r.title)
+            Text(r.origin + (r.size > 0 ? " · " + r.size.bytesText : ""))
+                .font(.system(size: 12)).foregroundStyle(Theme.sub).lineLimit(1)
+            Text(r.filesTrashed ? "文件已移到废纸篓" : exists ? "文件还在原位置" : "文件已不在")
+                .font(.system(size: 12)).foregroundStyle(Theme.sub).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tint.opacity(selectedID == r.id ? 0.12 : (hovering ? 0.04 : 0))))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { selectedID = r.id }
+        .contextMenu {
+            if !r.link.isEmpty { Button("重新下载") { store.redownload(r) } }
+            if exists, let p = r.path { Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) } }
+            Divider()
+            Button("从回收站删除") { store.deleteRecord(r) }
+        }
     }
 }

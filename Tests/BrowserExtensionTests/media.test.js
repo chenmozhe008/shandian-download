@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const code = fs.readFileSync('browser-extension/background.js', 'utf8');
+const fragment = code.slice(code.indexOf('function collectPageMedia()'), code.indexOf('// 刷新标签页并等它加载完'));
+const track = { src: 'https://cdn.example/sub.vtt', label: '中文', srclang: 'zh' };
+const video = { tagName: 'VIDEO', videoWidth: 1280, videoHeight: 720, currentSrc: 'https://cdn.example/video.mp4?sig=1', src: '', querySelectorAll: selector => selector === 'source' ? [{ src: 'https://cdn.example/list.m3u8' }, { src: 'blob:https://example/123' }] : [track] };
+const context = { URL, location: { href: 'https://example.com/page' }, document: { title: '测试', querySelectorAll: () => [video] }, performance: { getEntriesByType: () => [{name:'https://cdn.example/live/master.m3u8?token=test'}, {name:'https://cdn.example/live/stream.mpd'}] }, chrome: { scripting: { executeScript: async () => [{ result: context.collectPageMedia() }, { result: context.collectPageMedia() }] } } };
+vm.createContext(context);
+vm.runInContext(fragment, context);
+(async () => {
+  const found = await context.scanPageMedia(1);
+  assert.equal(found.length, 5);
+  assert.equal(found[0].kind, '视频');
+  assert.equal(found[0].ext, 'mp4');
+  const subtitle = found.find(x => x.kind === '字幕');
+  assert.equal(subtitle.ext, 'vtt');
+  assert.equal(subtitle.referrer, 'https://example.com/page');
+  assert.ok(found.some(x => x.ext === 'm3u8'));
+  assert.ok(found.some(x => x.ext === 'mpd'));
+  assert.ok(found.every(x => !x.url.startsWith('blob:')));
+  console.log('媒体扫描测试通过：动态清单、多帧去重、视频和字幕');
+})().catch(e => { console.error(e); process.exitCode = 1; });

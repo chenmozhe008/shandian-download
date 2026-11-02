@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.5"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.21"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -10,6 +10,16 @@ if [[ "$ARCH" == "$(uname -m)" ]]; then APP="$ROOT/dist/$APP_NAME.app"; else APP
 APP="${SHANDIAN_BUILD_APP_PATH:-$APP}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Apple Development}"
 security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_IDENTITY" || CODESIGN_IDENTITY="-"
+
+# 默认生成开发版；正式包必须明确指定，并从版本标签对应的干净源码构建。
+DEV_BUILD=1
+if [[ "${SHANDIAN_RELEASE_BUILD:-0}" == "1" ]]; then
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]] || ! git rev-parse -q --verify "refs/tags/v${APP_VERSION}^{commit}" >/dev/null || [[ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/v${APP_VERSION}^{commit}")" ]]; then
+    echo "正式打包需要干净的工作区，以及指向当前提交的 v${APP_VERSION} 标签。" >&2
+    exit 1
+  fi
+  DEV_BUILD=0
+fi
 
 TRIPLE="$ARCH-apple-macosx14.0"
 # 有外层沙箱（如编辑器内置终端）时 sandbox-exec 无法嵌套，可传 SWIFT_FLAGS=--disable-sandbox
@@ -28,12 +38,25 @@ if [[ ! -f "$ICNS" || "$ROOT/Resources/AppIcon-source.png" -nt "$ICNS" ]]; then
   iconutil -c icns "$SET" -o "$ICNS"; rm -rf "$SET"
 fi
 
+# 固定官方目录版：首次打包下载并校验，安装包自带，运行时仍可后台更新。
+YTDLP_VERSION="2026.10.26"
+YTDLP_SHA256="20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1"
+YTDLP_CACHE="$ROOT/tmp/yt-dlp-$YTDLP_VERSION"
+YTDLP_ZIP="$YTDLP_CACHE/yt-dlp_macos.zip"
+mkdir -p "$YTDLP_CACHE"
+if [[ ! -f "$YTDLP_ZIP" ]] || ! printf '%s  %s\n' "$YTDLP_SHA256" "$YTDLP_ZIP" | shasum -a 256 -c >/dev/null 2>&1; then
+  curl -fL --retry 2 -o "$YTDLP_ZIP" "https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION/yt-dlp_macos.zip"
+fi
+printf '%s  %s\n' "$YTDLP_SHA256" "$YTDLP_ZIP" | shasum -a 256 -c >/dev/null
+
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/CHANGELOG.md" "$APP/Contents/Resources/CHANGELOG.md"  # 「关于 → 更新记录」直接读它
 cp "$ROOT/Resources/done.wav" "$APP/Contents/Resources/done.wav"  # 下载完成提示音（script/make_done_sound.py 生成）
 cp -R "$ROOT/browser-extension" "$APP/Contents/Resources/BrowserExtension"  # 启动时拷到 Application Support（浏览器认固定路径）
+ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"
+test -x "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
 # 打过补丁的内核（script/build_engine.sh 编出来的）；App 启动时发现和本机装的不一样就换上
 ENGINE_BIN="/Volumes/Jack Feng/Applications/ShandianBuild/gopeed-shandian-$GOARCH"
 if [ -x "$ENGINE_BIN" ]; then cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"; else echo "提醒：没找到内核 $ENGINE_BIN，先跑 script/build_engine.sh" >&2; fi
@@ -45,10 +68,6 @@ xcrun actool "$ROOT/Resources/Assets.xcassets" --compile "$APP/Contents/Resource
   --minimum-deployment-target 14.0 --accent-color AccentColor --output-partial-info-plist "$ASSETS_PLIST" >/dev/null
 rm -f "$ASSETS_PLIST" "${ASSETS_PLIST%.plist}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-# 开发版标记：工作区还有没提交的改动（只看已跟踪文件，构建产物不算）就在 Info.plist 里写 1，
-# 「关于」的版本行和更新记录会标成开发版。发版前先提交，打出来的就是正式版本
-DEV_BUILD=0
-[[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]] && DEV_BUILD=1
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

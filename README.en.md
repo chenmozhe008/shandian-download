@@ -7,7 +7,7 @@
 **A native macOS download manager**
 
 Manage magnet links, torrents, ed2k, HTTP downloads and cloud-drive links,<br>
-plus videos from YouTube, Bilibili, Douyin, Xiaohongshu and more — in one window
+plus videos from YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels and more — in one window
 
 Browser extension · Stream while downloading · Resume after restart · Cloud offline download
 
@@ -35,10 +35,12 @@ The app is written in SwiftUI. Downloads are handled by a patched build of [Gope
 | Magnet links, torrent files, ed2k | Copy the link and press ⌘V, or drag a torrent file into the window |
 | HTTP / HTTPS files | Copy the link and press ⌘V; with the browser extension installed, downloads are taken over automatically |
 | YouTube, X, Bilibili, Weibo | Copy the video page URL and press ⌘V |
+| Douban movie trailers | Paste the trailer-page URL |
+| WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the extension |
 | Baidu Netdisk and other cloud drives | Obtain a direct link with the [LinkSwift](https://greasyfork.org/scripts/583582-linkswift) userscript (installed separately), then send it to Shandian |
 
-Videos are downloaded in the highest available quality, preferring H.264 video and AAC audio so they import directly into editors such as Final Cut Pro and CapCut. Douyin and Xiaohongshu videos are saved without the platform watermark. WeChat Channels is not supported.
+Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
 
 ## Performance
 

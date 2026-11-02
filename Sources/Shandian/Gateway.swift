@@ -152,8 +152,32 @@ final class Gateway: @unchecked Sendable {
             let ready = await MainActor.run { store?.engineState == .running }
             return (200, json(["ok": true, "version": BrowserExtension.bundledVersion, "ready": ready]))
         }
-        guard r.method == "POST", let obj = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
-              let url = obj["url"] as? String, LinkKind.of(url) != nil else { return (400, json(["ok": false])) }
+        guard r.method == "POST", let obj = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, json(["ok": false])) }
+        if r.path == "/extension/wechat" {
+            guard let share = obj["share"] as? String, share.utf8.count <= 8192, LinkKind.isWeChatChannelShare(share),
+                  let playable = obj["playable"] as? String, playable.utf8.count <= 16384,
+                  let url = URL(string: playable), WeChatChannels.trusted(url, exact: "channels.weixin.qq.com") else { return (400, json(["ok": false])) }
+            let title = String((obj["title"] as? String ?? "微信视频号").prefix(100))
+            await MainActor.run { store?.startWeChat(share: share, playable: playable, title: title); store?.section = .active }
+            return (200, json(["ok": true]))
+        }
+        if r.path == "/extension/batch" || r.path == "/extension/known" {
+            guard let links = obj["urls"] as? [String], !links.isEmpty, links.count <= 100,
+                  links.allSatisfy({ $0.utf8.count <= 8192 && LinkKind.of($0) != nil }) else { return (400, json(["ok": false])) }
+            guard await MainActor.run(body: { store?.engineState == .running }) else { return (503, json(["ok": false])) }
+            if r.path == "/extension/known" {
+                let known = await MainActor.run { store?.existingLinks(in: links) ?? [] }
+                return (200, json(["ok": true, "known": known]))
+            }
+            let referer = (obj["referrer"] as? String).flatMap { URL(string: $0) }
+            let headers: [String: String]
+            if let referer, ["http", "https"].contains(referer.scheme?.lowercased() ?? ""), referer.host != nil {
+                headers = ["Referer": referer.absoluteString]
+            } else { headers = [:] }
+            await MainActor.run { store?.request(links, headers: headers); store?.section = .active }
+            return (200, json(["ok": true]))
+        }
+        guard let url = obj["url"] as? String, LinkKind.of(url) != nil else { return (400, json(["ok": false])) }
         if r.path.hasPrefix("/extension/status") {
             // 扩展接管的下载交过来后会来问几次：失败了就由 App 移除、扩展交回浏览器重下
             let state = await MainActor.run { store?.handBackIfFailed(link: url) ?? "none" }
@@ -161,7 +185,8 @@ final class Gateway: @unchecked Sendable {
         }
         let headers = obj["headers"] as? [String: String] ?? [:]
         if let cookies = obj["cookies"] as? [[String: Any]] { SiteCookies.save(cookies, for: url) }   // 抖音、小红书的登录信息
-        await MainActor.run { store?.add(link: url, headers: headers, name: obj["name"] as? String); store?.section = .active }
+        let forceVideo = obj["mediaType"] as? String == "stream" && ["http", "https"].contains(URL(string: url)?.scheme?.lowercased() ?? "")
+        await MainActor.run { store?.add(link: url, headers: headers, name: obj["name"] as? String, forceVideo: forceVideo); store?.section = .active }
         return (200, json(["ok": true]))
     }
 

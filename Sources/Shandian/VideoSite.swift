@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// 视频网站下载选项（参考 Downie：默认直接下最高画质，选项记住后 ⌘V 也按它来）
 struct VideoOptions: Codable, Equatable {
@@ -51,13 +52,14 @@ struct VideoJob: Codable, Identifiable {
 enum YtDlp {
     static let dir = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp_macos")
     static let bundled = dir.appendingPathComponent("yt-dlp_macos")
+    static var packaged: URL? { Bundle.main.resourceURL?.appendingPathComponent("yt-dlp_macos/yt-dlp_macos") }
     static let legacy = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp")   // 0.14 及以前的单文件版
     static let downloadURL = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip")!
     static let latestAPI = URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!
 
     /// 优先用自带的；还没下好时退回旧的单文件版、brew 装的
     static var path: String? {
-        ([bundled.path, legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"]).first { FileManager.default.isExecutableFile(atPath: $0) }
+        ([bundled.path, packaged?.path, legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].compactMap { $0 }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// 启动时调用：没有就下载，超过 7 天查一次新版
@@ -120,16 +122,16 @@ final class VideoSiteRunner: @unchecked Sendable {
 
     static func siteName(_ url: String) -> String {
         let host = URL(string: url)?.host?.lowercased() ?? ""
-        let names: [(String, String)] = [("bilibili", "B 站"), ("b23.tv", "B 站"), ("youtu", "YouTube"), ("douyin", "抖音"),
+        let names: [(String, String)] = [("movie.douban.com", "豆瓣"), ("bilibili", "B 站"), ("b23.tv", "B 站"), ("youtu", "YouTube"), ("douyin", "抖音"),
                                          ("xiaohongshu", "小红书"), ("xhslink", "小红书"), ("kuaishou", "快手"), ("weibo", "微博"),
                                          ("ixigua", "西瓜视频"), ("vimeo", "Vimeo"), ("x.com", "X"), ("twitter", "X")]
         return names.first { host.contains($0.0) }?.1 ?? host
     }
 
     /// 启动下载；进度、标题、封面、成品路径通过 update 回调（在后台线程）
-    func start(_ job: VideoJob, into dir: URL, update: @escaping @Sendable (VideoJob) -> Void) {
+    func start(_ job: VideoJob, into dir: URL, headers: [String: String] = [:], update: @escaping @Sendable (VideoJob) -> Void) {
         guard let bin = YtDlp.path else {
-            var j = job; j.state = .failed; j.error = "未安装 yt-dlp"; update(j); return
+            var j = job; j.state = .failed; j.error = "视频下载组件不可用，请重新安装应用后重试"; update(j); return
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let p = Process()
@@ -152,6 +154,10 @@ final class VideoSiteRunner: @unchecked Sendable {
         ]
         p.arguments?.insert(contentsOf: (job.options ?? VideoOptions()).arguments + LocalProxy.ytdlpArguments(for: job.url)
                                      + SiteCookies.ytdlpArguments(for: job.url), at: 0)
+        p.arguments?.insert(contentsOf: Self.safeRequestArguments(headers), at: 0)
+        // Cookie 仅限目标主机的临时文件，避免出现在命令行或持久化任务中。
+        let temporaryCookies = Self.temporaryCookieFile(headers, for: job.url)
+        if let temporaryCookies { p.arguments?.insert(contentsOf: ["--cookies", temporaryCookies.path], at: 0) }
         // YouTube 需要 JS 运行环境解签名，没有时部分格式缺失（10-27 实测 44 → 52 个格式）；本机有 Node 就接上
         if let node = ["/opt/homebrew/bin/node", "/usr/local/bin/node"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             p.arguments?.insert(contentsOf: ["--js-runtimes", "node:" + node], at: 0)
@@ -176,15 +182,68 @@ final class VideoSiteRunner: @unchecked Sendable {
             }
         }
         p.terminationHandler = { [weak self] proc in
+            if let temporaryCookies { try? FileManager.default.removeItem(at: temporaryCookies) }
             out.fileHandleForReading.readabilityHandler = nil
             err.fileHandleForReading.readabilityHandler = nil
             update(state.finish(ok: proc.terminationStatus == 0))
             self?.lock.withLock { self?.processes[job.id] = nil }
         }
         do { try p.run() } catch {
+            if let temporaryCookies { try? FileManager.default.removeItem(at: temporaryCookies) }
             var j = job; j.state = .failed; j.error = error.localizedDescription; update(j); return
         }
         lock.withLock { processes[job.id] = p }
+    }
+
+    /// 仅转交浏览器标识及去掉参数的来源地址；Cookie 和授权头不写入进程参数或任务记录。
+    static func safeRequestArguments(_ headers: [String: String]) -> [String] {
+        var result: [String] = []
+        if let value = headers.first(where: { $0.key.lowercased() == "referer" })?.value,
+           !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+           var parts = URLComponents(string: value),
+           ["http", "https"].contains(parts.scheme?.lowercased() ?? ""), parts.host != nil {
+            parts.query = nil; parts.fragment = nil; parts.user = nil; parts.password = nil
+            if let referer = parts.url?.absoluteString { result += ["--referer", referer] }
+        }
+        if let agent = headers.first(where: { $0.key.lowercased() == "user-agent" })?.value,
+           !agent.isEmpty, agent.utf8.count <= 1024,
+           !agent.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+            result += ["--user-agent", agent]
+        }
+        return result
+    }
+
+    /// Netscape Cookie 文件严格限定为当前 URL 的主机；文件只在下载期间存在，权限为 0600。
+    static func temporaryCookieFile(_ headers: [String: String], for rawURL: String) -> URL? {
+        guard let raw = headers.first(where: { $0.key.lowercased() == "cookie" })?.value,
+              raw.utf8.count <= 65536, let url = URL(string: rawURL), let host = url.host,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              !host.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        let forbidden = CharacterSet.controlCharacters
+        let allowedName = CharacterSet(charactersIn: "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        let secure = url.scheme?.lowercased() == "https" ? "TRUE" : "FALSE"
+        var lines = ["# Netscape HTTP Cookie File"]
+        for pair in raw.split(separator: ";") {
+            let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            let value = parts[1].trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, name.unicodeScalars.allSatisfy({ allowedName.contains($0) }),
+                  !value.unicodeScalars.contains(where: { forbidden.contains($0) }) else { continue }
+            lines.append("\(host)\tFALSE\t/\t\(secure)\t0\t\(name)\t\(value)")
+        }
+        guard lines.count > 1 else { return nil }
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("shandian-cookies-\(UUID().uuidString).txt")
+        let fd = open(path.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try handle.write(contentsOf: Data((lines.joined(separator: "\n") + "\n").utf8))
+            try handle.close()
+            return path
+        } catch {
+            try? handle.close(); try? FileManager.default.removeItem(at: path); return nil
+        }
     }
 
     func cancel(_ id: UUID) { lock.withLock { processes[id] }?.terminate() }
@@ -241,6 +300,19 @@ private final class JobState: @unchecked Sendable {
         }
     }
 
+    static func readableError(_ error: String?) -> String {
+        guard let error else { return "下载失败" }
+        let lower = error.lowercased()
+        if lower.contains("drm") || lower.contains("widevine") || lower.contains("fairplay") {
+            return "此视频受数字版权保护，无法下载"
+        }
+        if lower.contains("http error 403") || lower.contains("http error 401") {
+            return "视频资源拒绝访问，可能需要登录或链接已过期；请返回网页重新侦测"
+        }
+        // yt-dlp 错误可能包含带签名的 URL；不要把它写入任务记录。
+        return error.replacingOccurrences(of: #"https?://[^\s]+"#, with: "[链接]", options: .regularExpression)
+    }
+
     func finish(ok: Bool) -> VideoJob {
         lock.withLock {
             job.speed = 0; job.stage = nil
@@ -252,7 +324,7 @@ private final class JobState: @unchecked Sendable {
                 job.error = (URL(string: job.url)?.host ?? "").hasSuffix("douyin.com")
                     ? "请在浏览器里打开这个抖音视频，点扩展里的「下载这个视频」"
                     : SiteCookies.site(of: job.url) != nil && SiteCookies.ytdlpArguments(for: job.url).isEmpty
-                    ? "需要在浏览器里登录后，右键「用闪电全能下载这个视频」" : (lastError ?? "下载失败")
+                    ? "需要在浏览器里登录后，右键「用闪电全能下载这个视频」" : Self.readableError(lastError)
             }
             if let path = job.filePath, let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 {
                 job.total = size; if ok { job.downloaded = size }

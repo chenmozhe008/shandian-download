@@ -37,7 +37,7 @@ index 7b27ae9..0c4c7c8 100644
  	gopkg.in/warnings.v0 v0.1.2 // indirect
  	lukechampine.com/blake3 v1.4.1 // indirect
 diff --git a/internal/protocol/bt/fetcher.go b/internal/protocol/bt/fetcher.go
-index d9202dd..5aabc95 100644
+index d9202dd..038df87 100644
 --- a/internal/protocol/bt/fetcher.go
 +++ b/internal/protocol/bt/fetcher.go
 @@ -15,9 +15,11 @@ import (
@@ -52,7 +52,7 @@ index d9202dd..5aabc95 100644
  	"github.com/anacrolix/torrent"
  	"github.com/anacrolix/torrent/metainfo"
  	"github.com/anacrolix/torrent/storage"
-@@ -42,8 +44,11 @@ type Fetcher struct {
+@@ -42,8 +44,14 @@ type Fetcher struct {
  	torrentReady    atomic.Bool
  	torrentUpload   atomic.Bool
  	torrentDropCtx  context.Context
@@ -61,10 +61,13 @@ index d9202dd..5aabc95 100644
  	uploadDoneCh    chan any
 +	// 闪电下载：App 要求先把磁盘上已有的数据校验一遍（从迅雷收回），Start 时先校验再放行下载
 +	verifyExisting bool
++	verifyState    atomic.Int32 // 0: idle, 1: checking, 2: failed, 3: complete
++	wantDownload   atomic.Bool
++	downloadLock   sync.Mutex
  }
  
  func (f *Fetcher) Setup(ctl *controller.Controller) {
-@@ -77,6 +82,7 @@ func (f *Fetcher) initClient() (err error) {
+@@ -77,6 +85,7 @@ func (f *Fetcher) initClient() (err error) {
  	cfg.ExtendedHandshakeClientVersion = fmt.Sprintf("Gopeed %s", base.Version)
  	cfg.ListenPort = f.config.ListenPort
  	cfg.HTTPProxy = f.ctl.GetProxy(f.meta.Req.Proxy)
@@ -72,24 +75,121 @@ index d9202dd..5aabc95 100644
  	dnsResolver := &DnsCacheResolver{RefreshTimeout: 5 * time.Minute}
  	cfg.TrackerDialContext = dnsResolver.DialContext
  	client, err = torrent.NewClient(cfg)
-@@ -130,10 +136,95 @@ func (f *Fetcher) Start() (err error) {
- 			file.Download()
+@@ -105,6 +114,7 @@ func (f *Fetcher) Resolve(req *base.Request, opts *base.Options) error {
+ }
+ 
+ func (f *Fetcher) Start() (err error) {
++	f.wantDownload.Store(true)
+ 	if !f.torrentReady.Load() {
+ 		if err = f.addTorrent(f.meta.Req, false); err != nil {
+ 			return
+@@ -122,20 +132,184 @@ func (f *Fetcher) Start() (err error) {
  		}
+ 		f.data.Progress = make(fetcher.Progress, len(f.meta.Opts.SelectFiles))
  	}
-+	// 闪电下载：目录里已经有下好的数据（从迅雷收回、或换回本地接着下）时，anacrolix 只信自己记的
-+	// 块完成记录、不读磁盘，会把整份重新下一遍。先校验一遍再放行下载，磁盘上已经下好的块直接算完成
+-	if len(f.meta.Opts.SelectFiles) == len(files) {
+-		f.torrent.DownloadAll()
+-	} else {
+-		for _, selectIndex := range f.meta.Opts.SelectFiles {
+-			file := files[selectIndex]
+-			file.Download()
+-		}
++	// Keep piece priorities unset while the initial disk check is running.
++	// The torrent library otherwise builds an inconsistent request order while
++	// pieces are being rehashed and downloads are disallowed.
 +	if f.verifyExisting {
 +		f.verifyExisting = false
-+		go func() {
-+			_ = f.torrent.VerifyDataContext(f.torrentDropCtx)
-+			f.torrent.AllowDataDownload()
-+		}()
++		f.beginVerification()
 +		return
 +	}
- 	f.torrent.AllowDataDownload()
++	if f.verifyState.Load() == 1 {
++		return
+ 	}
+-	f.torrent.AllowDataDownload()
++	f.markSelectedForDownload()
++	f.downloadLock.Lock()
++	if f.wantDownload.Load() && f.verifyState.Load() != 1 && f.verifyState.Load() != 2 {
++		f.torrent.AllowDataDownload()
++	}
++	f.downloadLock.Unlock()
  	return
  }
  
+-func (f *Fetcher) Pause() (err error) {
++func (f *Fetcher) markSelectedForDownload() {
++	files := f.torrent.Files()
++	for _, index := range f.meta.Opts.SelectFiles {
++		files[index].Download()
++	}
++}
++
++// VerificationState exposes actual completion of the asynchronous disk check.
++func (f *Fetcher) VerificationState() string {
++	switch f.verifyState.Load() {
++	case 1:
++		return "checking"
++	case 2:
++		return "failed"
++	case 3:
++		return "complete"
++	default:
++		return ""
++	}
++}
++
++func (f *Fetcher) beginVerification() {
++	f.downloadLock.Lock()
++	defer f.downloadLock.Unlock()
++	if !f.verifyState.CompareAndSwap(0, 1) && !f.verifyState.CompareAndSwap(2, 1) && !f.verifyState.CompareAndSwap(3, 1) {
++		return
++	}
++	for _, file := range f.torrent.Files() {
++		file.Cancel()
++	}
+ 	f.torrent.DisallowDataDownload()
++	go func() {
++		if err := f.verifySelectedPieces(); err != nil {
++			f.verifyState.Store(2)
++			return
++		}
++		f.downloadLock.Lock()
++		f.verifyState.Store(3)
++		if f.wantDownload.Load() {
++			f.markSelectedForDownload()
++			f.torrent.AllowDataDownload()
++		}
++		f.downloadLock.Unlock()
++	}()
++}
++
++// verifySelectedPieces checks each piece intersecting the selected files exactly once,
++// including shared boundary pieces. Unselected files do not need a full scan.
++func (f *Fetcher) verifySelectedPieces() error {
++	files := f.torrent.Files()
++	selected := f.meta.Opts.SelectFiles
++	if len(selected) == 0 {
++		return f.torrent.VerifyDataContext(f.torrentDropCtx)
++	}
++	pieces := make(map[int]struct{})
++	for _, index := range selected {
++		if index < 0 || index >= len(files) {
++			return fmt.Errorf("invalid selected file index %d", index)
++		}
++		for piece := files[index].BeginPieceIndex(); piece < files[index].EndPieceIndex(); piece++ {
++			pieces[piece] = struct{}{}
++		}
++	}
++	for piece := 0; piece < f.torrent.NumPieces(); piece++ {
++		if _, ok := pieces[piece]; !ok {
++			continue
++		}
++		if err := f.torrent.Piece(piece).VerifyDataContext(f.torrentDropCtx); err != nil {
++			return fmt.Errorf("verifying piece %d: %w", piece, err)
++		}
++	}
++	return nil
++}
++
 +// Stream 闪电下载：边下边播。按播放顺序优先下最大的那个文件（从头往后，外加文件末尾 8 MB，
 +// mp4 的索引常在末尾），靠 anacrolix 的 Reader 预读驱动下载顺序；读到的数据丢弃，文件照常写盘
 +func (f *Fetcher) Stream() error {
@@ -154,9 +254,9 @@ index d9202dd..5aabc95 100644
 +	r   torrent.Reader
 +}
 +
-+func (c *ctxReadSeeker) Read(p []byte) (int, error)                 { return c.r.ReadContext(c.ctx, p) }
++func (c *ctxReadSeeker) Read(p []byte) (int, error)                { return c.r.ReadContext(c.ctx, p) }
 +func (c *ctxReadSeeker) Seek(off int64, whence int) (int64, error) { return c.r.Seek(off, whence) }
-+func (c *ctxReadSeeker) Close() error                               { return c.r.Close() }
++func (c *ctxReadSeeker) Close() error                              { return c.r.Close() }
 +
 +type ctxReader struct {
 +	ctx context.Context
@@ -165,22 +265,39 @@ index d9202dd..5aabc95 100644
 +
 +func (c *ctxReader) Read(p []byte) (int, error) { return c.r.ReadContext(c.ctx, p) }
 +
- func (f *Fetcher) Pause() (err error) {
- 	f.torrent.DisallowDataDownload()
++func (f *Fetcher) Pause() (err error) {
++	f.downloadLock.Lock()
++	defer f.downloadLock.Unlock()
++	f.wantDownload.Store(false)
++	// Verification already blocked downloads; changing torrent priorities concurrently
++	// with piece hashing can violate the upstream request-order invariant.
++	if f.verifyState.Load() != 1 {
++		f.torrent.DisallowDataDownload()
++	}
  	return
-@@ -282,6 +373,11 @@ func (f *Fetcher) Patch(req *base.Request, opts *base.Options) error {
+ }
+ 
+@@ -282,6 +456,11 @@ func (f *Fetcher) Patch(req *base.Request, opts *base.Options) error {
  		f.data.Progress = make(fetcher.Progress, len(validSelectFiles))
  	}
  
 +	// 闪电下载：App 要求重新校验磁盘上已有的数据（换内核后进度丢了、或从迅雷收回后想重新对一遍）
 +	if wantedVerify(opts) && f.torrentReady.Load() {
-+		go func() { _ = f.torrent.VerifyDataContext(f.torrentDropCtx) }()
++		f.beginVerification()
 +	}
 +
  	return nil
  }
  
-@@ -451,7 +547,19 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+@@ -446,12 +625,27 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 			return
+ 		}
+ 	}
++	// Metadata may be resolved before the task starts; don't start data transfer
++	// until Start has applied the requested disk verification.
++	spec.DisallowDataDownload = true
+ 	spec.Storage = storage.NewFileOpts(storage.NewFileClientOpts{
+ 		ClientBaseDir: cfg.DataDir,
  		TorrentDirMaker: func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
  			return f.meta.Opts.Path
  		},
@@ -200,7 +317,7 @@ index d9202dd..5aabc95 100644
  	f.torrent, _, err = client.AddTorrentSpec(spec)
  	if err != nil {
  		return
-@@ -484,11 +592,25 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+@@ -484,11 +678,25 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
  	}
  	<-f.torrent.GotInfo()
  	f.torrentReady.Store(true)
@@ -647,7 +764,7 @@ index 382a5b7..4f3f041 100644
  	d.triggerOnError(task, err)
  	if task.Status == base.DownloadStatusError {
 diff --git a/pkg/download/model.go b/pkg/download/model.go
-index bbb57ad..ba7782c 100644
+index bbb57ad..c351411 100644
 --- a/pkg/download/model.go
 +++ b/pkg/download/model.go
 @@ -30,6 +30,8 @@ type Task struct {
@@ -659,6 +776,25 @@ index bbb57ad..ba7782c 100644
  
  	fetcherManager fetcher.FetcherManager
  	fetcher        fetcher.Fetcher
+@@ -87,10 +89,17 @@ func (t *Task) MarshalJSON() ([]byte, error) {
+ 	type rawTaskType Task
+ 	jsonTask := struct {
+ 		rawTaskType
+-		Name string `json:"name"`
++		Name         string `json:"name"`
++		Verification string `json:"shandianVerification,omitempty"`
+ 	}{
+ 		rawTaskType(*t),
+ 		t.Name(),
++		func() string {
++			if f, ok := t.fetcher.(interface{ VerificationState() string }); ok {
++				return f.VerificationState()
++			}
++			return ""
++		}(),
+ 	}
+ 	return json.Marshal(jsonTask)
+ }
 diff --git a/pkg/rest/api.go b/pkg/rest/api.go
 index 6c72bfb..9e6a016 100644
 --- a/pkg/rest/api.go

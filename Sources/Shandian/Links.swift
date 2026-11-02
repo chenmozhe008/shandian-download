@@ -7,6 +7,14 @@ enum LinkKind: Equatable {
     static let videoHosts = ["bilibili.com", "b23.tv", "youtube.com", "youtu.be", "douyin.com", "xiaohongshu.com",
                              "xhslink.com", "kuaishou.com", "weibo.com", "ixigua.com", "vimeo.com", "x.com", "twitter.com", "xinpianchang.com"]
 
+    static func isWeChatChannelShare(_ raw: String) -> Bool {
+        guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.lowercased() == "weixin.qq.com" else { return false }
+        let path = url.path.split(separator: "/")
+        return path.count == 2 && path[0].lowercased() == "sph" && !path[1].isEmpty
+    }
+
     static func of(_ raw: String) -> LinkKind? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = s.lowercased()
@@ -15,6 +23,12 @@ enum LinkKind: Equatable {
         if lower.hasSuffix(".torrent"), FileManager.default.fileExists(atPath: s) { return .torrentFile }
         guard let url = URL(string: s), let scheme = url.scheme?.lowercased(), ["http", "https", "ftp"].contains(scheme),
               let host = url.host?.lowercased() else { return nil }
+        // HLS / DASH 清单需要视频下载器解析分片，不能当成普通文件下载。
+        if ["http", "https"].contains(scheme), ["m3u8", "mpd"].contains(url.pathExtension.lowercased()) { return .videoSite }
+        // 豆瓣电影页与预告片页共用域名，只有具体预告片交给视频下载器。
+        let path = url.path.split(separator: "/")
+        if host == "movie.douban.com", path.count == 2, path[0].lowercased() == "trailer",
+           !path[1].isEmpty, path[1].allSatisfy({ $0.isASCII && $0.isNumber }) { return .videoSite }
         if videoHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) { return .videoSite }
         if url.path.lowercased().hasSuffix(".torrent") { return .torrentFile }  // 网页上的种子链接，按种子处理（存影片目录、只选正片）
         return .http
@@ -35,6 +49,7 @@ enum LinkKind: Equatable {
 
     /// 复制后值得弹浮窗的链接：磁力、ed2k、种子、视频网站、网盘直链，以及以常见文件扩展名结尾的直链。普通网页地址不弹
     static func worthPopup(_ link: String) -> Bool {
+        if isWeChatChannelShare(link) { return true }
         guard let kind = of(link) else { return false }
         if kind != .http { return true }
         guard let url = URL(string: link) else { return false }
@@ -149,7 +164,8 @@ extension Int64 {
 }
 
 func remainingText(_ seconds: Double) -> String {
-    guard seconds.isFinite, seconds > 0 else { return "" }
+    // 极慢或无稳定速度时不显示荒谬的剩余时间，也避免浮点转整数溢出。
+    guard seconds.isFinite, seconds > 0, seconds < 7 * 24 * 3600 else { return "" }
     let s = Int(seconds)
     if s < 60 { return "剩余 \(s) 秒" }
     if s < 3600 { return "剩余 \(s / 60) 分钟" }
