@@ -841,6 +841,7 @@ private struct DoneCard: View {
                         .strokeBorder(Theme.tint,
                                       lineWidth: store.selectedID == item.id ? 3 : (store.flashID == item.id ? 2 : 0))
                 }
+                .animation(.easeInOut(duration: 0.45), value: store.flashID == item.id)
             Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1).truncationMode(.middle).padding(.top, 8).help(item.rawTitle)
             HStack(spacing: 10) {
                 if item.fileGone {
