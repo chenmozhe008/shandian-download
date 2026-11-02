@@ -149,7 +149,8 @@ extension Int64 {
 }
 
 func remainingText(_ seconds: Double) -> String {
-    guard seconds.isFinite, seconds > 0 else { return "" }
+    // 极慢或无稳定速度时不显示荒谬的剩余时间，也避免浮点转整数溢出。
+    guard seconds.isFinite, seconds > 0, seconds < 7 * 24 * 3600 else { return "" }
     let s = Int(seconds)
     if s < 60 { return "剩余 \(s) 秒" }
     if s < 3600 { return "剩余 \(s / 60) 分钟" }

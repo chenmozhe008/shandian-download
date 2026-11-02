@@ -28,12 +28,25 @@ if [[ ! -f "$ICNS" || "$ROOT/Resources/AppIcon-source.png" -nt "$ICNS" ]]; then
   iconutil -c icns "$SET" -o "$ICNS"; rm -rf "$SET"
 fi
 
+# 固定官方目录版：首次打包下载并校验，安装包自带，运行时仍可后台更新。
+YTDLP_VERSION="2026.10.26"
+YTDLP_SHA256="20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1"
+YTDLP_CACHE="$ROOT/tmp/yt-dlp-$YTDLP_VERSION"
+YTDLP_ZIP="$YTDLP_CACHE/yt-dlp_macos.zip"
+mkdir -p "$YTDLP_CACHE"
+if [[ ! -f "$YTDLP_ZIP" ]] || ! printf '%s  %s\n' "$YTDLP_SHA256" "$YTDLP_ZIP" | shasum -a 256 -c >/dev/null 2>&1; then
+  curl -fL --retry 2 -o "$YTDLP_ZIP" "https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION/yt-dlp_macos.zip"
+fi
+printf '%s  %s\n' "$YTDLP_SHA256" "$YTDLP_ZIP" | shasum -a 256 -c >/dev/null
+
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/CHANGELOG.md" "$APP/Contents/Resources/CHANGELOG.md"  # 「关于 → 更新记录」直接读它
 cp "$ROOT/Resources/done.wav" "$APP/Contents/Resources/done.wav"  # 下载完成提示音（script/make_done_sound.py 生成）
 cp -R "$ROOT/browser-extension" "$APP/Contents/Resources/BrowserExtension"  # 启动时拷到 Application Support（浏览器认固定路径）
+ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"
+test -x "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
 # 打过补丁的内核（script/build_engine.sh 编出来的）；App 启动时发现和本机装的不一样就换上
 ENGINE_BIN="/Volumes/Jack Feng/Applications/ShandianBuild/gopeed-shandian-$GOARCH"
 if [ -x "$ENGINE_BIN" ]; then cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"; else echo "提醒：没找到内核 $ENGINE_BIN，先跑 script/build_engine.sh" >&2; fi

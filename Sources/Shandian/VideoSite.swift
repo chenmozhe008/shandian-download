@@ -51,13 +51,14 @@ struct VideoJob: Codable, Identifiable {
 enum YtDlp {
     static let dir = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp_macos")
     static let bundled = dir.appendingPathComponent("yt-dlp_macos")
+    static var packaged: URL? { Bundle.main.resourceURL?.appendingPathComponent("yt-dlp_macos/yt-dlp_macos") }
     static let legacy = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp")   // 0.14 及以前的单文件版
     static let downloadURL = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip")!
     static let latestAPI = URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!
 
     /// 优先用自带的；还没下好时退回旧的单文件版、brew 装的
     static var path: String? {
-        ([bundled.path, legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"]).first { FileManager.default.isExecutableFile(atPath: $0) }
+        ([bundled.path, packaged?.path, legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].compactMap { $0 }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// 启动时调用：没有就下载，超过 7 天查一次新版
@@ -129,7 +130,7 @@ final class VideoSiteRunner: @unchecked Sendable {
     /// 启动下载；进度、标题、封面、成品路径通过 update 回调（在后台线程）
     func start(_ job: VideoJob, into dir: URL, update: @escaping @Sendable (VideoJob) -> Void) {
         guard let bin = YtDlp.path else {
-            var j = job; j.state = .failed; j.error = "未安装 yt-dlp"; update(j); return
+            var j = job; j.state = .failed; j.error = "视频下载组件不可用，请重新安装应用后重试"; update(j); return
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let p = Process()

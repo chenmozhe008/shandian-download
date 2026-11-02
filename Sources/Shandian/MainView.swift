@@ -11,7 +11,7 @@ struct MainView: View {
             Sidebar(store: store)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 224, max: 260)
         } detail: {
-            Content(store: store)
+            DetailPane(store: store)
                 .background {
                     // 左上角一点琥珀暖光（v3 定稿的辨识点，换成原生分栏后补回）
                     ZStack {
@@ -163,7 +163,7 @@ private struct Sidebar: View {
 
 // MARK: - 右侧内容
 
-private struct Content: View {
+private struct DetailPane: View {
     @ObservedObject var store: DownloadStore
 
     var body: some View {
@@ -181,7 +181,12 @@ private struct Content: View {
         .onKeyPress(keys: [.upArrow, .downArrow, .space, .return, .delete, .deleteForward]) { press in
             store.handleKey(press.key) ? .handled : .ignored
         }
-        .onChange(of: store.section) { store.selectedID = nil }
+        .onChange(of: store.section) {
+            // 切页时清掉选中；但重复添加会主动切页并选中那条，别把这时的选中也清掉
+            if let id = store.selectedID, !store.visibleItems.contains(where: { $0.id == id }) {
+                store.selectedID = nil
+            }
+        }
     }
 }
 
@@ -244,35 +249,52 @@ private struct ToolbarItems: ToolbarContent {
     }
 }
 
-/// 剪贴板发现链接、重复提醒、失败原因：一行，可关闭
+/// 剪贴板发现链接、重复提醒、失败原因：一行，可关闭。
+/// 提示要「看得见」：字号、行高、底色都比正文重一点，带图标和按钮（11-01 用户反馈太小、一闪就没看到）
 private struct Banners: View {
     @ObservedObject var store: DownloadStore
     var body: some View {
         VStack(spacing: 8) {
             if let links = store.clipboardLinks {
-                bar(icon: "doc.on.clipboard", text: links.count > 1 ? "剪贴板中有 \(links.count) 个链接" : "剪贴板中有链接：" + DownloadStore.displayName(links[0])) {
+                bar(icon: "doc.on.clipboard", text: links.count > 1 ? "剪贴板中有 \(links.count) 个链接" : "剪贴板中有链接：" + DownloadStore.displayName(links[0]), tint: Theme.tint) {
                     Button("下载") { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
                     Button("忽略") { store.clipboardLinks = nil }.buttonStyle(.plain).foregroundStyle(Theme.sub).font(.system(size: 12))
                 }
             }
             if let n = store.notice {
-                bar(icon: "info.circle", text: n) {
-                    Button { store.notice = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
-                        .buttonStyle(.plain).foregroundStyle(Theme.sub)
+                bar(icon: DownloadStore.noticeNeedsAttention(n) ? "exclamationmark.circle.fill" : "info.circle.fill", text: n,
+                    tint: DownloadStore.noticeNeedsAttention(n) ? Theme.failed : Theme.tint) {
+                    if let action = store.noticeAction, action.forText == n {
+                        Button(action.title) { action.run() }
+                            .buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
+                    }
+                    Button {
+                        store.notice = nil; store.noticeAction = nil
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Theme.sub)
                 }
             }
         }
         .padding(.bottom, store.clipboardLinks == nil && store.notice == nil ? 0 : 10)
     }
-    private func bar<A: View>(icon: String, text: String, @ViewBuilder actions: () -> A) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).foregroundStyle(Theme.tint)
-            Text(text).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
-            Spacer()
+
+    private func bar<A: View>(icon: String, text: String, tint: Color, @ViewBuilder actions: () -> A) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(tint)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(tint.opacity(0.16)))
+            Text(text).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.text)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true).help(text)
+            Spacer(minLength: 8)
             actions()
         }
-        .padding(.horizontal, 14).frame(height: 38)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.faint))
+        .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 48)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 
@@ -289,13 +311,44 @@ private struct ActivePage: View {
             } else {
                 SpeedHero(store: store).frame(height: 156).padding(.top, 8).padding(.bottom, 20)
                 Text(items.allSatisfy(\.isFailed) ? "未完成" : "进行中").font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(items) { TaskRow(store: store, item: $0) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(items) { TaskRow(store: store, item: $0).id($0.id) }
+                        }
                     }
+                    .scrollIndicators(.automatic)
+                    .modifier(ScrollToTask(store: store, ids: items.map(\.id), proxy: proxy))
                 }
-                .scrollIndicators(.automatic)
             }
+        }
+    }
+}
+
+/// 列表滚到指定任务：重复添加链接时把已有那条送到眼前，而不是只弹一条看不着的提示
+private struct ScrollToTask: ViewModifier {
+    @ObservedObject var store: DownloadStore
+    let ids: [String]
+    let proxy: ScrollViewProxy
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: store.scrollTarget) { scroll() }
+            .onChange(of: store.section) { scroll() }
+            .task {
+                // 刚切页时列表还没排好，等一下再滚
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                scroll()
+            }
+    }
+
+    private func scroll() {
+        guard let id = store.scrollTarget, ids.contains(id) else { return }
+        withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(id, anchor: .center) }
+        // 滚到位就清掉目标：不然列表每次重画都可能再被拉回这一行，用户手动滚走也拉回来
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if store.scrollTarget == id { store.scrollTarget = nil }
         }
     }
 }
@@ -315,7 +368,7 @@ private struct SpeedHero: View {
                 .opacity(store.speedHistory.contains { $0 > 0 } ? 1 : 0.0)
                 .clipShape(shape)
             VStack(alignment: .leading, spacing: 0) {
-                Text("当前速度").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.sub)
+                Text("本机下载速度").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.sub)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(parts.first.map(String.init) ?? "0").font(.system(size: 52, weight: .bold, design: .rounded)).monospacedDigit()
                         .contentTransition(.numericText())
@@ -453,7 +506,8 @@ struct TaskRow: View {
                 Text(item.title).font(.system(size: 15, weight: .medium)).lineLimit(1).truncationMode(.middle).help(item.rawTitle)
                 HStack(spacing: 10) {
                     if case .thunder = item.source {
-                        ThunderTag(active: item.isActive, downloaded: item.downloaded, createdAt: item.createdAt)
+                        ThunderTag(active: item.isActive, downloaded: item.downloaded,
+                                   createdAt: item.createdAt, located: item.thunderLocated)
                     } else { Text(item.origin) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
@@ -503,7 +557,16 @@ struct TaskRow: View {
             .opacity(hover.on || selected ? 1 : 0)
         }
         .padding(.vertical, 10).padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(selected ? Theme.tint.opacity(0.13) : .clear))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(store.flashID == item.id ? Theme.tint.opacity(0.22) : (selected ? Theme.tint.opacity(0.13) : .clear)))
+        .overlay {
+            // 刚被「定位」过来的那条：描一圈亮边，眼睛能跟上（重复添加链接时）
+            if store.flashID == item.id {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.tint.opacity(0.9), lineWidth: 2)
+            }
+        }
+        .animation(.easeInOut(duration: 0.45), value: store.flashID == item.id)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5).padding(.horizontal, 10).opacity(selected ? 0 : 1) }
         .contentShape(Rectangle())
         .onHover { hover.on = $0 }
@@ -518,6 +581,8 @@ struct TaskRow: View {
 
     private var sizeText: String {
         if item.total == 0 { return "" }
+        if item.thunderDiskEstimate { return "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
+        if item.fromThunder, item.isActive { return "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
         return item.downloaded >= item.total ? item.total.bytesText : "\(item.downloaded.bytesText) / \(item.total.bytesText)"
     }
     private var primary: String {
@@ -525,8 +590,8 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: "正在解析"
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
-        case .running where item.isThunder: item.avgSpeed > 0 ? item.avgSpeed.speedText : "等待中"
-        case .running: item.checking ? "正在校验" : item.avgSpeed.speedText
+        case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
+        case .running: item.verificationFailed ? "检查失败" : item.checking ? "正在检查" : item.avgSpeed.speedText
         case .paused: "已暂停"
         case .waiting: "排队中"
         case .resolving: "正在解析"
@@ -537,14 +602,17 @@ struct TaskRow: View {
     private var secondary: String {
         switch item.status {
         case .running where item.cloudProgress != nil: "云端下载中 \(item.cloudProgress ?? 0)%"
-        case .running where item.isThunder: item.avgSpeed > 0 ? "在迅雷里下载" : "等迅雷开始"
+        case .running where item.isThunder: item.avgSpeed > 0 ? "写入约 \(item.avgSpeed.speedText)" : "状态以迅雷为准"
         case .running where store.buffering.contains(item.id): "正在打开播放器"
-        case .running where item.checking: "核对已下载的部分"
+        case .running where item.verificationFailed: "请重新检查已下载文件"
+        case .running where item.checking: item.fromThunder ? "正在检查迅雷已下载的文件" : "正在检查已下载的文件"
+        case .running where item.waitingLastPiece: "漏了最后一小块，正在补"
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: "合并视频和音频"
         case .running where item.videoStage == .converting: "转换为 M4A"
         case .running where item.videoStage == .audio && item.avgSpeed == 0: "正在下载音频"
-        case .running: item.avgSpeed > 0 ? remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)) : "正在连接"
+        case .running:
+            item.avgSpeed >= 1024 ? (remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)).isEmpty ? "速度较慢" : remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed))) : "正在连接"
         case .resolving(let since):
             Date().timeIntervalSince(since) > 180 ? "资源较冷门，仍在尝试" : "正在寻找资源"
         case .paused, .waiting: item.total > 0 ? "\(Int(item.progress * 100))%" : ""
@@ -564,11 +632,14 @@ private extension Item {
     }
 }
 
-/// 交给迅雷的任务：标明「这条在迅雷里下」。只写一个「迅雷」看不出是在下、在等还是下完了（11-01 用户反馈）
+/// 交给迅雷的任务：标明「这条在迅雷里下」。只写一个「迅雷」看不出是在下、在等还是下完了（11-01 用户反馈）。
+/// 找不到迅雷的任务文件夹时量不到进度，就照实说「已交给迅雷」，不能写成「等待迅雷开始」
+/// （11-01 实测：迅雷 2 分钟下完 589 MB，这边却一直显示在等）
 private struct ThunderTag: View {
     let active: Bool
     let downloaded: Int64
     let createdAt: Date
+    var located = true
 
     var body: some View {
         HStack(spacing: 4) {
@@ -579,21 +650,27 @@ private struct ThunderTag: View {
         .padding(.horizontal, 7).frame(height: 18)
         .background(Capsule().fill(color.opacity(0.14)))
         .overlay(Capsule().strokeBorder(color.opacity(0.30), lineWidth: 0.8))
+        .help(help)
     }
 
     private var text: String {
         guard active else { return "迅雷下载完成" }
-        if downloaded > 0 { return "迅雷下载中" }
-        return Date().timeIntervalSince(createdAt) > 90 ? "等待迅雷开始" : "正在交给迅雷"
+        if downloaded > 0 { return "迅雷任务" }
+        return "请在迅雷查看"
     }
     private var symbol: String {
         guard active else { return "checkmark.circle.fill" }
-        return downloaded > 0 ? "bolt.fill" : "clock"
+        if downloaded > 0 { return "bolt.fill" }
+        return located ? "clock" : "arrow.up.right.circle"
     }
     /// 只在真的在迅雷里跑起来时用主题琥珀色，其余灰色，避免「在等」看着像「在跑」
     private var color: Color {
         guard active, downloaded > 0 else { return Theme.sub }
         return Theme.tint
+    }
+    private var help: String {
+        guard active, downloaded == 0 else { return text }
+        return "尚未读取到可靠进度，请到迅雷中查看任务状态"
     }
 }
 
@@ -645,9 +722,14 @@ private struct ItemMenu: View {
                 Button(item.status == .paused ? "继续" : "暂停") { store.togglePause(item) }
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
-            if item.isThunder, item.isActive {
+            if case .engine = item.source, item.isActive {
+                Button("重新检查已下载文件") { store.reverify(item) }
+                    .disabled(item.checking)
+            }
+            if item.isThunder {
                 if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
-                Button("收回到闪电全能下载") { store.reclaimFromThunder(item) }
+                Button("收回到闪电继续下载") { store.reclaimFromThunder(item) }
+                if item.thunderHasOriginal { Button("恢复交给迅雷前的下载") { store.restoreOriginalFromThunder(item) } }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
@@ -673,11 +755,14 @@ private struct DonePage: View {
                 Text("暂无").font(.system(size: 14)).foregroundStyle(Theme.sub)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 80)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18, alignment: .top)], spacing: 22) {
-                        ForEach(items) { DoneCard(store: store, item: $0) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18, alignment: .top)], spacing: 22) {
+                            ForEach(items) { DoneCard(store: store, item: $0).id($0.id) }
+                        }
+                        .padding(.bottom, 24)
                     }
-                    .padding(.bottom, 24)
+                    .modifier(ScrollToTask(store: store, ids: items.map(\.id), proxy: proxy))
                 }
             }
         }
@@ -694,8 +779,10 @@ private struct DoneCard: View {
                 .opacity(item.fileGone ? 0.45 : 1)
                 .overlay {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Theme.tint, lineWidth: store.selectedID == item.id ? 3 : 0)
+                        .strokeBorder(Theme.tint,
+                                      lineWidth: store.selectedID == item.id ? 3 : (store.flashID == item.id ? 2 : 0))
                 }
+                .animation(.easeInOut(duration: 0.45), value: store.flashID == item.id)
             Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1).truncationMode(.middle).padding(.top, 8).help(item.rawTitle)
             HStack(spacing: 10) {
                 if item.fileGone {

@@ -11,7 +11,8 @@
 - **内核**：Gopeed headless v1.9.3 **打了闪电全能下载补丁**（`engine/shandian-gopeed-v1.9.3.patch`，`script/build_engine.sh` 编译，产物打进 App、启动时换上），REST API `127.0.0.1:9999`，请求头 `X-Api-Token`；token 由 App 首次运行生成，存 `~/Library/Application Support/ShandianDownload/engine.json`（600 权限，不在仓库里），脚本也读这里
   - 内核程序和任务库在本机 `Application Support/ShandianDownload/engine/`（10-28 用户同意从移动硬盘挪来；硬盘上的旧副本 `/Volumes/Jack Feng/Applications/MacDownloader/` 没删，等用户定）
   - App 启动时没有就拉起；退出 App 只暂停任务、不关内核
-  - 补丁 9 项（块记录落盘免重校验、全局限速、边下边播、429/5xx 退避、每段≥20 MB、probe 只探测、失败原因字段等），逐条见 `docs/internals.md`；补丁测试 `internal/protocol/http/shandian_test.go`
+  - 补丁 10 项（块记录落盘免重校验、全局限速、边下边播、429/5xx 退避、每段≥20 MB、probe 只探测、失败原因字段、按需校验磁盘已有数据等），逐条见 `docs/internals.md`；补丁测试 `internal/protocol/http/shandian_test.go`
+  - **内核默认不看磁盘上已有的文件**（anacrolix 只信自己的块完成记录），所以「接手迅雷没下完的文件」「换内核后找回进度」都要显式让内核校验：创建任务 / PATCH 任务时带 `opts.extra.shandianVerifyExisting = true`（11-01 实测：不带时 4.2 GB 完整文件也会从 0 重下）
   - Go 工具链、Gopeed 源码、编译缓存都在移动硬盘 `Applications/ShandianBuild/`（不装全局）；**必须开 CGO**；`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链（本机命令行工具链接器和 SDK 对不上）
   - 推出移动硬盘时内核会被暂停→结束→2 秒后重启（`EngineHost.holdsFiles`），插回自动续
   - 只监听 127.0.0.1，不开 0.0.0.0
@@ -20,6 +21,8 @@
   - 固定 `--concurrent-fragments 4`、`-S res,vcodec:h264,acodec:aac`（不设会挑 AV1）；别设 `--http-chunk-size`。依据见 `docs/internals.md`
 - **网盘**：浏览器里的 LinkSwift 油猴脚本拿直链 → 交给内核。**只装 Greasy Fork 上 hmjz100 的版本**；GitHub `Mario82del/LinkSwift` 发安装包，疑似冒名，别碰
 - 客户端界面（P2）：原生 SwiftUI，`NavigationSplitView` 系统侧栏 + 系统工具栏/搜索框（10-27 用户嫌手搓侧栏和红绿灯对不齐，别再手工画侧栏）；侧栏顶部 App 图标+名字，技术约定沿用小清（`Coding Project/mac-cleanup-manager/CLAUDE.md`）：本机 SwiftUI 宏编译不过，状态放 `ObservableObject @Published`；文案像专业 Mac 软件
+  - 重复投同一个链接（已在下载 / 已下过）：**切到列表、滚到那条任务并高亮**，顶部提示带「定位任务」按钮停 15 秒；只弹一条小字、人还留在新建界面上是不行的（11-01 用户反馈）。实现集中在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
+  - 顶栏提示统一 9 秒（带按钮 15 秒）、48pt 高、带图标和描边；别退回一行小灰字
 
 ## 入口与本机端口
 
