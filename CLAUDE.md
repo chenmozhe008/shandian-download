@@ -35,6 +35,7 @@
 - 浏览器扩展：**用自带的**（`browser-extension/`，MV3，Chrome / Edge 通用；10-28 用户说别绑篡改猴）。打包进 App、启动时拷到 `Application Support/ShandianDownload/BrowserExtension`（浏览器记路径，别指向 dist）。用户在扩展页开开发者模式、拖文件夹进去装一次——浏览器不允许第三方静默装扩展，Chrome 137+ 也不认 `--load-extension`
   - 扩展 ID 由 manifest 的 `key` 固定，网关 `/extension/*` 只认这个 Origin；**改 key 要同步改 `Gateway.extensionOrigin`**
   - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接。完整规则见 `docs/internals.md`
+  - 商店版是另一套：`browser-extension-store/`，只有右键发送文件直链；网关只精确放行 `Gateway.swift` 里列出的商店 ID，**不许放宽到任意扩展**。上架状态和后台操作方法见 `docs/CHROME_STORE_PREPARATION.md`
   - **抖音别改回包 fetch/XHR**（会和安全 SDK 防篡改死循环、页面卡死），只包 `JSON.parse` / `Response.prototype.json`；**所有视频入口都走 `downloadVideoInTab`**。抖音、小红书已实测，快手和抖音信息流未实测，视频号不接
 - 退出 App：`pauseAll` 后内核留着不关，下载中的任务记进 `resumeOnLaunch`，下次打开续上（补丁后内核重启也不用校验）
 - 复制即弹（`ClipboardWatcher`）：App 不在前台时，复制磁力/ed2k/种子/网盘/视频站/常见文件链接 → 右上角浮窗；普通网页不弹
@@ -57,12 +58,13 @@
 - **发版 tag 必须是 `v<版本>`、附件名照现在的格式**，否则一键更新找不到包 / 比较不出版本
 - 验证：`open -g --env SHANDIAN_PRETEND_UPDATE=9.9.9 dist/闪电全能下载.app` 假装有新版；端到端用 `SHANDIAN_UPDATE_FEED=<file:// JSON>` + `SHANDIAN_AUTO_INSTALL=1`（跳过确认，只给测试）跑一份旧版本号的副本（10-29 跑通：替换、按芯片选包、旧版进废纸篓、重开）
 - **⚠️ 测试副本别用临时签名在本机跑**（10-29 踩坑）：系统把它当新 App，反复弹「想访问文件」框、点了也过不去，而且和正式版同时开会抢端口。要测就先退出正式版、副本用开发证书签名，测完立刻关掉、`lsregister -u` 注销、移到废纸篓
+- 手动把 GitHub 正式包装到本机时同理：先核对 SHA-256，再用 `codesign --force --sign "Apple Development" --identifier io.github.chenmozhe008.shandian --timestamp=none` 改回开发证书签名，否则可能反复弹权限框
 
 ## 脚本
 
 - `script/engine.sh start|stop|status|configure`：启停内核；`configure` 写下载设置（每次内核重装/任务库重建后跑一次）
 - `script/dl.sh "<链接或本地.torrent>"`：统一入口，自动分流
-- `script/build_app.sh [run|package]`：编译打包成 `dist/闪电全能下载.app`（会带上已编好的内核）。**不带参数＝run：会杀掉并重开用户正在用的 App**（App 就从 dist 运行）；只想编译验证用 `package`
+- `script/build_app.sh [run|package]`：编译打包成 `dist/闪电全能下载.app`（会带上已编好的内核）。**不带参数＝run：会杀掉并重开用户正在用的 App**（用户日常用 `/Applications` 里的安装版，装开发版走 `--install-dev`，见 `AGENTS.md`）；只想编译验证用 `package`
 - `script/build_engine.sh`：下 Go、拉 Gopeed v1.9.3、打补丁、编译内核
 - `script/install.sh`：给别人用的一键安装（README 里 `curl … | bash`）：查 GitHub 最新 Release → 装进 /Applications → 去 quarantine → 有 brew 就装 ffmpeg。`SHANDIAN_DEST=<目录> SHANDIAN_TEST=1` 在临时目录测，不碰用户正在用的 App
 
