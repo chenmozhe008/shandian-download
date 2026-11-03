@@ -7,17 +7,19 @@ import Network
 /// - /api/v1/*：代理 Gopeed 浏览器扩展；新建任务改走 App 的添加流程，其余请求原样转给内核
 final class Gateway: @unchecked Sendable {
     static let port: UInt16 = 6800
-    /// 本地开发版与 Microsoft Edge 商店草稿的 CRX ID，均为精确匹配。
+    /// 本地开发版与浏览器商店扩展的 ID，均为精确匹配。
     static let extensionOrigin = "chrome-extension://pggchniffhkcgigajlapkboikmgdipel"
     static let edgeStoreOrigin = "chrome-extension://onnpjcddpnfmaahjjdcibcofebfgopei"
-    static let allowedExtensionOrigins: Set<String> = [extensionOrigin, edgeStoreOrigin]
+    static let chromeStoreOrigin = "chrome-extension://achpnnoffkoeomkmofbcjpnmifaeanjg"
+    static let storeOrigins: Set<String> = [edgeStoreOrigin, chromeStoreOrigin]
+    static let allowedExtensionOrigins: Set<String> = storeOrigins.union([extensionOrigin])
     static func allowsExtensionOrigin(_ origin: String?) -> Bool {
         guard let origin else { return false }
         return allowedExtensionOrigins.contains(origin)
     }
     static func allowsExtensionRequest(origin: String?, method: String, path: String) -> Bool {
         guard allowsExtensionOrigin(origin) else { return false }
-        if origin == edgeStoreOrigin {
+        if let origin, storeOrigins.contains(origin) {
             return method == "POST" && (path == "/extension/ping" || path == "/extension/add")
         }
         return true
@@ -172,7 +174,7 @@ final class Gateway: @unchecked Sendable {
             return (200, json(["ok": true, "version": BrowserExtension.bundledVersion, "ready": ready]))
         }
         guard r.method == "POST", let obj = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, json(["ok": false])) }
-        if r.headers["origin"] == Self.edgeStoreOrigin && !Self.validStorePayload(obj) { return (400, json(["ok": false])) }
+        if let origin = r.headers["origin"], Self.storeOrigins.contains(origin), !Self.validStorePayload(obj) { return (400, json(["ok": false])) }
         if r.path == "/extension/wechat" {
             guard let share = obj["share"] as? String, share.utf8.count <= 8192, LinkKind.isWeChatChannelShare(share),
                   let playable = obj["playable"] as? String, playable.utf8.count <= 16384,
@@ -206,7 +208,7 @@ final class Gateway: @unchecked Sendable {
         let headers = obj["headers"] as? [String: String] ?? [:]
         if let cookies = obj["cookies"] as? [[String: Any]] { SiteCookies.save(cookies, for: url) }   // 抖音、小红书的登录信息
         let forceVideo = obj["mediaType"] as? String == "stream" && ["http", "https"].contains(URL(string: url)?.scheme?.lowercased() ?? "")
-        if r.headers["origin"] == Self.edgeStoreOrigin {
+        if let origin = r.headers["origin"], Self.storeOrigins.contains(origin) {
             let accepted = await MainActor.run { () -> Bool in
                 guard let store, store.engineState == .running else { return false }
                 store.add(link: url, headers: [:], name: nil)
