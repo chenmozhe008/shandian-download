@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     let links = items.filter { $0.name == "url" }.compactMap(\.value)
                     // confirm=0：脚本 / skill 批量投递，不弹确认框，按默认规则直接下
                     if items.contains(where: { $0.name == "confirm" && $0.value == "0" }) {
-                        links.forEach { store?.start(link: $0) }
+                        store?.startWithoutAsking(links)
                     } else {
                         store?.request(links)
                     }

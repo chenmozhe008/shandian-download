@@ -169,7 +169,7 @@ final class Gateway: @unchecked Sendable {
             } catch { return (500, json(["ok": false])) }
         }
         if r.path.hasPrefix("/extension/ping") {
-            // ready：内核已就绪。扩展拉起 App 后等到它为 true 再交任务，否则会被「下载内核未运行」挡掉
+            // ready：内核已就绪。扩展拉起 App 后等到它为 true 再交任务，否则任务要排队等内核启动
             let ready = await MainActor.run { store?.engineState == .running }
             return (200, json(["ok": true, "version": BrowserExtension.bundledVersion, "ready": ready]))
         }

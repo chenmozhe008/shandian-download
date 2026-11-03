@@ -81,7 +81,7 @@ final class DownloadStore: ObservableObject {
         }
     }
     static func noticeNeedsAttention(_ text: String) -> Bool {
-        ["失败", "无法", "出错", "不足", "过期", "没找到", "未运行"].contains { text.contains($0) }
+        ["失败", "无法", "出错", "不足", "过期", "没找到"].contains { text.contains($0) }
     }
     /// 提示右侧的按钮：重复链接时是「定位任务」，点了滚到那条任务并选中。
     /// 记着它属于哪条提示（forText），提示换了就不再显示，免得点在旧任务上
@@ -145,6 +145,8 @@ final class DownloadStore: ObservableObject {
     private var engineItems: [Item] = []
     private var lastStatus: [String: Item.Status] = [:]
     private var engineSeeded = false   // 启动后第一次拿到内核任务列表之前，已完成的都是老任务，不发通知
+    private var engineSettled = false  // 内核已启动且设置已写入（新磁力要带上 tracker）；之前收到的链接先排队
+    private var waitingForEngine: [() -> Void] = []
     private var smoothSpeed: [String: Double] = [:]
     private var autoRetries: [String: (count: Int, at: Date)] = [:]
     private var slowSince: [String: Date] = [:]
@@ -411,6 +413,7 @@ final class DownloadStore: ObservableObject {
 
     private func startEngine() async {
         engineState = .starting
+        engineSettled = false
         await LocalProxy.check()
         // App 带了新内核而旧内核还在跑：暂停→记下在下的→停旧的→换新的（start 里装）→续上
         if host.bundledEngineIsNewer, await host.client.isAlive() {
@@ -441,7 +444,13 @@ final class DownloadStore: ObservableObject {
                 cloudFailed(job.id, "云盘提交中断")
             }
             if !cloudJobs.isEmpty { pollCloud() }
-        case .failed(let m): engineState = .failed(m)
+            engineSettled = true
+        case .failed(let m):
+            engineState = .failed(m)
+            if !waitingForEngine.isEmpty {
+                notice = "下载内核启动失败，链接没有添加"
+                waitingForEngine.removeAll()
+            }
         }
     }
 
@@ -517,6 +526,11 @@ final class DownloadStore: ObservableObject {
         }
         rebuild()
         if firstLoad { engineSeeded = true }
+        if engineSettled, engineSeeded, !waitingForEngine.isEmpty {
+            let waiting = waitingForEngine
+            waitingForEngine.removeAll()
+            waiting.forEach { $0() }
+        }
         sleepGuard.update(downloading: items.contains { $0.status == .running })
         autoRetry()
         speedHistory.append(Double(totalSpeed)); speedHistory.removeFirst(speedHistory.count - 60)
@@ -714,6 +728,25 @@ final class DownloadStore: ObservableObject {
         return links.filter { keys.contains(Self.linkKey($0)) }
     }
 
+    /// 要交给内核的链接赶上内核启动中：先记下，等读到任务列表后再处理，查重才准。已接管返回 true
+    private func deferUntilEngineReady(_ links: [String], forceVideo: Bool = false, then work: @escaping () -> Void) -> Bool {
+        guard !forceVideo, links.contains(where: { LinkKind.of($0).map { $0 != .videoSite } ?? false }) else { return false }
+        if case .failed = engineState {
+            notice = "下载内核启动失败，链接没有添加"
+            return true
+        }
+        guard !engineSettled || !engineSeeded else { return false }
+        waitingForEngine.append(work)
+        notice = "下载内核正在启动，就绪后自动添加链接"
+        return true
+    }
+
+    /// shandian://add 带 confirm=0：不弹确认框，按默认规则直接下
+    func startWithoutAsking(_ links: [String]) {
+        if deferUntilEngineReady(links, then: { [weak self] in self?.startWithoutAsking(links) }) { return }
+        links.forEach { start(link: $0) }
+    }
+
     /// 所有入口都走这里：去掉已在列表里的，再弹新建任务确认框（关掉询问时直接下载）
     func request(_ links: [String], headers: [String: String] = [:], name: String? = nil, forceVideo: Bool = false) {
         let weChatLinks = links.filter(LinkKind.isWeChatChannelShare)
@@ -723,6 +756,9 @@ final class DownloadStore: ObservableObject {
         }
         let otherLinks = links.filter { !LinkKind.isWeChatChannelShare($0) }
         guard !otherLinks.isEmpty else { return }
+        if deferUntilEngineReady(otherLinks, forceVideo: forceVideo, then: { [weak self] in
+            self?.request(otherLinks, headers: headers, name: name, forceVideo: forceVideo)
+        }) { return }
         if weChatLinks.count > 1 { notice = "视频号链接请逐个通过浏览器扩展下载" }
         var fresh: [String] = []
         var dupes: [String] = []      // 已在列表里的任务（按出现顺序，用来定位）
@@ -743,10 +779,6 @@ final class DownloadStore: ObservableObject {
         // 有新有旧：新链接照常走确认框，旧的只在提示里说一句，别把人从这里拉走
         if !dupes.isEmpty {
             notice = "\(dupes.count) 个链接已在列表里，已跳过"
-        }
-        if !forceVideo, fresh.contains(where: { LinkKind.of($0) != .videoSite }), engineState != .running {
-            notice = "下载内核未运行"
-            return
         }
         if NewTaskPanels.ask {
             NewTaskPanels.shared.present(links: fresh, headers: headers, name: name, store: self, forceVideo: forceVideo)
