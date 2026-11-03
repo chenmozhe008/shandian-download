@@ -52,12 +52,9 @@
 - 「关于 → 介绍」的优势卡在 `AboutView.swift` 的 `IntroPage`，只写实测过的数据（下面「测速记录」），竞品只写查证过的事实
 
 ## 检查更新与一键更新（10-29 加，沿用小清）
+- 机制和验证方法见 `docs/internals.md`「检查更新与一键更新」；Release 不含预发布，`win-v…` 不会被当成 Mac 新版
 
-- `UpdateChecker`：每天最多一次读 GitHub `releases/latest`（不含预发布，所以 Windows 的 `win-v…` 不会被当成 Mac 新版），一天内用缓存的结果
-- 有新版：侧栏底部的版本号胶囊变成橙色「新版本 X」→ 弹窗列出 Release「更新内容」→「更新并重新打开」：按芯片下载 `Shandian-<版本>-AppleSilicon.zip` / `-Intel.zip`（胶囊变进度条）→ 对 GitHub 资产 `digest`（sha256）→ 解压 → 核对 bundle id、版本号、签名 → 正在运行的旧版 `trashItem` 进废纸篓 → 新版放回原处 → 退出（`shutdown` 暂停任务、记下续传）→ sh 等进程退出后 `open`。失败弹窗给「前往下载」。**不另加一行**（侧栏高度别动）
-- 菜单「检查更新…」走同一个更新弹窗；「设置 › 系统 › 自动检查更新」可关
 - **发版 tag 必须是 `v<版本>`、附件名照现在的格式**，否则一键更新找不到包 / 比较不出版本
-- 验证：`open -g --env SHANDIAN_PRETEND_UPDATE=9.9.9 dist/闪电全能下载.app` 假装有新版；端到端用 `SHANDIAN_UPDATE_FEED=<file:// JSON>` + `SHANDIAN_AUTO_INSTALL=1`（跳过确认，只给测试）跑一份旧版本号的副本（10-29 跑通：替换、按芯片选包、旧版进废纸篓、重开）
 - **⚠️ 测试副本别用临时签名在本机跑**（10-29 踩坑）：系统把它当新 App，反复弹「想访问文件」框、点了也过不去，而且和正式版同时开会抢端口。要测就先退出正式版、副本用开发证书签名，测完立刻关掉、`lsregister -u` 注销、移到废纸篓
 - 手动把 GitHub 正式包装到本机时同理：先核对 SHA-256，再用 `codesign --force --sign "Apple Development" --identifier io.github.chenmozhe008.shandian --timestamp=none` 改回开发证书签名，否则可能反复弹权限框
 

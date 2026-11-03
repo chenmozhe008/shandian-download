@@ -198,7 +198,7 @@ final class EngineClient: @unchecked Sendable {
 
 // MARK: - 内核进程托管
 
-/// App 启动时确保内核在跑；是 App 拉起的，App 退出时一起关掉。
+/// App 启动时确保内核在跑；App 退出时只暂停任务，内核留着（见 suspend）。
 final class EngineHost: @unchecked Sendable {
     let stored = EngineConfig.load()
     lazy var client = EngineClient(stored: stored)

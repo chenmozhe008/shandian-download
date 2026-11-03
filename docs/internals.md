@@ -82,6 +82,13 @@
 - User-Agent 如实写 `ShandianDownload/<版本>`：Go 的 TLS 握手配 Chrome UA 被中科大等镜像识别为伪装爬虫 403，Chrome 116/141 都拦（2026-10-27 实测）
 - 维基百科原图（upload.wikimedia.org）对代理机房 IP 按频率随机放行（2026-10-28 实测隔 3 秒约一半 429），靠补丁 6、7（单连接 + 退避）
 
+## 检查更新与一键更新
+
+- `UpdateChecker`：每天最多一次读 GitHub `releases/latest`（不含预发布，所以 Windows 的 `win-v…` 不会被当成 Mac 新版），一天内用缓存的结果
+- 有新版：侧栏底部的版本号胶囊变成橙色「新版本 X」→ 弹窗列出 Release「更新内容」→「更新并重新打开」：按芯片下载 `Shandian-<版本>-AppleSilicon.zip` / `-Intel.zip`（胶囊变进度条）→ 对 GitHub 资产 `digest`（sha256）→ 解压 → 核对 bundle id、版本号、签名 → 正在运行的旧版 `trashItem` 进废纸篓 → 新版放回原处 → 退出（`shutdown` 暂停任务、记下续传）→ sh 等进程退出后 `open`。失败弹窗给「前往下载」。**不另加一行**（侧栏高度别动）
+- 菜单「检查更新…」走同一个更新弹窗；「设置 › 系统 › 自动检查更新」可关
+- 验证：`open -g --env SHANDIAN_PRETEND_UPDATE=9.9.9 dist/闪电全能下载.app` 假装有新版；端到端用 `SHANDIAN_UPDATE_FEED=<file:// JSON>` + `SHANDIAN_AUTO_INSTALL=1`（跳过确认，只给测试）跑一份旧版本号的副本（10-29 跑通：替换、按芯片选包、旧版进废纸篓、重开）
+
 ## 测速记录
 
 - 2026-10-27 公开片源对比（迅雷 vs Gopeed，轮流测、每边 2 分钟）：磁力起速 45–64 秒 vs 5–18 秒；海外种子 0 vs 5 MB/s；迅雷会员只在命中缓存时短暂爆发
