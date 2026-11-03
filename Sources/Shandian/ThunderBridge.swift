@@ -83,7 +83,7 @@ enum ThunderBridge {
 
     static func save(_ jobs: [ThunderJob]) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        if let d = try? enc.encode(jobs) { try? d.write(to: store) }
+        if let d = try? enc.encode(jobs) { try? PrivateFile.write(d, to: store) }
     }
 
     /// 磁力里的 infohash，统一成 40 位大写十六进制（base32 的也换算）

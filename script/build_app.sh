@@ -2,10 +2,15 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.21"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.23"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
+ENGINE_BIN="${SHANDIAN_ENGINE_BIN:-/Volumes/Jack Feng/Applications/ShandianBuild/gopeed-shandian-$GOARCH}"
+if [[ ! -x "$ENGINE_BIN" ]]; then
+  echo "找不到可执行的下载内核：${ENGINE_BIN}。请先运行 script/build_engine.sh 编译内核。" >&2
+  exit 1
+fi
 if [[ "$ARCH" == "$(uname -m)" ]]; then APP="$ROOT/dist/$APP_NAME.app"; else APP="$ROOT/dist/$ARCH/$APP_NAME.app"; fi
 APP="${SHANDIAN_BUILD_APP_PATH:-$APP}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Apple Development}"
@@ -58,8 +63,7 @@ cp -R "$ROOT/browser-extension" "$APP/Contents/Resources/BrowserExtension"  # �
 ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"
 test -x "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
 # 打过补丁的内核（script/build_engine.sh 编出来的）；App 启动时发现和本机装的不一样就换上
-ENGINE_BIN="/Volumes/Jack Feng/Applications/ShandianBuild/gopeed-shandian-$GOARCH"
-if [ -x "$ENGINE_BIN" ]; then cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"; else echo "提醒：没找到内核 $ENGINE_BIN，先跑 script/build_engine.sh" >&2; fi
+cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"
 mkdir -p "$APP/Contents/Resources/zh-Hans.lproj"  # 声明中文，系统菜单（文件、编辑、窗口）才显示中文
 # 强调色（琥珀）：侧栏选中行、按钮等系统控件跟随它；SwiftPM 不编译 xcassets，这里用 actool 单独编
 # actool 必须写一份 partial Info.plist，但下面的 Info.plist 是手写的、用不到它：写到系统临时目录，用完删掉
@@ -103,4 +107,8 @@ codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID" --timesta
 codesign --verify --strict "$APP"
 echo "打包完成：$APP"
 lipo -info "$APP/Contents/MacOS/$EXECUTABLE_NAME" "$APP/Contents/Resources/gopeed"
+if [[ "${1:-run}" == "--install-dev" ]]; then
+  [[ "$DEV_BUILD" == 1 && "$ARCH" == "$(uname -m)" ]] || { echo '只能安装本机架构的开发构建。' >&2; exit 1; }
+  "$HOME/Coding/tools/mac-app-workflow/install-dev.sh" shandian "$APP"
+fi
 if [[ "${1:-run}" == "run" && "$ARCH" == "$(uname -m)" ]]; then pkill -x "$EXECUTABLE_NAME" 2>/dev/null || true; sleep 0.5; open -n "$APP"; fi

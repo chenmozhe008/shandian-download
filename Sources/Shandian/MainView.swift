@@ -121,7 +121,7 @@ private struct Sidebar: View {
         .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 6)
     }
 
-    /// 侧栏底部一行：设置、关于、版本号（点版本号直接看更新记录）
+    /// 侧栏底部一行：设置、关于；有更新或正在更新时显示状态
     private var versionRow: some View {
         HStack(spacing: 16) {
             SettingsLink {
@@ -133,7 +133,7 @@ private struct Sidebar: View {
             }
             .help("关于闪电全能下载")
             Spacer(minLength: 0)
-            VersionBadge(checker: store.updates) { AppInfo.showAbout(.changelog, openWindow) }
+            UpdateBadge(checker: store.updates)
         }
         .labelStyle(.titleAndIcon)
         .buttonStyle(.plain)
@@ -191,10 +191,9 @@ private struct DetailPane: View {
     }
 }
 
-/// 侧栏底部的版本号：平时点开看更新记录；有新版时变成「新版本 X」，点了弹出更新说明、一键更新；下载中显示进度（不另占一行）
-private struct VersionBadge: View {
+/// 侧栏仅在有更新或更新进行中显示状态。
+private struct UpdateBadge: View {
     @ObservedObject var checker: UpdateChecker
-    let showChangelog: () -> Void
 
     var body: some View {
         switch checker.phase {
@@ -210,22 +209,17 @@ private struct VersionBadge: View {
                 Text("正在安装").fixedSize()
             }
         case .idle:
-            if let release = checker.available {
+            if checker.available != nil {
                 Button { checker.offerAvailable() } label: {
-                    Label("新版本 \(release.version)", systemImage: "arrow.down.circle.fill")
-                        .monospacedDigit().lineLimit(1).fixedSize()
+                    Label("发现更新", systemImage: "arrow.down.circle.fill")
+                        .lineLimit(1).fixedSize()
                         .foregroundStyle(Theme.tint).font(.system(size: 12.5, weight: .semibold))
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(Theme.tint.opacity(0.14)))
                 }
-                .help("当前版本 v\(AppInfo.version)，点按更新到 \(release.version)，完成后自动重新打开")
+                .help("查看更新说明")
             } else {
-                Button(action: showChangelog) {
-                    Text("v" + AppInfo.version).monospacedDigit().lineLimit(1).fixedSize()
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Capsule().fill(Theme.faint))
-                }
-                .help("查看更新记录")
+                EmptyView()
             }
         }
     }

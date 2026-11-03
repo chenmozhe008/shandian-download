@@ -119,8 +119,7 @@ actor PikPak {
         let newSession = Session(username: name, deviceID: device, accessToken: accessToken, refreshToken: refreshToken,
                                  userID: userID, clientID: clientID)
         let data = try JSONEncoder().encode(newSession)
-        try data.write(to: Self.file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.file.path)
+        try PrivateFile.write(data, to: Self.file)
         session = newSession
         UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
     }
@@ -133,8 +132,7 @@ actor PikPak {
 
     private func save() {
         guard let s = session, let d = try? JSONEncoder().encode(s) else { return }
-        try? d.write(to: Self.file)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.file.path)
+        try? PrivateFile.write(d, to: Self.file)
     }
 
     private func refresh() async throws {
@@ -178,11 +176,20 @@ actor PikPak {
 
     struct RemoteFile { var name: String; var size: Int64; var url: String }
 
+    nonisolated static func downloadURL(_ response: [String: Any]) throws -> String {
+        let media = ((response["medias"] as? [[String: Any]])?.first?["link"] as? [String: Any])?["url"] as? String
+        for candidate in [response["web_content_link"] as? String, media] {
+            if let candidate, !candidate.isEmpty { return candidate }
+        }
+        throw PikPakError.server("云端文件缺少下载地址，已保留云端文件，请稍后重试")
+    }
+
     /// 下好的文件和下载地址：文件夹就展开（只要视频和字幕，同电影里「只下正片」的规则）
-    func files(of fileID: String) async throws -> [RemoteFile] {
+    func files(of fileID: String) async throws -> (files: [RemoteFile], includesAll: Bool) {
         let info = try await api("GET", "\(apiHost)/drive/v1/files/\(fileID)", body: nil)
         var ids: [(String, String, Int64)] = []
-        if info["kind"] as? String == "drive#folder" {
+        let isFolder = info["kind"] as? String == "drive#folder"
+        if isFolder {
             ids = try await list(fileID)
         } else {
             ids = [(fileID, info["name"] as? String ?? "video", Int64(info["size"] as? String ?? "") ?? 0)]
@@ -193,10 +200,10 @@ actor PikPak {
         for i in keep {
             let (id, name, size) = ids[i]
             let d = try await api("GET", "\(apiHost)/drive/v1/files/\(id)", body: nil, captchaAction: "GET:/drive/v1/files/\(id)")
-            let media = ((d["medias"] as? [[String: Any]])?.first?["link"] as? [String: Any])?["url"] as? String
-            if let u = d["web_content_link"] as? String ?? media, !u.isEmpty { out.append(RemoteFile(name: name, size: size, url: u)) }
+            out.append(RemoteFile(name: name, size: size, url: try Self.downloadURL(d)))
         }
-        return out
+        // 文件夹列表目前没有验证分页完整性，不能据此判断整个目录都已拉回。
+        return (out, info["kind"] as? String == "drive#file" && ids.count == 1 && keep == [0])
     }
 
     /// 拉回本地后删掉云端的文件（免费账号只有 6 GB）：先进回收站再彻底删除
@@ -205,14 +212,34 @@ actor PikPak {
         _ = try? await api("POST", "\(apiHost)/drive/v1/files:batchDelete", body: ["ids": [fileID]])
     }
 
+    struct FolderEntry {
+        var id: String; var name: String; var isFolder: Bool; var size: Int64
+    }
+
+    nonisolated static func folderEntries(_ response: [String: Any]) throws -> [FolderEntry] {
+        guard let files = response["files"] as? [[String: Any]] else {
+            throw PikPakError.server("无法确认云盘文件列表，请稍后重试；云端文件已保留")
+        }
+        if files.count >= 500 || !(response["next_page_token"] as? String ?? "").isEmpty {
+            throw PikPakError.server("云盘目录文件过多，暂无法确认完整列表；云端文件已保留")
+        }
+        return try files.map { file in
+            guard let id = file["id"] as? String, !id.isEmpty,
+                  let name = file["name"] as? String, !name.isEmpty,
+                  let kind = file["kind"] as? String, kind == "drive#file" || kind == "drive#folder" else {
+                throw PikPakError.server("云盘文件信息不完整，请稍后重试；云端文件已保留")
+            }
+            return FolderEntry(id: id, name: name, isFolder: kind == "drive#folder", size: Int64(file["size"] as? String ?? "") ?? 0)
+        }
+    }
+
     private func list(_ parent: String, prefix: String = "") async throws -> [(String, String, Int64)] {
         let filters = #"{"trashed":{"eq":false}}"#.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
         let r = try await api("GET", "\(apiHost)/drive/v1/files?parent_id=\(parent)&limit=500&filters=\(filters)", body: nil)
         var out: [(String, String, Int64)] = []
-        for f in r["files"] as? [[String: Any]] ?? [] {
-            guard let id = f["id"] as? String, let name = f["name"] as? String else { continue }
-            if f["kind"] as? String == "drive#folder" { out += try await list(id, prefix: prefix + name + "/") }
-            else { out.append((id, name, Int64(f["size"] as? String ?? "") ?? 0)) }
+        for file in try Self.folderEntries(r) {
+            if file.isFolder { out += try await list(file.id, prefix: prefix + file.name + "/") }
+            else { out.append((file.id, file.name, file.size)) }
         }
         return out
     }

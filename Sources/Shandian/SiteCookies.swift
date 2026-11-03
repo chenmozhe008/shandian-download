@@ -27,8 +27,7 @@ enum SiteCookies {
                 .joined(separator: "\t"))
         }
         let f = file(for: site)
-        try? (lines.joined(separator: "\n") + "\n").write(to: f, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: f.path)
+        if let data = (lines.joined(separator: "\n") + "\n").data(using: .utf8) { try? PrivateFile.write(data, to: f) }
     }
 
     static func ytdlpArguments(for link: String) -> [String] {

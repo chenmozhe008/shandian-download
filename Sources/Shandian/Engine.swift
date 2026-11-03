@@ -21,8 +21,7 @@ enum EngineConfig {
         let s = Stored(token: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), port: 9999)
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(s) {
-            try? data.write(to: configFile)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFile.path)
+            try? PrivateFile.write(data, to: configFile)
         }
         return s
     }
@@ -58,20 +57,20 @@ struct EngineTask: Decodable {
         let code = e.range(of: #"(code:|status=)\s*([0-9]{3})"#, options: .regularExpression)
             .flatMap { Int(e[$0].filter(\.isNumber)) }
         switch code {
-        case 429?: return "服务器限制了下载频率，过一会儿再试"
-        case 401?: return "需要登录才能下载"
+        case 429?: return "服务器限制了下载频率，请稍后重试"
+        case 401?: return "服务器要求登录，请登录后重新获取下载链接"
         case 403?: return "服务器拒绝下载（链接可能已过期，或需要登录）"
         case 404?, 410?: return "文件不存在或链接已失效"
         case let c? where c >= 500: return "服务器出错（\(c)），过一会儿再试"
         case let c?: return "服务器返回错误（\(c)）"
         case nil: break
         }
-        if e.contains("no space left") { return "磁盘空间不足" }
-        if e.contains("no such host") { return "找不到服务器（网址有误或网络不通）" }
-        if e.contains("timeout") || e.contains("deadline exceeded") { return "连接服务器超时" }
-        if e.contains("connection refused") || e.contains("connection reset") || e.contains("eof") { return "和服务器的连接断开了" }
-        if e.contains("permission denied") || e.contains("operation not permitted") { return "没有权限写入保存位置" }
-        return "下载出错"
+        if e.contains("no space left") { return "磁盘空间不足，请清理空间或更换保存位置后重试" }
+        if e.contains("no such host") { return "找不到服务器，请检查链接和网络连接" }
+        if e.contains("timeout") || e.contains("deadline exceeded") { return "连接服务器超时，请检查网络后重试" }
+        if e.contains("connection refused") || e.contains("connection reset") || e.contains("eof") { return "服务器连接中断，请检查网络后重试" }
+        if e.contains("permission denied") || e.contains("operation not permitted") { return "无法写入保存位置，请检查权限或更换保存位置" }
+        return "下载出错，请检查网络和链接后重试"
     }
 }
 
@@ -153,7 +152,15 @@ final class EngineClient: @unchecked Sendable {
         // 磁力 / 种子不设：内核全局代理已关，BT 直连
         if url.lowercased().hasPrefix("http") { req["proxy"] = LocalProxy.engineRequest(for: url) }
         if !headers.isEmpty { req["extra"] = ["header": headers] }  // 网盘直链要带浏览器的 Cookie、UA、Referer
-        return try await call("POST", "tasks", body: ["req": req, "opts": opts]) ?? ""
+        let id: String? = try await call("POST", "tasks", body: ["req": req, "opts": opts])
+        return try Self.validateTaskID(id)
+    }
+
+    static func validateTaskID(_ id: String?) throws -> String {
+        guard let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EngineError.server("下载引擎未返回任务编号，请检查任务列表后重试")
+        }
+        return id
     }
 
     /// 原样转发给内核（网关代理 Gopeed 浏览器扩展的其它请求用）
@@ -229,8 +236,7 @@ final class EngineHost: @unchecked Sendable {
         p.arguments = ["-A", "127.0.0.1", "-P", "\(stored.port)", "-T", stored.token,
                        "-d", dataDir.path, "-c", dataDir.appendingPathComponent("server.json").path]
         let log = EngineConfig.supportDir.appendingPathComponent("engine.log")
-        FileManager.default.createFile(atPath: log.path, contents: nil)
-        if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); p.standardOutput = h; p.standardError = h }
+        if let h = try? PrivateFile.openForAppending(log) { p.standardOutput = h; p.standardError = h }
         do { try p.run() } catch { return .failed(error.localizedDescription) }
         process = p
         for _ in 0..<30 {

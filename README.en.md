@@ -2,7 +2,7 @@
 
 <img src="docs/images/icon.png" width="128" alt="Shandian icon">
 
-# Shandian
+# Shandian Download Manager
 
 **A native macOS download manager**
 
@@ -22,7 +22,7 @@ Browser extension · Stream while downloading · Resume after restart · Cloud o
 
 </div>
 
-Shandian (闪电全能下载, "Lightning Downloader") is an open-source download manager for the Mac. It brings magnet links, torrents, ed2k, HTTP/HTTPS files, cloud-drive direct links and video platforms together in a single window. Copy a link and press ⌘V in the window to start; the link type is detected automatically. With the companion browser extension, downloads started on web pages are handed over to Shandian.
+Shandian Download Manager (闪电全能下载) is an open-source download manager for the Mac. It brings magnet links, torrents, ed2k, HTTP/HTTPS files, cloud-drive direct links and video platforms together in a single window. Copy a link and press ⌘V in the window to start; the link type is detected automatically. With the companion browser extension, downloads started on web pages are handed over to Shandian.
 
 The app is written in SwiftUI. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
@@ -47,7 +47,7 @@ Regular video sites use the highest available quality, preferring H.264 and AAC.
 - **Fast magnet start**: fresh trackers are merged from public lists on every launch, and a fixed BT listening port makes it easier for peers to connect. In tests with public-domain films, magnet downloads started within 5–18 seconds
 - **Multi-connection HTTP**: large files are split into segments of at least 20 MB and downloaded in parallel. Rate limiting (429) and temporary server errors (5xx) trigger automatic back-off; a task is only marked as failed after 3 minutes without progress
 - **Concurrent video fragments**: YouTube and similar platforms are downloaded with 4 concurrent fragments; in testing this raised throughput from 1.4–1.6 MiB/s to 3.4–4.1 MiB/s
-- **Cloud offline download (optional)**: resources with no active seeders can be fetched by PikPak's servers first, then pulled down from the cloud
+- **Cloud offline download (optional)**: resources with no active seeders can be fetched by PikPak's servers first, then pulled down from the cloud. Directories with 500 or more entries or a paginated response are not pulled until their complete contents can be confirmed; cloud folders are retained
 - **Per-domain proxy routing**: follows the system proxy setting — overseas sites go through the proxy, while mainland China sites and BT traffic connect directly
 
 > Figures above were measured on the author's network. Actual speed depends on network conditions and resource availability.
@@ -65,7 +65,7 @@ Regular video sites use the highest available quality, preferring H.264 and AAC.
 - **Settings**: separate save locations for torrents, video platforms and other files; adjustable concurrent tasks and a global speed limit
 - **Trash**: removed tasks are kept in a list and can be downloaded again
 - **Notifications**: a system notification and a sound when a download completes
-- **One-click update**: when a new version is out, the version label at the bottom of the sidebar changes to "新版本" (new version); click it to download the build for your chip, verify and install it inside the app, which then reopens and resumes unfinished tasks
+- **One-click update**: when a new version is out, "发现更新" (update available) appears at the bottom of the sidebar; click it to download the build for your chip, verify and install it inside the app, which then reopens and resumes unfinished tasks
 
 ## Requirements
 
@@ -83,7 +83,7 @@ Open Terminal, paste the command below and press Return:
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
-The script downloads the latest release into Applications, opens it, and avoids the "unidentified developer" prompt. If [Homebrew](https://brew.sh) is installed, ffmpeg is installed as well. Run the same command again to update; from 0.18.0 the app can also update itself.
+The script downloads the latest release, checks its SHA-256 when provided by GitHub, installs it in Applications, opens it, and avoids the "unidentified developer" prompt. If [Homebrew](https://brew.sh) is installed, ffmpeg is installed as well. Run the same command again to update; from 0.18.0 the app can also update itself.
 
 ### Option 2: manual install
 

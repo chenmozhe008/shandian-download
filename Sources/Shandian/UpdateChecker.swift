@@ -70,9 +70,15 @@ final class UpdateChecker: ObservableObject {
     func check() async -> Release? {
         var request = URLRequest(url: Self.latestAPI, timeoutInterval: 15)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode ?? 200 == 200,
-              let release = Self.parse(data) else { return nil }
+        let release: Release
+        if let (data, response) = try? await URLSession.shared.data(for: request),
+           (response as? HTTPURLResponse)?.statusCode ?? 200 == 200,
+           let parsed = Self.parse(data) {
+            release = parsed
+        } else if ProcessInfo.processInfo.environment["SHANDIAN_UPDATE_FEED"] == nil,
+                  let fallback = await Self.checkReleasePage() {
+            release = fallback
+        } else { return nil }
         let defaults = UserDefaults.standard
         defaults.set(Date(), forKey: Keys.lastCheck)
         defaults.set(try? JSONEncoder().encode(release), forKey: Keys.latest)
@@ -80,6 +86,26 @@ final class UpdateChecker: ObservableObject {
         // `SHANDIAN_AUTO_INSTALL=1` (tests only, with SHANDIAN_UPDATE_FEED): install without the confirmation dialog.
         if ProcessInfo.processInfo.environment["SHANDIAN_AUTO_INSTALL"] != nil, let available { install(available) }
         return release
+    }
+
+    private nonisolated static func checkReleasePage() async -> Release? {
+        let url = URL(string: "https://github.com/chenmozhe008/shandian-download/releases/latest")!
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "HEAD"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let finalURL = http.url else { return nil }
+        return releaseFromPage(finalURL)
+    }
+
+    nonisolated static func releaseFromPage(_ url: URL) -> Release? {
+        guard url.scheme == "https", url.host == "github.com" else { return nil }
+        let parts = url.pathComponents
+        guard parts.count == 6, Array(parts[1...4]) == ["chenmozhe008", "shandian-download", "releases", "tag"] else { return nil }
+        let tag = parts[5]
+        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        guard !version.isEmpty, version.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { return nil }
+        return Release(version: version, page: url, asset: nil, digest: nil, notes: [])
     }
 
     nonisolated static func parse(_ data: Data) -> Release? {
@@ -116,7 +142,7 @@ final class UpdateChecker: ObservableObject {
             } else {
                 let alert = NSAlert()
                 alert.messageText = release == nil ? "无法检查更新" : "闪电全能下载已是最新版本"
-                alert.informativeText = release == nil ? "未能连接 GitHub，请检查网络后重试。" : "当前版本 \(AppInfo.version)。"
+                alert.informativeText = release == nil ? "无法获取 GitHub 发布信息，可能是网络异常或请求次数受限，请稍后重试。" : "当前版本 \(AppInfo.version)。"
                 alert.runModal()
             }
         }
@@ -131,7 +157,7 @@ final class UpdateChecker: ObservableObject {
     private func offer(_ release: Release) {
         let alert = NSAlert()
         alert.messageText = "新版本 \(release.version) 可用"
-        var text = "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。"
+        var text = release.asset == nil ? "当前版本 \(AppInfo.version)。请前往发布页面下载并手动安装新版本。" : "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。"
         if !release.notes.isEmpty {
             text += "\n\n" + release.notes.prefix(6).map { "• " + $0 }.joined(separator: "\n")
         }

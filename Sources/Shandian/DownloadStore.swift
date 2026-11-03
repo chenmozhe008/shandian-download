@@ -121,7 +121,7 @@ final class DownloadStore: ObservableObject {
     private var pendingFile: URL { EngineConfig.supportDir.appendingPathComponent("pending.json") }
 
     private func savePending() {
-        if let data = try? JSONEncoder().encode(Array(pendingRecords.values)) { try? data.write(to: pendingFile) }
+        if let data = try? JSONEncoder().encode(Array(pendingRecords.values)) { try? PrivateFile.write(data, to: pendingFile) }
     }
 
     private func dropPending(_ id: String) {
@@ -158,11 +158,14 @@ final class DownloadStore: ObservableObject {
         var pendingRecord: PendingRecord?
         var thunderJob: ThunderJob?
         var pulling: [String]?      // 已在从云盘拉回的内核任务；都下完后删云端文件（免费账号只有 6 GB）
+        var includesAllCloudFiles: Bool? // 旧任务无法确认时保留云端内容
+        var preparingPulls: Bool? // 创建拉回任务尚未全部完成，可在重启后恢复原任务
     }
     private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
     private var protectedEngineIDs: Set<String> {
         Set(thunderJobs.compactMap(\.sourceEngineID) + cloudJobs.compactMap(\.engineID)
-            + cloudJobs.compactMap { $0.thunderJob?.sourceEngineID })
+            + cloudJobs.compactMap { $0.thunderJob?.sourceEngineID }
+            + cloudJobs.filter { $0.preparingPulls == true }.flatMap { $0.pulling ?? [] })
     }
     private var cloudPolling = false
     private static var cloudFile: URL { EngineConfig.supportDir.appendingPathComponent("cloud.json") }
@@ -170,9 +173,49 @@ final class DownloadStore: ObservableObject {
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         return (try? Data(contentsOf: cloudFile)).flatMap { try? dec.decode([CloudJob].self, from: $0) } ?? []
     }
-    private func saveCloud() {
+    @discardableResult private func saveCloud() -> Bool {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        if let d = try? enc.encode(cloudJobs) { try? d.write(to: Self.cloudFile) }
+        do {
+            try PrivateFile.write(enc.encode(cloudJobs), to: Self.cloudFile)
+            return true
+        } catch { return false }
+    }
+
+    static func createCloudPulls(_ files: [PikPak.RemoteFile], create: (PikPak.RemoteFile) async throws -> String,
+                                 rollback: (String) async -> Void) async throws -> [String] {
+        var created: [String] = []
+        do {
+            for file in files { created.append(try await create(file)) }
+            return created
+        } catch {
+            for id in created { await rollback(id) }
+            throw error
+        }
+    }
+
+    static func cloudCopyCanBeRemoved(file: URL?, expectedSize: Int64) -> Bool {
+        guard let file, expectedSize > 0,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+              attrs[.type] as? FileAttributeType == .typeRegular,
+              let size = (attrs[.size] as? NSNumber)?.int64Value else { return false }
+        return size == expectedSize
+    }
+
+    static func rollbackCloudPulls(_ ids: [String], existing: Set<String>, delete: (String) async throws -> Void) async throws {
+        for id in ids where existing.contains(id) { try await delete(id) }
+    }
+
+    static func unrecordedCloudPulls(_ job: CloudJob, tasks: [EngineTask]) -> [String] {
+        let directory = URL(fileURLWithPath: job.dir).standardizedFileURL
+        guard directory.lastPathComponent == job.id,
+              directory.deletingLastPathComponent().lastPathComponent == "PikPak 下载" else { return [] }
+        let known = Set(job.pulling ?? [])
+        return tasks.compactMap { task in
+            guard !known.contains(task.id), task.id != job.engineID,
+                  let path = task.meta.opts?.path,
+                  URL(fileURLWithPath: path).standardizedFileURL == directory else { return nil }
+            return task.id
+        }
     }
 
     /// 回收站（参照迅雷）：移除的任务留一条记录，能重新下载、找到文件
@@ -188,7 +231,7 @@ final class DownloadStore: ObservableObject {
     }
     private func saveRemoved() {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        if let d = try? enc.encode(removedRecords) { try? d.write(to: Self.removedFile) }
+        if let d = try? enc.encode(removedRecords) { try? PrivateFile.write(d, to: Self.removedFile) }
     }
     private func recordRemoval(_ item: Item, filesTrashed: Bool) {
         let link = item.link.isEmpty ? (videoJobs.first { "\($0.id.uuidString)" == item.id }?.url ?? "") : item.link
@@ -222,7 +265,7 @@ final class DownloadStore: ObservableObject {
         (try? Data(contentsOf: sourceLinkFile)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
     }
     private func saveSourceLinks() {
-        if let d = try? JSONEncoder().encode(sourceLinks) { try? d.write(to: Self.sourceLinkFile) }
+        if let d = try? JSONEncoder().encode(sourceLinks) { try? PrivateFile.write(d, to: Self.sourceLinkFile) }
     }
     private var seenClipboard = Set<String>()
     private var pollTask: Task<Void, Never>?
@@ -932,15 +975,18 @@ final class DownloadStore: ObservableObject {
         default: return
         }
         let cloudID = "cloud-" + UUID().uuidString
-        let cloudDir = thunderJob == nil ? dir : URL(fileURLWithPath: dir).appendingPathComponent("PikPak 下载").appendingPathComponent(cloudID).path
-        if thunderJob != nil {
-            do { try FileManager.default.createDirectory(atPath: cloudDir, withIntermediateDirectories: true) }
-            catch { notice = "无法创建云盘保存位置，迅雷任务仍保留"; return }
-        }
+        let cloudDir = URL(fileURLWithPath: dir).appendingPathComponent("PikPak 下载").appendingPathComponent(cloudID).path
+        do { try FileManager.default.createDirectory(atPath: cloudDir, withIntermediateDirectories: true) }
+        catch { notice = "无法创建云盘保存位置，原任务仍保留"; return }
         let job = CloudJob(id: cloudID, title: item.title, link: item.link, dir: cloudDir,
                            engineID: engineID, partial: thunderJob == nil ? base?.path : nil, total: item.total,
                            pendingRecord: pendingRecord, thunderJob: thunderJob)
-        cloudJobs.append(job); saveCloud()
+        cloudJobs.append(job)
+        guard saveCloud() else {
+            cloudJobs.removeAll { $0.id == job.id }
+            notice = "无法保存云盘任务状态，原任务仍保留"
+            return
+        }
         if let thunderJob { thunderJobs.removeAll { $0.id == thunderJob.id }; ThunderBridge.save(thunderJobs) }
         if pendingRecord != nil { dropPending(item.id) }
         selectedID = job.id; rebuild()
@@ -981,6 +1027,21 @@ final class DownloadStore: ObservableObject {
         }
     }
 
+    private func recoverCloudPreparation(_ job: CloudJob, message: String) async {
+        guard let tasks = try? await host.client.tasks() else { return }
+        let existing = Set(tasks.map(\.id))
+        let unrecorded = Self.unrecordedCloudPulls(job, tasks: tasks)
+        do {
+            for task in tasks where unrecorded.contains(task.id) && ["running", "ready", "wait"].contains(task.status) {
+                try await host.client.pause(task.id)
+            }
+            try await Self.rollbackCloudPulls(job.pulling ?? [], existing: existing) { id in
+                try await self.host.client.delete(id, withFiles: false)
+            }
+        } catch { notice = "云盘任务恢复暂未完成，请检查下载引擎连接"; return }
+        cloudFailed(job.id, unrecorded.isEmpty ? message : "\(message)；发现未记录的拉回任务，已保留并暂停进行中的任务，请检查任务列表")
+    }
+
     /// 每 5 秒查一次云端进度；下好后取直链交给内核，删掉原来的 BT 任务和它下的那一点
     private func pollCloud() {
         guard !cloudPolling else { return }
@@ -988,12 +1049,19 @@ final class DownloadStore: ObservableObject {
         Task {
             defer { cloudPolling = false }
             while !cloudJobs.isEmpty {
+                for job in cloudJobs where job.preparingPulls == true {
+                    await recoverCloudPreparation(job, message: "云盘拉回任务创建中断")
+                }
                 // 拉回完成的：删云端文件、结束这个云盘任务
-                for job in cloudJobs where job.pulling != nil {
+                for job in cloudJobs where job.pulling != nil && job.preparingPulls != true {
                     let ids = job.pulling ?? []
                     let finished = !ids.isEmpty && ids.allSatisfy { id in engineItems.first { $0.id == id }?.status == .done }
                     if finished {
-                        if !job.fileID.isEmpty { await PikPak.shared.deleteForever(job.fileID) }
+                        if job.includesAllCloudFiles == true, ids.count == 1,
+                           let item = engineItems.first(where: { $0.id == ids[0] }),
+                           Self.cloudCopyCanBeRemoved(file: item.file, expectedSize: item.total), !job.fileID.isEmpty {
+                            await PikPak.shared.deleteForever(job.fileID)
+                        }
                         cloudJobs.removeAll { $0.id == job.id }; saveCloud()
                     }
                 }
@@ -1003,26 +1071,59 @@ final class DownloadStore: ObservableObject {
                     if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) { cloudJobs[k].progress = t.progress }
                     guard t.phase == "PHASE_TYPE_COMPLETE" else { continue }
                     do {
-                        let files = try await PikPak.shared.files(of: t.fileID.isEmpty ? job.fileID : t.fileID)
+                        let selection = try await PikPak.shared.files(of: t.fileID.isEmpty ? job.fileID : t.fileID)
+                        let files = selection.files
                         guard !files.isEmpty else { cloudFailed(job.id, "云端没有可下载的文件"); continue }
+                        let currentDir = URL(fileURLWithPath: job.dir)
+                        let pullDir = currentDir.lastPathComponent == job.id ? currentDir : currentDir.appendingPathComponent("PikPak 下载").appendingPathComponent(job.id)
+                        try FileManager.default.createDirectory(at: pullDir, withIntermediateDirectories: true)
+                        guard let initial = cloudJobs.firstIndex(where: { $0.id == job.id }) else { continue }
+                        cloudJobs[initial].pulling = []
+                        cloudJobs[initial].preparingPulls = true
+                        cloudJobs[initial].dir = pullDir.path
+                        cloudJobs[initial].includesAllCloudFiles = selection.includesAll
+                        if !t.fileID.isEmpty { cloudJobs[initial].fileID = t.fileID }
+                        guard saveCloud() else {
+                            cloudJobs[initial].pulling = nil
+                            cloudJobs[initial].preparingPulls = nil
+                            cloudFailed(job.id, "无法保存云盘任务状态")
+                            continue
+                        }
+                        let created = try await Self.createCloudPulls(files, create: { f in
+                            let id = try await self.host.client.create(url: f.url, directory: pullDir.path, name: f.name)
+                            guard let index = self.cloudJobs.firstIndex(where: { $0.id == job.id }) else {
+                                try? await self.host.client.delete(id, withFiles: false)
+                                throw EngineError.server("云盘任务已移除")
+                            }
+                            self.cloudJobs[index].pulling?.append(id)
+                            guard self.saveCloud() else {
+                                try? await self.host.client.delete(id, withFiles: false)
+                                throw EngineError.server("无法保存云盘任务状态")
+                            }
+                            return id
+                        }, rollback: { id in
+                            try? await self.host.client.delete(id, withFiles: false)
+                        })
+                        guard let k = cloudJobs.firstIndex(where: { $0.id == job.id }) else {
+                            for id in created { try? await host.client.delete(id, withFiles: false) }
+                            continue
+                        }
+                        cloudJobs[k].pulling = created
+                        cloudJobs[k].preparingPulls = false
+                        guard saveCloud() else {
+                            cloudJobs[k].preparingPulls = true
+                            await recoverCloudPreparation(cloudJobs[k], message: "无法保存云盘任务状态")
+                            continue
+                        }
                         if let e = job.engineID { try? await host.client.delete(e, withFiles: false) }
-                        if let p = job.partial, FileManager.default.fileExists(atPath: p) {
-                            try? FileManager.default.trashItem(at: URL(fileURLWithPath: p), resultingItemURL: nil)
-                        }
-                        var created: [String] = []
-                        for f in files {
-                            let id = try await host.client.create(url: f.url, directory: job.dir, name: f.name)
-                            created.append(id)
-                            if f.size == files.map(\.size).max() { selectedID = id }
-                        }
-                        if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
-                            cloudJobs[k].pulling = created
-                            if !t.fileID.isEmpty { cloudJobs[k].fileID = t.fileID }
-                        }
-                        saveCloud()
+                        if let index = files.indices.max(by: { files[$0].size < files[$1].size }) { selectedID = created[index] }
                         notice = "「\(job.title)」云端已下好，正在从云盘拉回"
                         await poll()
-                    } catch { cloudFailed(job.id, error.localizedDescription) }
+                    } catch {
+                        if let current = cloudJobs.first(where: { $0.id == job.id }), current.preparingPulls == true {
+                            await recoverCloudPreparation(current, message: error.localizedDescription)
+                        } else { cloudFailed(job.id, error.localizedDescription) }
+                    }
                 }
                 saveCloud(); rebuild()
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -1281,7 +1382,7 @@ final class DownloadStore: ObservableObject {
 
     // MARK: 完成通知
 
-    static let doneCategory = "done"
+    nonisolated static let doneCategory = "done"
 
     /// 通知上带「打开」「在访达中显示」两个按钮（AppDelegate 里处理点击）
     static func registerNotificationActions() {
@@ -1386,7 +1487,7 @@ final class DownloadStore: ObservableObject {
     }
 
     private func saveVideos() {
-        if let data = try? JSONEncoder().encode(videoJobs) { try? data.write(to: videosFile) }
+        if let data = try? JSONEncoder().encode(videoJobs) { try? PrivateFile.write(data, to: videosFile) }
     }
 
     func retry(_ item: Item) {
