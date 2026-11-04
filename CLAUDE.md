@@ -36,7 +36,7 @@
 - 浏览器扩展：**用自带的**（`browser-extension/`，MV3，Chrome / Edge 通用；10-28 用户说别绑篡改猴）。打包进 App、启动时拷到 `Application Support/ShandianDownload/BrowserExtension`（浏览器记路径，别指向 dist）。用户在扩展页开开发者模式、拖文件夹进去装一次——浏览器不允许第三方静默装扩展，Chrome 137+ 也不认 `--load-extension`
   - 扩展 ID 由 manifest 的 `key` 固定，网关 `/extension/*` 只认这个 Origin；**改 key 要同步改 `Gateway.extensionOrigin`**
   - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接。完整规则见 `docs/internals.md`
-  - 商店版是另一套：`browser-extension-store/`，只有右键发送文件直链；网关只精确放行 `Gateway.swift` 里列出的商店 ID，**不许放宽到任意扩展**。上架状态和后台操作方法见 `docs/CHROME_STORE_PREPARATION.md`
+  - 商店版是另一套：`browser-extension-store/`，只有右键发送文件直链；两版的区别和安装入口都在「浏览器扩展」窗口的对照表（`BrowserSetupView`），改功能时同步表格和 README；网关只精确放行 `Gateway.swift` 里列出的商店 ID，**不许放宽到任意扩展**。上架状态和后台操作方法见 `docs/CHROME_STORE_PREPARATION.md`
   - **抖音别改回包 fetch/XHR**（会和安全 SDK 防篡改死循环、页面卡死），只包 `JSON.parse` / `Response.prototype.json`；**所有视频入口都走 `downloadVideoInTab`**。抖音、小红书已实测，快手和抖音信息流未实测，视频号不接
 - 退出 App：`pauseAll` 后内核留着不关，下载中的任务记进 `resumeOnLaunch`，下次打开续上（补丁后内核重启也不用校验）
 - 复制即弹（`ClipboardWatcher`）：App 不在前台时，复制磁力/ed2k/种子/网盘/视频站/常见文件链接 → 右上角浮窗；普通网页不弹
@@ -48,7 +48,7 @@
 - 版本号在 `script/build_app.sh` 的 `APP_VERSION`，构建号取 git 提交数。修问题升第三位，加功能升第二位
 - 每次给本机安装新的开发构建，都要在上次已安装版本基础上递增版本号，并在 `CHANGELOG.md` 新建一节，只记录本次相对上次新增或修复的内容；安装前对照上次版本核实。历史补记须注明当时实际显示的版本，不得冒充当时已安装的新版本号。
 - 每次升版本在 `CHANGELOG.md` 顶部加一节；打包时拷进 App，「关于闪电全能下载 → 更新记录」直接读它，别另写一份。写法按正式更新说明（短句、陈述事实，不写口语）
-- **没发布的版本标「开发版」**：标题写成 `## x.y.z · 日期（开发版）`，界面显示开发版标记。**发版时把上个正式版之后的开发版小节汇总成正式版这一节（写用户能看懂的改动，去掉中间过程），并删掉这些开发版小节**，GitHub 发布说明用同一份；有开发版小节时正式打包会被拦下（11-04 用户定）。`build_app.sh` 默认打开发包；正式包须显式指定 `SHANDIAN_RELEASE_BUILD=1`，并确保工作区干净、版本标签指向当前提交。是否发布仍以 GitHub Release 为准。
+- **没发布的版本标「开发版」**：标题写成 `## x.y.z · 日期（开发版）`，界面显示开发版标记。**发版时把上个正式版之后的开发版小节汇总成正式版这一节（写用户能看懂的改动，去掉中间过程），并删掉这些开发版小节**，GitHub 发布说明用同一份；有开发版小节时正式打包会被拦下（11-04 用户定）。`build_app.sh` 默认打开发包；正式包须显式指定 `SHANDIAN_RELEASE_BUILD=1`，并确保工作区干净、版本标签指向当前提交。是否发布仍以 GitHub Release 为准。改动太少不单独发版，先留在本机开发版，攒够一批再发（11-04 用户定）。
 - 「关于 → 介绍」的优势卡在 `AboutView.swift` 的 `IntroPage`，只写实测过的数据（下面「测速记录」），竞品只写查证过的事实
 
 ## 检查更新与一键更新（10-29 加，沿用小清）

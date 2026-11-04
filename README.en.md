@@ -116,9 +116,9 @@ Right-click a supported file link and choose **发送到闪电 / Send to Shandia
 
 ### Full version
 
-1. In the menu bar choose **闪电全能下载 → 浏览器扩展…** (Browser Extension), then click **Chrome** or **Edge** to open the browser's extensions page
+1. In the menu bar choose **闪电全能下载 → 浏览器扩展…** (Browser Extension), then click **手动安装** (Install manually) in the row of your browser. This opens the extensions page and the extension folder
 2. Turn on **Developer mode** (top-right in Chrome, left sidebar in Edge)
-3. Back in Shandian, click **显示文件夹** (Show Folder) and drag the `BrowserExtension` folder onto the extensions page
+3. Drag the `BrowserExtension` folder onto the extensions page
 
 Once installed, the window shows **已连接** (Connected).
 

@@ -129,9 +129,9 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 
 ### 完整版
 
-1. 在菜单栏选择「闪电全能下载 → 浏览器扩展…」，在弹出的窗口中点击「Chrome」或「Edge」，打开浏览器的扩展管理页
+1. 在菜单栏选择「闪电全能下载 → 浏览器扩展…」，在对应浏览器一行点击「手动安装」，会同时打开扩展管理页和扩展文件夹
 2. 在扩展管理页开启「开发者模式」：Chrome 位于页面右上角，Edge 位于左侧栏
-3. 回到闪电全能下载的窗口，点击「显示文件夹」，将 `BrowserExtension` 文件夹拖入浏览器的扩展管理页
+3. 将 `BrowserExtension` 文件夹拖入浏览器的扩展管理页
 
 安装完成后，窗口中会显示「已连接」。
 
