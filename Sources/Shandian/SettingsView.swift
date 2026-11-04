@@ -61,11 +61,8 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var dirsVersion = 0   // 改了位置后刷新显示
 
-    private enum SettingsTab: Hashable { case download, folders, extensions, boost, general }
-    @State private var settingsTab = SettingsTab.download
-
     var body: some View {
-        TabView(selection: $settingsTab) {
+        TabView {
             Form {
             Section("下载") {
                 Picker("同时下载", selection: $maxRunning) {
@@ -89,7 +86,6 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("下载", systemImage: "arrow.down.circle") }
-            .tag(SettingsTab.download)
 
             Form {            Section("保存位置") {
                 dirRow("磁力、种子", key: "dir.movie", current: Folders.movies)
@@ -101,11 +97,9 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("保存位置", systemImage: "folder") }
-            .tag(SettingsTab.folders)
 
             ScrollView { BrowserSetupView(token: store.engineToken) }
                 .tabItem { Label("浏览器扩展", systemImage: "puzzlepiece.extension") }
-                .tag(SettingsTab.extensions)
 
             Form {
             ThunderSettingsSection()
@@ -152,7 +146,6 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("下载加速", systemImage: "bolt") }
-            .tag(SettingsTab.boost)
 
             Form {
             Section("系统") {
@@ -170,11 +163,10 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("通用", systemImage: "gearshape") }
-            .tag(SettingsTab.general)
         }
         .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser; pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
         .onAppear { ThunderBridge.recheck() }
-        .frame(width: settingsTab == .extensions ? 708 : 600, height: settingsTab == .extensions ? 640 : 430)
+        .frame(width: 708, height: 640)   // 所有页同样大，切换时窗口不跳（11-05 用户定）；以内容最多的浏览器扩展页为准
         .tint(Theme.tint)
     }
 
