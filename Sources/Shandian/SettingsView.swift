@@ -115,8 +115,8 @@ struct SettingsView: View {
                     Text(pkProblem ? "会话刷新失败，请检查网络或重新关联账号。" : "已保存账号关联，实际登录状态会在使用时验证。")
                         .font(.system(size: 12)).foregroundStyle(Theme.sub)
                     HStack {
-                        Button("从浏览器重新关联") { linkPikPakFromBrowser() }
                         Button("在窗口里登录…") { openWindow(id: "pikpak-login"); NSApp.activate(ignoringOtherApps: true) }
+                        Button("从浏览器重新关联") { linkPikPakFromBrowser() }
                     }
                     Text("浏览器已登录 PikPak 时可直接重新关联，需安装闪电全能下载扩展。关联后浏览器中的 PikPak 可能退出登录。")
                         .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
@@ -130,9 +130,9 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("PikPak 账号") {
                         HStack {
-                            Button("从浏览器关联") { linkPikPakFromBrowser() }
-                                .buttonStyle(.borderedProminent)
                             Button("在窗口里登录…") { openWindow(id: "pikpak-login"); NSApp.activate(ignoringOtherApps: true) }
+                                .buttonStyle(.borderedProminent)
+                            Button("从浏览器关联") { linkPikPakFromBrowser() }
                         }
                     }
                     Text("浏览器里已登录 PikPak 时点「从浏览器关联」即可（需装好闪电全能下载扩展）；关联后浏览器里的 PikPak 网页会退出登录，因为同一份登录不能两边同时用。")
