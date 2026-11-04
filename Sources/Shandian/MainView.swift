@@ -111,6 +111,13 @@ private struct Sidebar: View {
 
     }
 
+    /// 整块都能点：纯文字按钮只有笔画算点中，图标和文字之间、上下边缘都点不到（11-05 用户：要多点一下）
+    private func sidebarLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage).fixedSize()
+            .padding(.vertical, 5).padding(.horizontal, 4)
+            .contentShape(Rectangle())
+    }
+
     /// 侧栏顶部：App 图标 + 名字，只做标识（「关于」入口在底部，不重复）
     private var brand: some View {
         HStack(spacing: 9) {
@@ -125,11 +132,12 @@ private struct Sidebar: View {
     private var versionRow: some View {
         HStack(spacing: 16) {
             SettingsLink {
-                Label("设置", systemImage: "gearshape").fixedSize()
+                sidebarLabel("设置", systemImage: "gearshape")
             }
+            .simultaneousGesture(TapGesture().onEnded { NSApp.activate(ignoringOtherApps: true) })
             .help("设置（⌘,）")
             Button { AppInfo.showAbout(.intro, openWindow) } label: {
-                Label("关于", systemImage: "info.circle").fixedSize()
+                sidebarLabel("关于", systemImage: "info.circle")
             }
             .help("关于闪电全能下载")
             Spacer(minLength: 0)
@@ -138,6 +146,7 @@ private struct Sidebar: View {
         .labelStyle(.titleAndIcon)
         .buttonStyle(.plain)
         .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        .firstClickActivates()
         .onReceive(NotificationCenter.default.publisher(for: PikPak.relinkRequested)) { _ in
             openWindow(id: "pikpak-login")
             NSApp.activate(ignoringOtherApps: true)
@@ -192,6 +201,13 @@ private struct DetailPane: View {
                 store.selectedID = nil
             }
         }
+    }
+}
+
+private extension View {
+    /// 窗口不在前台时，第一下点击也算数，不只是把窗口叫到前台（macOS 15 起才有这个接口）
+    @ViewBuilder func firstClickActivates() -> some View {
+        if #available(macOS 15.0, *) { allowsWindowActivationEvents() } else { self }
     }
 }
 

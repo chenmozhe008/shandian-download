@@ -225,6 +225,11 @@ enum ThunderBridge {
             alert.informativeText = "闪电暂时无法确认迅雷是否已暂停。请先到迅雷暂停这条任务，再回来确认，避免两个程序同时写入文件。"
             alert.addButton(withTitle: "我已暂停，继续收回")
             alert.addButton(withTitle: "再等等")
+        case .needsAccessibility:
+            alert.messageText = "需要允许「辅助功能」才能控制迅雷"
+            alert.informativeText = "在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。也可以先在迅雷里手动暂停这条任务。"
+            alert.addButton(withTitle: "我已暂停，继续收回")
+            alert.addButton(withTitle: "再等等")
         case .idle, .cancelled:
             break
         }
@@ -241,7 +246,7 @@ enum ThunderBridge {
     }
 
     nonisolated static func rowMatches(_ row: TaskRow, folderName: String?, name: String?) -> Bool {
-        [folderName, name].compactMap { $0 }.contains { !$0.isEmpty && row.name == $0 }
+        [folderName, name].compactMap { $0 }.contains { !$0.isEmpty && (row.name == $0 || row.name.hasPrefix($0)) }
     }
 
     private static func thunderElement() -> AXUIElement? {
@@ -283,6 +288,25 @@ enum ThunderBridge {
         }
     }
 
+    /// 第一次用要在系统设置里允许；临时签名的正式包每次更新后也要重新允许
+    private static func requestAccessibility() -> Bool {
+        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    }
+
+    /// 窗口关着、或停在已完成等其他页时，切回「正在下载」，任务行和「全部暂停」才看得到
+    private static func showThunderWindow(_ app: NSRunningApplication) async {
+        if mainWindow() == nil, let url = appURL {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            for _ in 0..<10 where mainWindow() == nil { try? await Task.sleep(nanoseconds: 300_000_000) }
+        }
+        if let window = mainWindow(), let tab = findButton(window, title: "正在下载", depth: 0) {
+            AXUIElementPerformAction(tab, kAXPressAction as CFString)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+    }
+
     private static func pressPauseAll() -> Bool {
         guard let window = mainWindow(), let button = findButton(window, title: "全部暂停", depth: 0) else { return false }
         return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
@@ -293,10 +317,17 @@ enum ThunderBridge {
     static func stopForReclaim(_ job: ThunderJob) async -> WriteState {
         guard let folder = job.folder, FileManager.default.fileExists(atPath: folder) else { return .unknown }
         let folderName = URL(fileURLWithPath: folder).lastPathComponent
+        // 迅雷没开就不可能在写
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first else {
+            return await isChanging(folder) ? .writing : .idle
+        }
+        guard requestAccessibility() else { return .needsAccessibility }
+        await showThunderWindow(running)
         let rows = taskRows()
         let row = rows.first { rowMatches($0, folderName: folderName, name: job.name) }
         let writing = await isChanging(folder)
-        if !writing { return row.map { isHalted($0.status) } == true ? .idle : .unknown }
+        // 只有迅雷自己写着「已暂停」才算停了：1.5 秒没写不代表没在下，下得慢时迅雷隔一阵才写一次（11-05 用户反馈还要手动停）
+        if !writing, row.map({ isHalted($0.status) }) == true { return .idle }
         let others = rows.filter { !rowMatches($0, folderName: folderName, name: job.name) && !isHalted($0.status) }
         if !others.isEmpty {
             let alert = NSAlert()
@@ -307,7 +338,7 @@ enum ThunderBridge {
             NSApp.activate(ignoringOtherApps: true)
             guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
         }
-        guard pressPauseAll() else { return .writing }
+        guard pressPauseAll() else { return writing ? .writing : .unknown }
         for _ in 0..<4 {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if await !isChanging(folder) { return .idle }
@@ -331,6 +362,7 @@ enum ThunderBridge {
         case idle        // 确认没在写（安全收回）
         case unknown     // 没找到迅雷的任务文件夹，判断不了
         case cancelled   // 用户选择不暂停
+        case needsAccessibility // 还没给辅助功能权限，按不了迅雷的按钮
     }
 
     /// 收回到本地前判断迅雷停没停。找不到文件夹时不能当「已停」——那样会在迅雷还在写的时候

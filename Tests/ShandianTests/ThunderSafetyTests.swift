@@ -105,6 +105,7 @@ import CryptoKit
         let row = ThunderBridge.TaskRow(status: "已暂停", name: "片名.2026")
         XCTAssertTrue(ThunderBridge.rowMatches(row, folderName: "片名.2026", name: nil))
         XCTAssertFalse(ThunderBridge.rowMatches(row, folderName: "别的片", name: ""))
+        XCTAssertTrue(ThunderBridge.rowMatches(ThunderBridge.TaskRow(status: "1MB/s", name: "片名.2026.mkv"), folderName: "片名.2026", name: nil))
     }
 
     func testHomeFolderUnwrapsNestedHandoffDirectories() {
