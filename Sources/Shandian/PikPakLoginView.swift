@@ -14,7 +14,7 @@ struct PikPakLoginView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "lock.shield").foregroundStyle(Theme.tint)
-                Text(pageProblem ? "网页没有显示出来，可能是代理不稳定" : status).font(.system(size: 13))
+                Text(pageProblem ? "网页没有显示出来" : status).font(.system(size: 13))
                 Spacer()
                 if pageProblem {
                     Button("重新加载") { pageProblem = false; reloadCount += 1 }
@@ -59,10 +59,11 @@ private struct PikPakWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
+        cfg.preferences.javaScriptCanOpenWindowsAutomatically = true
         // 网页脚本运行前先删掉旧的登录信息：网页总从未登录开始，不会拿旧 token 去刷新、也不会被当成新登录读回来
         cfg.userContentController.addUserScript(WKUserScript(source: Self.clearOnce, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let v = WKWebView(frame: .zero, configuration: cfg)
-        v.uiDelegate = context.coordinator   // Google、Apple 登录会开新窗口，改在同一个窗口里打开
+        v.uiDelegate = context.coordinator
         v.navigationDelegate = context.coordinator
         v.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
         v.load(URLRequest(url: URL(string: "https://mypikpak.com/drive/login")!))
@@ -83,6 +84,7 @@ private struct PikPakWebView: NSViewRepresentable {
         var blankChecks = 0
         private var timer: Timer?
         private var taken = false
+        private var popups: [ObjectIdentifier: NSWindow] = [:]
         init(onCredential: @escaping (WebCredential) -> Void, onPageProblem: @escaping () -> Void) {
             self.onCredential = onCredential
             self.onPageProblem = onPageProblem
@@ -110,10 +112,26 @@ private struct PikPakWebView: NSViewRepresentable {
             }
         }
 
+        /// Google、Apple 登录开的是独立小窗，登录结果靠小窗传回打开它的页面。
+        /// 必须用系统给的配置建真正的新窗口；在原窗口里打开会把 PikPak 页面换掉，结果传不回来，登录完就白屏（11-04）
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
-            return nil
+            let size = NSSize(width: windowFeatures.width?.doubleValue ?? 520, height: windowFeatures.height?.doubleValue ?? 720)
+            let popup = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
+            popup.uiDelegate = self
+            popup.customUserAgent = webView.customUserAgent
+            let window = NSWindow(contentRect: popup.frame, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.title = "登录 PikPak"
+            window.isReleasedWhenClosed = false
+            window.contentView = popup
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            popups[ObjectIdentifier(popup)] = window
+            return popup
+        }
+
+        func webViewDidClose(_ webView: WKWebView) {
+            popups.removeValue(forKey: ObjectIdentifier(webView))?.close()
         }
 
         func start(_ v: WKWebView) {
@@ -124,7 +142,7 @@ private struct PikPakWebView: NSViewRepresentable {
 
         private func check(_ v: WKWebView) {
             guard !taken else { return }
-            checkBlank(v)
+            if popups.isEmpty { checkBlank(v) } else { blankChecks = 0 }
             let js = """
             (() => { const k = Object.keys(localStorage).find(k => k.startsWith('credentials_'));
               if (!k) return null; const c = JSON.parse(localStorage.getItem(k) || '{}');
@@ -138,6 +156,8 @@ private struct PikPakWebView: NSViewRepresentable {
                           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
                           let key = o["key"] as? String, let c = o["c"] as? [String: Any] else { return }
                     self.taken = true; self.timer?.invalidate()
+                    self.popups.values.forEach { $0.close() }
+                    self.popups.removeAll()
                     // 键名形如 credentials_<client_id>（多账号时后面还有 @<sub>）
                     let client = String(key.dropFirst("credentials_".count).split(separator: "@").first ?? "")
                     var device = o["device"] as? String ?? ""

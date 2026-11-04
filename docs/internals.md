@@ -54,6 +54,7 @@
 ## 云盘离线（`PikPak.swift`）
 
 - 接口照开源 PikPakAPI：登录 captcha_init → signin；离线 POST `/drive/v1/files`（UPLOAD_TYPE_URL）；进度 `/drive/v1/tasks`；下载地址要 captcha 的 GET `/drive/v1/files/{id}` → web_content_link
+- 登录窗口的 Google/Apple 登录要用真正的弹窗（`createWebViewWith` 用系统给的配置返回新 WKWebView）：结果靠小窗传回打开它的页面，塞进原窗口会替换 PikPak 页面，结果传不回来、登录完白屏（11-04）。Google 按钮在 `accounts.google.com/gsi/button` 的 iframe 里
 - 登录窗口清旧登录只能在窗口打开时做一次（`sessionStorage` 记标记）：每次加载都清的话，登录成功后的跳转会把刚写入的 `credentials_*` 删掉，窗口拿不到结果（11-04 用假数据复现）
 - 登录：App 里的网页窗口打开 PikPak 官方登录页，读 localStorage 的 `credentials_<client_id>` 和 `deviceid` 后删掉网页那份，之后只由 App 刷新（网页端常量来自开源 peach ADR-0093 / AList）。只存令牌 `pikpak.json`（600）
 - 网页端签名时间戳会随改版变（2026-10-28 为 1793092691562，盐没变），设备号用 deviceid 最后一段前 32 位；签名被拒时 `refreshWebSign` 自动从网页脚本重取
