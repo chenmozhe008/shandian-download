@@ -7,19 +7,25 @@ import WebKit
 struct PikPakLoginView: View {
     var onDone: (String?) -> Void
     @State private var status = "在下面的网页里登录 PikPak，登录后会自动关联"
+    @State private var pageProblem = false
+    @State private var reloadCount = 0
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "lock.shield").foregroundStyle(Theme.tint)
-                Text(status).font(.system(size: 13))
+                Text(pageProblem ? "网页没有显示出来，可能是代理不稳定" : status).font(.system(size: 13))
                 Spacer()
+                if pageProblem {
+                    Button("重新加载") { pageProblem = false; reloadCount += 1 }
+                }
                 Button("取消") { onDone(nil) }
             }
             .padding(.horizontal, 16).frame(height: 44)
             Divider()
-            PikPakWebView { cred in
+            PikPakWebView(reloadCount: reloadCount, onPageProblem: { pageProblem = true }) { cred in
                 status = "已登录，正在关联…"
+                pageProblem = false
                 Task {
                     do {
                         try await PikPak.shared.adoptWebSession(clientID: cred.clientID, deviceID: cred.deviceID, accessToken: cred.access,
@@ -36,29 +42,73 @@ struct PikPakLoginView: View {
 struct WebCredential { var clientID, deviceID, access, refresh, sub, name: String }
 
 private struct PikPakWebView: NSViewRepresentable {
+    var reloadCount: Int
+    var onPageProblem: () -> Void
     var onCredential: (WebCredential) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCredential: onCredential) }
+    func makeCoordinator() -> Coordinator { Coordinator(onCredential: onCredential, onPageProblem: onPageProblem) }
+
+    /// 只在窗口刚打开时清一次旧登录。不能每次加载都清：登录成功后网页会跳转，刚写入的登录信息会被删掉，
+    /// 窗口就拿不到结果、页面退回未登录（11-04 复现，用户看到白屏卡住）
+    static let clearOnce = """
+    if (!sessionStorage.getItem('shandian_cleared')) {
+      Object.keys(localStorage).filter(k => k.startsWith('credentials_')).forEach(k => localStorage.removeItem(k));
+      sessionStorage.setItem('shandian_cleared', '1');
+    }
+    """
 
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         // 网页脚本运行前先删掉旧的登录信息：网页总从未登录开始，不会拿旧 token 去刷新、也不会被当成新登录读回来
-        let clear = "Object.keys(localStorage).filter(k => k.startsWith('credentials_')).forEach(k => localStorage.removeItem(k));"
-        cfg.userContentController.addUserScript(WKUserScript(source: clear, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        cfg.userContentController.addUserScript(WKUserScript(source: Self.clearOnce, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let v = WKWebView(frame: .zero, configuration: cfg)
         v.uiDelegate = context.coordinator   // Google、Apple 登录会开新窗口，改在同一个窗口里打开
+        v.navigationDelegate = context.coordinator
         v.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
         v.load(URLRequest(url: URL(string: "https://mypikpak.com/drive/login")!))
         context.coordinator.start(v)
         return v
     }
-    func updateNSView(_ v: WKWebView, context: Context) {}
+    func updateNSView(_ v: WKWebView, context: Context) {
+        guard context.coordinator.reloadCount != reloadCount else { return }
+        context.coordinator.reloadCount = reloadCount
+        context.coordinator.blankChecks = 0
+        if v.url == nil { v.load(URLRequest(url: URL(string: "https://mypikpak.com/drive/login")!)) } else { v.reload() }
+    }
 
-    @MainActor final class Coordinator: NSObject, WKUIDelegate {
+    @MainActor final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate {
         let onCredential: (WebCredential) -> Void
+        let onPageProblem: () -> Void
+        var reloadCount = 0
+        var blankChecks = 0
         private var timer: Timer?
         private var taken = false
-        init(onCredential: @escaping (WebCredential) -> Void) { self.onCredential = onCredential }
+        init(onCredential: @escaping (WebCredential) -> Void, onPageProblem: @escaping () -> Void) {
+            self.onCredential = onCredential
+            self.onPageProblem = onPageProblem
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            onPageProblem()
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            onPageProblem()
+        }
+
+        /// 页面连续 15 秒一个字都没有：多半是脚本经代理没加载全，提示重新加载
+        private func checkBlank(_ v: WKWebView) {
+            v.evaluateJavaScript("document.body ? document.body.innerText.trim().length : 0") { [weak self] result, _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if (result as? Int ?? 0) > 0 { self.blankChecks = 0; return }
+                    self.blankChecks += 1
+                    if self.blankChecks == 15 { self.onPageProblem() }
+                }
+            }
+        }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -74,6 +124,7 @@ private struct PikPakWebView: NSViewRepresentable {
 
         private func check(_ v: WKWebView) {
             guard !taken else { return }
+            checkBlank(v)
             let js = """
             (() => { const k = Object.keys(localStorage).find(k => k.startsWith('credentials_'));
               if (!k) return null; const c = JSON.parse(localStorage.getItem(k) || '{}');
