@@ -37,7 +37,7 @@ The app is written in SwiftUI. Downloads are handled by a patched build of [Gope
 | YouTube, X, Bilibili, Weibo | Copy the video page URL and press ⌘V |
 | Douban movie trailers | Paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
-| Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the extension |
+| Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
 | Baidu Netdisk and other cloud drives | Obtain a direct link with the [LinkSwift](https://greasyfork.org/scripts/583582-linkswift) userscript (installed separately), then send it to Shandian |
 
 Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
@@ -93,7 +93,28 @@ The script downloads the latest release, checks its SHA-256 when provided by Git
 
 ## Browser extension
 
-The extension hands web downloads to Shandian automatically and is required for Douyin, Xiaohongshu and Xinpianchang videos. It works in Chrome and Edge, and updates together with the app.
+There are two versions, both for Chrome and Edge. Pick one:
+
+| | Full version (more features, recommended) | Store version (easy install) |
+|---|---|---|
+| Install | Manual, with Developer mode on | Search in the browser's store, one click |
+| Updates | With the app | Through the browser's store |
+| Right-click to send archive, document and installer links | ✓ | ✓ |
+| Take over downloads started on web pages | ✓ | — |
+| Magnet and ed2k links | ✓ | — |
+| Douyin, Xiaohongshu, Xinpianchang and other videos | ✓ | — |
+| WeChat Channels | ✓ | — |
+| Grab links from a page in bulk | ✓ | — |
+| Links that require sign-in | ✓ | May not work |
+| Browser permissions | All sites, cookies and downloads | Context menu, local settings and connecting to the app only |
+
+### Store version
+
+Search for **Shandian Download Manager** in the Chrome Web Store or Edge Add-ons, or open it directly: [Chrome](https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg) · [Edge](https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei).
+
+Right-click a supported file link and choose **发送到闪电 / Send to Shandian**. Shandian (0.18.24 or later) must be open.
+
+### Full version
 
 1. In the menu bar choose **闪电全能下载 → 浏览器扩展…** (Browser Extension), then click **Chrome** or **Edge** to open the browser's extensions page
 2. Turn on **Developer mode** (top-right in Chrome, left sidebar in Edge)

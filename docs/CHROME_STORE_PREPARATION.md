@@ -1,6 +1,6 @@
 # Chrome 商店版上架准备
 
-更新：2026-11-03。Chrome 0.1.1 已提交审核，尚未上架。Windows 暂不处理。
+更新：2026-11-04。Chrome、Edge 商店页均已上线（名称 Shandian Download Manager），README 已写明两个版本的区别和链接；商店签名包尚未实测。Windows 暂不处理。
 
 ## 当前状态
 
