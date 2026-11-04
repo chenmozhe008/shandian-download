@@ -225,10 +225,94 @@ enum ThunderBridge {
             alert.informativeText = "闪电暂时无法确认迅雷是否已暂停。请先到迅雷暂停这条任务，再回来确认，避免两个程序同时写入文件。"
             alert.addButton(withTitle: "我已暂停，继续收回")
             alert.addButton(withTitle: "再等等")
-        case .idle:
+        case .idle, .cancelled:
             break
         }
         return alert
+    }
+
+    // MARK: 收回时替用户暂停迅雷
+
+    struct TaskRow: Equatable { var status: String; var name: String }
+
+    /// 暂停、失败、已完成的任务不会再写文件
+    nonisolated static func isHalted(_ status: String) -> Bool {
+        ["暂停", "失败", "完成"].contains { status.contains($0) }
+    }
+
+    nonisolated static func rowMatches(_ row: TaskRow, folderName: String?, name: String?) -> Bool {
+        [folderName, name].compactMap { $0 }.contains { !$0.isEmpty && row.name == $0 }
+    }
+
+    private static func thunderElement() -> AXUIElement? {
+        guard AXIsProcessTrusted(),
+              let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first?.processIdentifier
+        else { return nil }
+        return AXUIElementCreateApplication(pid)
+    }
+
+    private static func mainWindow() -> AXUIElement? {
+        var value: CFTypeRef?
+        guard let app = thunderElement(), AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return nil }
+        return windows.first { attr($0, kAXTitleAttribute) == "迅雷" }
+    }
+
+    private static func descendants(_ element: AXUIElement, depth: Int = 0) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard depth < 12, AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
+              let children = value as? [AXUIElement] else { return [] }
+        return children + children.flatMap { descendants($0, depth: depth + 1) }
+    }
+
+    /// 迅雷「正在下载」页的任务行：每行第一段文字是状态，第二段是任务名（11-04 实测 5.80）
+    static func taskRows() -> [TaskRow] {
+        guard let window = mainWindow() else { return [] }
+        return descendants(window).compactMap { element -> TaskRow? in
+            guard attr(element, kAXRoleAttribute) == kAXGroupRole else { return nil }
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
+                  let children = value as? [AXUIElement],
+                  children.contains(where: { attr($0, kAXTitleAttribute)?.contains("个文件") == true }) else { return nil }
+            let texts = children.filter { attr($0, kAXRoleAttribute) == kAXStaticTextRole }.compactMap { element -> String? in
+                var text: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &text) == .success else { return nil }
+                return text as? String
+            }
+            return texts.count >= 2 ? TaskRow(status: texts[0], name: texts[1]) : nil
+        }
+    }
+
+    private static func pressPauseAll() -> Bool {
+        guard let window = mainWindow(), let button = findButton(window, title: "全部暂停", depth: 0) else { return false }
+        return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    }
+
+    /// 收回前让迅雷停下：迅雷只开放了「全部暂停」，单条按钮要鼠标悬停才有，所以别的任务在下时先问用户。
+    /// 按完再看文件夹还写不写，不靠界面文字判断；做不到（没权限、窗口关了）就退回让用户手动暂停
+    static func stopForReclaim(_ job: ThunderJob) async -> WriteState {
+        guard let folder = job.folder, FileManager.default.fileExists(atPath: folder) else { return .unknown }
+        let folderName = URL(fileURLWithPath: folder).lastPathComponent
+        let rows = taskRows()
+        let row = rows.first { rowMatches($0, folderName: folderName, name: job.name) }
+        let writing = await isChanging(folder)
+        if !writing { return row.map { isHalted($0.status) } == true ? .idle : .unknown }
+        let others = rows.filter { !rowMatches($0, folderName: folderName, name: job.name) && !isHalted($0.status) }
+        if !others.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "迅雷里还有 \(others.count) 条任务在下载"
+            alert.informativeText = "收回这条需要先暂停迅雷，其他任务也会一起暂停。之后可以到迅雷点「全部开始」继续。"
+            alert.addButton(withTitle: "一起暂停并收回")
+            alert.addButton(withTitle: "取消")
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
+        }
+        guard pressPauseAll() else { return .writing }
+        for _ in 0..<4 {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if await !isChanging(folder) { return .idle }
+        }
+        return .writing
     }
 
     /// 迅雷是不是还在往这个文件夹里写。收回前必须先确认：两边同时写同一个文件会损坏数据，
@@ -246,6 +330,7 @@ enum ThunderBridge {
         case writing     // 还在写
         case idle        // 确认没在写（安全收回）
         case unknown     // 没找到迅雷的任务文件夹，判断不了
+        case cancelled   // 用户选择不暂停
     }
 
     /// 收回到本地前判断迅雷停没停。找不到文件夹时不能当「已停」——那样会在迅雷还在写的时候

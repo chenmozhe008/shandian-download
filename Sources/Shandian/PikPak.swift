@@ -136,6 +136,12 @@ actor PikPak {
     }
 
     private func refresh() async throws {
+        // 文件里的令牌比内存新（别的进程刷新过），直接用，不拿旧令牌去撞
+        if let saved = (try? Data(contentsOf: Self.file)).flatMap({ try? JSONDecoder().decode(Session.self, from: $0) }),
+           saved.userID == session?.userID, saved.refreshToken != session?.refreshToken {
+            session?.accessToken = saved.accessToken; session?.refreshToken = saved.refreshToken
+            return
+        }
         guard var s = session else { throw PikPakError.notLoggedIn }
         let r = try await send("POST", "\(userHost)/v1/auth/token",
                                body: ["client_id": profile.clientID, "refresh_token": s.refreshToken, "grant_type": "refresh_token"],
@@ -145,7 +151,8 @@ actor PikPak {
                 UserDefaults.standard.set(true, forKey: "pikpakSessionProblem")
                 DispatchQueue.main.async { NotificationCenter.default.post(name: Self.loginChanged, object: nil) }
             }
-            throw PikPakError.server("PikPak 会话刷新失败，请检查网络或在设置里重新关联")
+            // 令牌只能用一次：从浏览器关联时浏览器也拿着同一个，页面开着就可能先刷新掉（11-04 实测 invalid_grant）
+            throw PikPakError.server("PikPak 登录已失效，请重新关联")
         }
         guard session?.refreshToken == s.refreshToken else { return }
         UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
@@ -241,6 +248,10 @@ actor PikPak {
     func usedBytes() async throws -> Int64 { try await quota().used }
 
     /// 需要的空间不够、或大小还不知道（磁力没解析完）时才清回收站
+    /// 登录已失效：自动转交时跳过云盘，别每次都白失败一轮
+    nonisolated static var sessionInvalid: Bool { UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
+    nonisolated static let relinkRequested = Notification.Name("PikPakRelinkRequested")
+
     nonisolated static func shouldEmptyTrash(_ quota: Quota, need: Int64) -> Bool {
         quota.inTrash > 0 && (need <= 0 || quota.limit - quota.used < need)
     }

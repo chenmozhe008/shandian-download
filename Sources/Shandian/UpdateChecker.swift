@@ -78,7 +78,7 @@ final class UpdateChecker: ObservableObject {
         var request = URLRequest(url: Self.latestAPI, timeoutInterval: 15)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let release: Release
-        if let (data, response) = try? await URLSession.shared.data(for: request),
+        if let (data, response) = try? await GitHubAPI.data(for: request),
            (response as? HTTPURLResponse)?.statusCode ?? 200 == 200,
            let parsed = Self.parse(data) {
             release = parsed

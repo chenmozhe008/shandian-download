@@ -98,6 +98,15 @@ import CryptoKit
         XCTAssertFalse(try measured(checked: 1000, length: 3_322_403_616, activeRecord: false).done)
     }
 
+    func testOnlyRunningThunderRowsCountAsActive() {
+        XCTAssertTrue(ThunderBridge.isHalted("已暂停"))
+        XCTAssertTrue(ThunderBridge.isHalted("获取种子文件失败，无法继续下载"))
+        XCTAssertFalse(ThunderBridge.isHalted("3.2MB/s"))
+        let row = ThunderBridge.TaskRow(status: "已暂停", name: "片名.2026")
+        XCTAssertTrue(ThunderBridge.rowMatches(row, folderName: "片名.2026", name: nil))
+        XCTAssertFalse(ThunderBridge.rowMatches(row, folderName: "别的片", name: ""))
+    }
+
     func testHomeFolderUnwrapsNestedHandoffDirectories() {
         XCTAssertEqual(ThunderBridge.homeFolder(of: URL(fileURLWithPath: "/m/迅雷下载/thunder-1/片名"))?.path, "/m/片名")
         XCTAssertEqual(ThunderBridge.homeFolder(of: URL(fileURLWithPath: "/m/迅雷下载/thunder-1/迅雷下载/thunder-2/片名"))?.path, "/m/片名")

@@ -636,7 +636,7 @@ final class DownloadStore: ObservableObject {
                 || Date().timeIntervalSince(noSpeedSince[i.id] ?? Date()) > 60)
             if all[k].slow, !all[k].link.isEmpty, Self.canAutoHand(progress: i.progress, sinceLaunch: Date().timeIntervalSince(launchedAt)) {
                 let it = all[k]
-                if Prefs.autoCloud, PikPak.loggedInUser != nil, !cloudTried.contains(i.linkKey) {
+                if Prefs.autoCloud, PikPak.loggedInUser != nil, !PikPak.sessionInvalid, !cloudTried.contains(i.linkKey) {
                     cloudTried.insert(i.linkKey)
                     Task { @MainActor in self.sendToCloud(it, automatic: true) }
                 } else if Prefs.autoThunder, ThunderBridge.installed, !thunderTried.contains(i.linkKey) {
@@ -1143,6 +1143,9 @@ final class DownloadStore: ObservableObject {
     }
 
     private func cloudFailureNotice(_ text: String) {
+        if text.contains("重新关联") {
+            noticeAction = NoticeAction(title: "重新关联", forText: text, run: { NotificationCenter.default.post(name: PikPak.relinkRequested, object: nil) })
+        }
         if text.contains("空间") || text.contains("容量") {
             noticeAction = NoticeAction(title: "管理云盘空间", forText: text, run: { [weak self] in self?.manageCloudCopies() })
         }
@@ -1540,9 +1543,10 @@ final class DownloadStore: ObservableObject {
                     thunderJobs[i].folder = found; ThunderBridge.save(thunderJobs); rebuild()
                 }
             }
-            let state = await ThunderBridge.state(of: probe)
+            let state = await ThunderBridge.stopForReclaim(probe)
             if state != .idle {
                 notice = nil
+                if state == .cancelled { return }
                 NSApp.activate(ignoringOtherApps: true)
                 let answer = ThunderBridge.reclaimAlert(state).runModal()
                 // 在写：只能等用户去暂停；找不到文件夹：默认再等等，用户坚持才往下走

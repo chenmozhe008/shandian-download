@@ -138,6 +138,10 @@ private struct Sidebar: View {
         .labelStyle(.titleAndIcon)
         .buttonStyle(.plain)
         .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        .onReceive(NotificationCenter.default.publisher(for: PikPak.relinkRequested)) { _ in
+            openWindow(id: "pikpak-login")
+            NSApp.activate(ignoringOtherApps: true)
+        }
         .padding(.horizontal, 18)
     }
 

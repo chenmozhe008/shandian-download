@@ -299,13 +299,13 @@ private struct ChangelogPage: View {
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/chenmozhe008/shandian-download/releases?per_page=100")!, timeoutInterval: 15)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await GitHubAPI.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200, let rows = ReleaseHistory.online(data) else { throw URLError(.badServerResponse) }
             online = rows
             UserDefaults.standard.set(data, forKey: cacheKey)
             message = rows.isEmpty ? "GitHub 暂无正式发布记录，下面显示本机记录。" : nil
         } catch {
-            message = "未能刷新 GitHub 发布记录，显示本机记录和已有缓存。"
+            message = "暂时连不上 GitHub，下面显示本机记录。"
         }
     }
 
