@@ -75,7 +75,7 @@ struct BrowserSetupView: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.sub)
             }
             VStack(spacing: 0) {
-                tableRow { Color.clear.frame(height: 1) } full: {
+                tableRow(alignment: .top) { Color.clear.frame(height: 1) } full: {
                     columnTitle("完整版", hint: "功能齐全", recommended: true)
                 } store: {
                     columnTitle("商店版", hint: "安装简单", recommended: false)
@@ -127,8 +127,8 @@ struct BrowserSetupView: View {
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in reload() }
     }
 
-    private func tableRow<L: View, F: View, S: View>(@ViewBuilder label: () -> L, @ViewBuilder full: () -> F, @ViewBuilder store: () -> S) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Self.gap) {
+    private func tableRow<L: View, F: View, S: View>(alignment: VerticalAlignment = .firstTextBaseline, @ViewBuilder label: () -> L, @ViewBuilder full: () -> F, @ViewBuilder store: () -> S) -> some View {
+        HStack(alignment: alignment, spacing: Self.gap) {
             label().frame(width: Self.labelWidth, alignment: .leading)
             full().frame(width: Self.columnWidth, alignment: .leading)
             store().frame(width: Self.columnWidth, alignment: .leading)
