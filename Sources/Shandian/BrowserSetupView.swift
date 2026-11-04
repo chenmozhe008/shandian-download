@@ -45,17 +45,21 @@ enum BrowserExtension {
 
 /// 「浏览器扩展」设置页：一张对照表讲清两个版本能干什么，安装按钮放在对应列下面，不用切换就能选
 struct BrowserSetupView: View {
-    private enum Cell { case yes, no, maybe(String), text(String) }
-    private static let comparison: [(String, Cell, Cell)] = [
+    private enum Cell { case yes, no, note(String), text(String) }
+    private static let abilities: [(String, Cell, Cell)] = [
         ("右键下载压缩包、安装包、文档", .yes, .yes),
         ("网页上点下载，自动交给软件", .yes, .no),
         ("右键下载磁力、电驴链接", .yes, .no),
-        ("抖音、小红书、新片场、视频号的视频", .yes, .no),
-        ("需要登录才能下的文件（网盘等）", .yes, .maybe("可能失败")),
-        ("安装", .text("手动，约 1 分钟"), .text("点一下")),
-        ("以后更新", .text("手动点「重新加载」"), .text("自动")),
-        ("需要的权限", .text("多：读取网页和登录状态"), .text("少：看不到网页内容")),
+        ("抖音、小红书、视频号等视频", .yes, .no),
+        ("需要登录才能下的文件", .yes, .note("可能失败")),
     ]
+    private static let setup: [(String, Cell, Cell)] = [
+        ("需要的权限", .text("较多，要读取网页和登录状态"), .text("很少，看不到网页内容")),
+        ("以后更新", .text("在扩展页点「重新加载」"), .text("自动更新")),
+        ("怎么装", .text("点下面的按钮，打开「开发者模式」（Chrome 在右上角，Edge 在左侧栏），再把弹出的文件夹拖进页面"),
+                  .text("点下面的按钮到商店页，再点页面上的添加")),
+    ]
+    private static let labelWidth: CGFloat = 200, columnWidth: CGFloat = 196, gap: CGFloat = 12, tablePadding: CGFloat = 16
     let token: String
     @State private var seen: [String: Date] = [:]
     @State private var copied = ""
@@ -65,39 +69,37 @@ struct BrowserSetupView: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("浏览器扩展").font(.system(size: 20, weight: .bold))
-                Text("下电影、视频、网盘文件，选**完整版**；只偶尔下安装包、文档，选**商店版**，安装最省事。")
+                Text("下电影、视频、网盘文件，选完整版；只偶尔下安装包、文档，选商店版。")
                     .font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
                 Text("两个都不装也能用：复制链接后在软件里按 ⌘V。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub)
             }
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 9) {
-                GridRow {
-                    Color.clear.frame(width: 1, height: 1)
-                    Text("完整版（推荐）").font(.system(size: 13.5, weight: .bold)).foregroundStyle(Theme.tint)
-                    Text("商店版").font(.system(size: 13.5, weight: .bold))
+            VStack(spacing: 0) {
+                tableRow { Color.clear.frame(height: 1) } full: {
+                    columnTitle("完整版", hint: "功能齐全", recommended: true)
+                } store: {
+                    columnTitle("商店版", hint: "安装简单", recommended: false)
                 }
-                Divider().gridCellUnsizedAxes(.horizontal)
-                ForEach(Self.comparison, id: \.0) { row in
-                    GridRow {
-                        Text(row.0).font(.system(size: 13)).frame(width: 232, alignment: .leading)
-                        cell(row.1).frame(width: 158, alignment: .leading)
-                        cell(row.2).frame(width: 158, alignment: .leading)
-                    }
-                }
-                Divider().gridCellUnsizedAxes(.horizontal)
+                .padding(.bottom, 12)
+                ForEach(Self.abilities, id: \.0) { contentRow($0) }
+                sectionGap
+                ForEach(Self.setup, id: \.0) { contentRow($0) }
+                sectionGap
                 browserRow("Chrome", bundle: "com.google.Chrome", page: "chrome://extensions",
                            store: "https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg")
                 browserRow("Edge", bundle: "com.microsoft.edgemac", page: "edge://extensions",
                            store: "https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei")
             }
-            .padding(16)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("**完整版怎么装**：点「手动添加」会打开扩展页和文件夹。在页面上打开「开发者模式」（Chrome 在右上角，Edge 在左侧栏），再把文件夹拖进页面。")
-                Text("**商店版怎么装**：点「添加」会直接打开商店页，再点页面上的添加按钮。使用时需要打开闪电全能下载。")
+            .padding(Self.tablePadding)
+            // 推荐的一列整列铺浅色，一眼看出该选哪个
+            .background(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.tint.opacity(0.08))
+                    .frame(width: Self.columnWidth + 12)
+                    .padding(.vertical, 8)
+                    .padding(.leading, Self.tablePadding + Self.labelWidth + Self.gap - 6)
             }
-            .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line))
             DisclosureGroup(isExpanded: $showPan) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("百度网盘等需要在网页里先取得直链。可另装篡改猴和 LinkSwift 脚本，把直链推送给闪电全能下载。")
@@ -118,19 +120,57 @@ struct BrowserSetupView: View {
             }
         }
         .padding(26)
-        .frame(width: 660)
+        .frame(width: 708)
         .background(Theme.window)
         .tint(Theme.tint)
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in reload() }
     }
 
+    private func tableRow<L: View, F: View, S: View>(@ViewBuilder label: () -> L, @ViewBuilder full: () -> F, @ViewBuilder store: () -> S) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Self.gap) {
+            label().frame(width: Self.labelWidth, alignment: .leading)
+            full().frame(width: Self.columnWidth, alignment: .leading)
+            store().frame(width: Self.columnWidth, alignment: .leading)
+        }
+    }
+
+    private func contentRow(_ row: (String, Cell, Cell)) -> some View {
+        tableRow {
+            Text(row.0).font(.system(size: 13))
+        } full: {
+            cell(row.1)
+        } store: {
+            cell(row.2)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var sectionGap: some View {
+        Rectangle().fill(Theme.line).frame(height: 1).padding(.vertical, 8)
+    }
+
+    private func columnTitle(_ title: String, hint: String, recommended: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 15, weight: .bold))
+                if recommended {
+                    Text("推荐").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Theme.tint))
+                }
+            }
+            .frame(height: 20)
+            Text(hint).font(.system(size: 12)).foregroundStyle(Theme.sub)
+        }
+    }
+
     @ViewBuilder private func cell(_ value: Cell) -> some View {
         switch value {
         case .yes: Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.tint)
         case .no: Text("不支持").font(.system(size: 12.5)).foregroundStyle(Theme.sub)
-        case .maybe(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
-        case .text(let text): Text(text).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+        case .note(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        case .text(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.text.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -146,7 +186,7 @@ struct BrowserSetupView: View {
 
     private func browserRow(_ name: String, bundle: String, page: String, store: String) -> some View {
         let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
-        return GridRow {
+        return HStack(spacing: Self.gap) {
             HStack(spacing: 9) {
                 if let app {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable().frame(width: 24, height: 24)
@@ -155,25 +195,32 @@ struct BrowserSetupView: View {
                 }
                 Text(app == nil ? "\(name)（未安装）" : name).font(.system(size: 13.5, weight: .semibold))
             }
-            installCell(status(name, store: false), title: "手动添加", enabled: app != nil) {
+            .frame(width: Self.labelWidth, alignment: .leading)
+            installCell(status(name, store: false), title: "手动安装", prominent: true, enabled: app != nil) {
                 guard let app else { return }
                 BrowserExtension.install()
                 NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder])
                 openPage(page, app: app.deletingPathExtension().lastPathComponent)
             }
-            installCell(status(name, store: true), title: "添加", enabled: app != nil) {
+            .frame(width: Self.columnWidth, alignment: .leading)
+            installCell(status(name, store: true), title: "去商店添加", prominent: false, enabled: app != nil) {
                 guard let app else { return }
                 NSWorkspace.shared.open([URL(string: store)!], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             }
+            .frame(width: Self.columnWidth, alignment: .leading)
         }
+        .padding(.vertical, 5)
     }
 
-    private func installCell(_ status: (text: String, connected: Bool), title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func installCell(_ status: (text: String, connected: Bool), title: String, prominent: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Button(title, action: action).disabled(!enabled)
+            if prominent {
+                Button(title, action: action).buttonStyle(.borderedProminent).disabled(!enabled)
+            } else {
+                Button(title, action: action).buttonStyle(.bordered).disabled(!enabled)
+            }
             if status.connected {
-                Label(status.text, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.sub)
-                    .labelStyle(.titleAndIcon).fixedSize()
+                Label(status.text, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.sub).fixedSize()
             }
         }
     }
