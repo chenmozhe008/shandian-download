@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.43"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.44"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -21,6 +21,10 @@ DEV_BUILD=1
 if [[ "${SHANDIAN_RELEASE_BUILD:-0}" == "1" ]]; then
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]] || ! git rev-parse -q --verify "refs/tags/v${APP_VERSION}^{commit}" >/dev/null || [[ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/v${APP_VERSION}^{commit}")" ]]; then
     echo "正式打包需要干净的工作区，以及指向当前提交的 v${APP_VERSION} 标签。" >&2
+    exit 1
+  fi
+  if grep -q '^## .*（开发版）' "$ROOT/CHANGELOG.md"; then
+    echo "CHANGELOG 还有开发版小节：发版前要把它们汇总进正式版这一节。" >&2
     exit 1
   fi
   DEV_BUILD=0

@@ -42,11 +42,12 @@ enum ReleaseHistory {
     static func merge(local: [HistoryEntry], online: [HistoryEntry]) -> [HistoryEntry] {
         var result = online
         for row in local {
+            // 正式版以 GitHub 发布说明为准：旧安装包带的本机记录可能不全，网上的才是汇总后的
             if row.isDevelopment { result.append(row) }
             else if let index = result.firstIndex(where: { $0.version == row.version }) {
                 let published = result[index]
                 result[index] = HistoryEntry(version: row.version, date: published.date.isEmpty ? row.date : published.date,
-                                             notes: row.notes.isEmpty ? published.notes : row.notes, page: published.page, isDevelopment: false)
+                                             notes: published.notes.isEmpty ? row.notes : published.notes, page: published.page, isDevelopment: false)
             } else { result.append(row) }
         }
         return result.sorted {

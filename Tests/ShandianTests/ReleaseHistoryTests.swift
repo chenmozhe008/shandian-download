@@ -22,8 +22,14 @@ final class ReleaseHistoryTests: XCTestCase {
         let published = HistoryEntry(version: "0.18.4", date: "2026-11-02", notes: ["线上"], page: URL(string: "https://github.com/example")!, isDevelopment: false)
         let merged = ReleaseHistory.merge(local: local, online: [published])
         XCTAssertEqual(merged.count, 1)
-        XCTAssertEqual(merged[0].notes, ["本地记录"])
+        XCTAssertEqual(merged[0].notes, ["线上"])
         XCTAssertNotNil(merged[0].page)
+    }
+
+    func testReleaseWithoutOnlineNotesKeepsLocalNotes() {
+        let local = ReleaseHistory.local("## 0.18.4 · 2026-11-01\n- 本地记录", currentVersion: "0.18.4", isDevelopment: false)
+        let empty = HistoryEntry(version: "0.18.4", date: "2026-11-02", notes: [], page: nil, isDevelopment: false)
+        XCTAssertEqual(ReleaseHistory.merge(local: local, online: [empty])[0].notes, ["本地记录"])
     }
 
     func testInvalidResponseDoesNotReplaceCache() {
