@@ -36,6 +36,68 @@ import CryptoKit
         XCTAssertTrue(job.done)
     }
 
+    /// 迅雷 5.80：下载中目录多套一层、没有 `.<hash>.js`，进度在 `.<文件名>.js`（11-04 实测格式）
+    func testLocatesRunningTaskByTorrentAndReadsPerFileProgress() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = root.appendingPathComponent("影片.2026")
+        let other = root.appendingPathComponent("别的任务")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let info = Data("d6:lengthi1000e4:name4:teste".utf8)
+        let hash = Insecure.SHA1.hash(data: info).map { String(format: "%02X", $0) }.joined()
+        try (Data("d4:info".utf8) + info + Data("e".utf8)).write(to: folder.appendingPathComponent(".magent_a.torrent"))
+        let otherInfo = Data("d6:lengthi1000e4:name5:othere".utf8)
+        try (Data("d4:info".utf8) + otherInfo + Data("e".utf8)).write(to: other.appendingPathComponent(".magent_b.torrent"))
+        try Data(repeating: 1, count: 900).write(to: folder.appendingPathComponent("影片.mp4"))
+        let record = try JSONSerialization.data(withJSONObject: ["FileSize": 1000, "rqWrited": "[[0, 400], [500, 200]]"])
+        try Data(record.base64EncodedString().utf8).write(to: folder.appendingPathComponent(".影片.mp4.js"))
+
+        var job = ThunderJob(id: UUID().uuidString, title: "test", link: "magnet:test", dir: root.path, hash: hash, total: 1000, createdAt: Date())
+        ThunderBridge.measure(&job)
+        XCTAssertEqual(job.folder.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }, folder.resolvingSymlinksInPath().path)
+        XCTAssertEqual(job.written, 600)
+        XCTAssertEqual(job.verifiedTotal, 1000)
+        XCTAssertFalse(job.done)
+    }
+
+    func testPerFileProgressNeverCompletesTask() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let info = Data("d6:lengthi1000e4:name4:teste".utf8)
+        let hash = Insecure.SHA1.hash(data: info).map { String(format: "%02X", $0) }.joined()
+        try (Data("d4:info".utf8) + info + Data("e".utf8)).write(to: dir.appendingPathComponent(".magent_a.torrent"))
+        try Data(repeating: 1, count: 1000).write(to: dir.appendingPathComponent("a.mp4"))
+        let record = try JSONSerialization.data(withJSONObject: ["FileSize": 1000, "rqWrited": [[0, 1000]]])
+        try Data(record.base64EncodedString().utf8).write(to: dir.appendingPathComponent(".a.mp4.js"))
+        var job = ThunderJob(id: "1", title: "test", link: "magnet:test", dir: dir.path, folder: dir.path, hash: hash, total: 1000, createdAt: Date())
+        ThunderBridge.measure(&job)
+        XCTAssertEqual(job.written, 1000)
+        XCTAssertFalse(job.done)
+    }
+
+    func testSkippedSmallExtraStillCompletesButLargeGapDoesNot() throws {
+        func measured(checked: Int, length: Int, activeRecord: Bool) throws -> ThunderJob {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let info = Data("d6:lengthi\(length)e4:name4:teste".utf8)
+            let hash = Insecure.SHA1.hash(data: info).map { String(format: "%02X", $0) }.joined()
+            try (Data("d4:info".utf8) + info + Data("e".utf8)).write(to: dir.appendingPathComponent(".magent_a.torrent"))
+            let progress = try JSONSerialization.data(withJSONObject: ["subinfo0": ["checkedsize": checked, "dlsize": checked]])
+            try Data(progress.base64EncodedString().utf8).write(to: dir.appendingPathComponent(".\(hash).js"))
+            try Data(repeating: 1, count: 10).write(to: dir.appendingPathComponent("a.mp4"))
+            if activeRecord {
+                let record = try JSONSerialization.data(withJSONObject: ["FileSize": 100, "rqWrited": [[0, 10]]])
+                try Data(record.base64EncodedString().utf8).write(to: dir.appendingPathComponent(".a.mp4.js"))
+            }
+            var job = ThunderJob(id: "1", title: "test", link: "magnet:test", dir: dir.path, folder: dir.path, hash: hash, total: Int64(length), createdAt: Date())
+            ThunderBridge.measure(&job)
+            return job
+        }
+        XCTAssertTrue(try measured(checked: 3_322_403_545, length: 3_322_403_616, activeRecord: false).done)
+        XCTAssertFalse(try measured(checked: 3_322_403_545, length: 3_322_403_616, activeRecord: true).done)
+        XCTAssertFalse(try measured(checked: 1000, length: 3_322_403_616, activeRecord: false).done)
+    }
+
     func testUnchangedOrMissingDirectoryDoesNotProvePaused() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

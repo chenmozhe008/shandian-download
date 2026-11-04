@@ -98,6 +98,11 @@ struct SettingsView: View {
             ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {
+                Button(store.cloudCleanupCount > 0 ? "检查已下载的云端副本（\(store.cloudCleanupCount)）" : "打开 PikPak 云盘管理空间") {
+                    store.manageCloudCopies()
+                }
+                Text("下载完成后可检查本地文件，再选择是否将对应云端副本移入回收站。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
                 if let u = pkState {
                     LabeledContent(pkProblem ? "关联需检查" : "已关联") {
                         HStack { Text(u).foregroundStyle(Theme.sub); Button("退出") { Task { await PikPak.shared.logout(); pkState = nil } } }

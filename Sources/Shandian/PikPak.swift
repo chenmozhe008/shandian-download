@@ -206,10 +206,9 @@ actor PikPak {
         return (out, info["kind"] as? String == "drive#file" && ids.count == 1 && keep == [0])
     }
 
-    /// 拉回本地后删掉云端的文件（免费账号只有 6 GB）：先进回收站再彻底删除
-    func deleteForever(_ fileID: String) async {
-        _ = try? await api("POST", "\(apiHost)/drive/v1/files:batchTrash", body: ["ids": [fileID]])
-        _ = try? await api("POST", "\(apiHost)/drive/v1/files:batchDelete", body: ["ids": [fileID]])
+    /// 仅在用户确认后将单个文件移入云盘回收站。
+    func trash(_ fileID: String) async throws {
+        _ = try await api("POST", "\(apiHost)/drive/v1/files:batchTrash", body: ["ids": [fileID]])
     }
 
     struct FolderEntry {
@@ -304,8 +303,15 @@ actor PikPak {
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = LocalProxy.sessionDictionary(for: url)   // 境外服务，走本机代理
-        let (data, _) = try await URLSession(configuration: cfg).data(for: req)
-        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        let (data, response) = try await URLSession(configuration: cfg).data(for: req)
+        if data.isEmpty, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) { return [:] }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PikPakError.server("PikPak 返回无法识别的结果，请稍后重试")
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode), json["error"] == nil {
+            throw PikPakError.server(Self.message(json) ?? "PikPak 请求失败（HTTP \(http.statusCode)）")
+        }
+        return json
     }
 
     private static func message(_ r: [String: Any]) -> String? {

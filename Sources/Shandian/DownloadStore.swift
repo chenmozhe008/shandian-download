@@ -159,11 +159,16 @@ final class DownloadStore: ObservableObject {
         var taskID = ""; var fileID = ""; var progress = 0; var createdAt = Date()
         var pendingRecord: PendingRecord?
         var thunderJob: ThunderJob?
-        var pulling: [String]?      // 已在从云盘拉回的内核任务；都下完后删云端文件（免费账号只有 6 GB）
+        var pulling: [String]?      // 已在从云盘拉回的内核任务
         var includesAllCloudFiles: Bool? // 旧任务无法确认时保留云端内容
         var preparingPulls: Bool? // 创建拉回任务尚未全部完成，可在重启后恢复原任务
+        var cleanupReady: Bool?
+        var cleanupPath: String?
+        var cleanupSize: Int64?
+        var cleanupAccount: String?
     }
-    private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
+    @Published private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
+    var cloudCleanupCount: Int { cloudJobs.filter { $0.cleanupReady == true }.count }
     private var protectedEngineIDs: Set<String> {
         Set(thunderJobs.compactMap(\.sourceEngineID) + cloudJobs.compactMap(\.engineID)
             + cloudJobs.compactMap { $0.thunderJob?.sourceEngineID }
@@ -201,6 +206,11 @@ final class DownloadStore: ObservableObject {
               attrs[.type] as? FileAttributeType == .typeRegular,
               let size = (attrs[.size] as? NSNumber)?.int64Value else { return false }
         return size == expectedSize
+    }
+
+    static func cloudCleanupAllowed(account: String?, currentAccount: String?, path: String?, size: Int64?) -> Bool {
+        guard let account, !account.isEmpty, account == currentAccount, let path, let size else { return false }
+        return cloudCopyCanBeRemoved(file: URL(fileURLWithPath: path), expectedSize: size)
     }
 
     static func rollbackCloudPulls(_ ids: [String], existing: Set<String>, delete: (String) async throws -> Void) async throws {
@@ -989,7 +999,7 @@ final class DownloadStore: ObservableObject {
     /// 云盘离线：BT 任务先暂停（云盘失败了还能接着 BT），交给 PikPak；云端下好后按直链拉回同一个位置
     func sendToCloud(_ item: Item) {
         guard PikPak.loggedInUser != nil else { notice = "先在设置里登录 PikPak，才能用云盘离线"; return }
-        guard !item.link.isEmpty, !cloudJobs.contains(where: { $0.link == item.link }) else { return }
+        guard !item.link.isEmpty, !cloudJobs.contains(where: { $0.link == item.link && $0.cleanupReady != true }) else { return }
         let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
@@ -1012,7 +1022,7 @@ final class DownloadStore: ObservableObject {
         catch { notice = "无法创建云盘保存位置，原任务仍保留"; return }
         let job = CloudJob(id: cloudID, title: item.title, link: item.link, dir: cloudDir,
                            engineID: engineID, partial: thunderJob == nil ? base?.path : nil, total: item.total,
-                           pendingRecord: pendingRecord, thunderJob: thunderJob)
+                           pendingRecord: pendingRecord, thunderJob: thunderJob, cleanupAccount: PikPak.loggedInUser)
         cloudJobs.append(job)
         guard saveCloud() else {
             cloudJobs.removeAll { $0.id == job.id }
@@ -1037,25 +1047,67 @@ final class DownloadStore: ObservableObject {
 
     private func cloudFailed(_ id: String, _ message: String) {
         guard let job = cloudJobs.first(where: { $0.id == id }) else { return }
+        let message = message.replacingOccurrences(of: "继续使用需开通会员", with: "请检查云盘容量或服务限制")
         cloudJobs.removeAll { $0.id == id }; saveCloud()
         rebuild()
         if let e = job.engineID {
             Task {
-                do { try await host.client.resume(e); notice = "云盘离线失败：\(message)，已恢复原下载" }
-                catch { notice = "云盘离线失败：\(message)；原任务恢复失败，请手动继续" }
+                do { try await host.client.resume(e); cloudFailureNotice("云盘离线失败：\(message)，已恢复原下载") }
+                catch { cloudFailureNotice("云盘离线失败：\(message)；原任务恢复失败，请手动继续") }
                 await poll()
             }
         } else if let previous = job.thunderJob {
             if !thunderJobs.contains(where: { $0.id == previous.id }) { thunderJobs.append(previous); ThunderBridge.save(thunderJobs) }
-            rebuild(); notice = "云盘离线失败：\(message)，已恢复迅雷任务记录"
+            rebuild(); cloudFailureNotice("云盘离线失败：\(message)，已恢复迅雷任务记录")
         } else if let r = job.pendingRecord {
             let carry = r.carryDownloaded.map { (downloaded: $0, total: r.carryTotal ?? $0) }
             start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles,
                   carry: carry, title: r.title, originLink: r.originLink, verifyExisting: r.verifyExisting ?? false,
                   replacingThunderID: r.replacingThunderID)
-            notice = "云盘离线失败：\(message)，已恢复原任务解析"
+            cloudFailureNotice("云盘离线失败：\(message)，已恢复原任务解析")
         } else {
-            notice = "云盘离线失败：\(message)，请重新添加任务"
+            cloudFailureNotice("云盘离线失败：\(message)，请重新添加任务")
+        }
+    }
+
+    private func cloudFailureNotice(_ text: String) {
+        if text.contains("空间") || text.contains("容量") {
+            noticeAction = NoticeAction(title: "管理云盘空间", forText: text, run: { [weak self] in self?.manageCloudCopies() })
+        }
+        notice = text
+    }
+
+    func manageCloudCopies() {
+        guard let job = cloudJobs.first(where: { $0.cleanupReady == true }) else {
+            NSWorkspace.shared.open(URL(string: "https://mypikpak.com/drive/")!)
+            notice = "已打开 PikPak 云盘；请检查容量和不需要的文件"
+            return
+        }
+        guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser,
+                                       path: job.cleanupPath, size: job.cleanupSize),
+              let account = job.cleanupAccount, let path = job.cleanupPath, let size = job.cleanupSize else {
+            notice = "无法确认关联账号或本地文件，请在 PikPak 网页中检查云端副本"
+            NSWorkspace.shared.open(URL(string: "https://mypikpak.com/drive/")!)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "将云端副本移入回收站？"
+        alert.informativeText = "\(job.title)\n\n本地文件：\(path)\n已检查本地文件大小，尚未校验文件内容。云端副本会移入 PikPak 回收站，本地文件不会删除。空间是否立即释放取决于 PikPak 的回收站规则。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "移入云盘回收站")
+        alert.addButton(withTitle: "稍后处理")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            do {
+                guard Self.cloudCleanupAllowed(account: account, currentAccount: PikPak.loggedInUser, path: path, size: size) else {
+                    notice = "账号或本地文件已变化，未删除云端副本"; return
+                }
+                try await PikPak.shared.trash(job.fileID)
+                cloudJobs.removeAll { $0.id == job.id }
+                saveCloud()
+                notice = "已请求将云端副本移入回收站，请在 PikPak 确认空间"
+            } catch { notice = "云端副本处理失败，请检查网络和 PikPak 回收站：\(error.localizedDescription)" }
         }
     }
 
@@ -1080,21 +1132,33 @@ final class DownloadStore: ObservableObject {
         cloudPolling = true
         Task {
             defer { cloudPolling = false }
-            while !cloudJobs.isEmpty {
+            while cloudJobs.contains(where: { $0.cleanupReady != true }) {
                 for job in cloudJobs where job.preparingPulls == true {
                     await recoverCloudPreparation(job, message: "云盘拉回任务创建中断")
                 }
                 // 拉回完成的：删云端文件、结束这个云盘任务
-                for job in cloudJobs where job.pulling != nil && job.preparingPulls != true {
+                for job in cloudJobs where job.pulling != nil && job.preparingPulls != true && job.cleanupReady != true {
                     let ids = job.pulling ?? []
                     let finished = !ids.isEmpty && ids.allSatisfy { id in engineItems.first { $0.id == id }?.status == .done }
                     if finished {
                         if job.includesAllCloudFiles == true, ids.count == 1,
                            let item = engineItems.first(where: { $0.id == ids[0] }),
-                           Self.cloudCopyCanBeRemoved(file: item.file, expectedSize: item.total), !job.fileID.isEmpty {
-                            await PikPak.shared.deleteForever(job.fileID)
+                           let file = item.file, Self.cloudCopyCanBeRemoved(file: file, expectedSize: item.total), !job.fileID.isEmpty,
+                           job.cleanupAccount != nil, let index = cloudJobs.firstIndex(where: { $0.id == job.id }) {
+                            cloudJobs[index].cleanupReady = true
+                            cloudJobs[index].cleanupPath = file.path
+                            cloudJobs[index].cleanupSize = item.total
+                            if saveCloud() {
+                                let text = "云盘文件已下载到本机；可检查后选择清理云端副本"
+                                noticeAction = NoticeAction(title: "查看云端副本", forText: text, run: { [weak self] in self?.manageCloudCopies() })
+                                notice = text
+                            } else {
+                                cloudJobs[index].cleanupReady = nil
+                                notice = "无法保存云端清理提醒，云端文件已保留"
+                            }
+                        } else {
+                            cloudJobs.removeAll { $0.id == job.id }; saveCloud()
                         }
-                        cloudJobs.removeAll { $0.id == job.id }; saveCloud()
                     }
                 }
                 for job in cloudJobs where !job.taskID.isEmpty && job.pulling == nil {
@@ -1606,8 +1670,8 @@ final class DownloadStore: ObservableObject {
         let folder = j.folder.map(URL.init(fileURLWithPath:))
         // 迅雷 `.js` 里记的大小最准；没有就退回种子解析值、再退回文件占用（占用含 4K 对齐，会略大）
         let total = max(j.verifiedTotal ?? 0, j.dlSize ?? 0, j.total)
-        let diskEstimate = !j.done && j.folder != nil && j.bytes > (j.checked ?? 0) + (1 << 20)
-        var got = diskEstimate ? j.bytes : (j.checked ?? 0)
+        let diskEstimate = !j.done && j.folder != nil && j.written == nil && j.bytes > (j.checked ?? 0) + (1 << 20)
+        var got = diskEstimate ? j.bytes : max(j.checked ?? 0, j.written ?? 0)
         if total > 0 { got = min(got, total) }
         if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,

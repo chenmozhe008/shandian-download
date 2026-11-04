@@ -3,7 +3,7 @@ import CryptoKit
 
 /// 检查更新与一键更新（沿用小清）：每天最多查一次 GitHub 最新正式版（不含预发布，Windows 的 `win-v…` 不算）。
 /// 有新版时在 App 里下载本机芯片对应的安装包（显示进度）→ 对 GitHub 给的 SHA-256 → 核对 bundle id、版本号和签名 →
-/// 旧版移到废纸篓、新版放回原处 → 退出（任务先暂停）后重新打开，下载自动续上。
+/// 旧版移到废纸篓、新版放回原处（没有写权限时走系统授权框） → 退出（任务先暂停）后重新打开，下载自动续上。
 /// App 自己下载的文件不带隔离标记，Gatekeeper 不会拦新版
 @MainActor
 final class UpdateChecker: ObservableObject {
@@ -20,6 +20,7 @@ final class UpdateChecker: ObservableObject {
 
     enum Phase: Equatable {
         case idle
+        case checking
         case downloading(Double)
         case installing
     }
@@ -57,12 +58,18 @@ final class UpdateChecker: ObservableObject {
         let defaults = UserDefaults.standard
         if let last = defaults.object(forKey: Keys.lastCheck) as? Date, Date().timeIntervalSince(last) < 86_400,
            ProcessInfo.processInfo.environment["SHANDIAN_UPDATE_FEED"] == nil {
-            if let data = defaults.data(forKey: Keys.latest), let release = try? JSONDecoder().decode(Release.self, from: data) {
+            if let release = Self.usableCachedRelease(defaults.data(forKey: Keys.latest)) {
                 show(release)
+                return
             }
-            return
+            // 仅有网页地址的降级结果不能缓存一天：网络恢复后需要重新获取安装包信息。
         }
         Task { await check() }
+    }
+
+    nonisolated static func usableCachedRelease(_ data: Data?) -> Release? {
+        guard let data, let release = try? JSONDecoder().decode(Release.self, from: data), release.asset != nil else { return nil }
+        return release
     }
 
     /// Asks GitHub now. Returns nil when offline or GitHub did not answer.
@@ -105,7 +112,10 @@ final class UpdateChecker: ObservableObject {
         let tag = parts[5]
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         guard !version.isEmpty, version.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { return nil }
-        return Release(version: version, page: url, asset: nil, digest: nil, notes: [])
+        // API 不通或被限流时只拿得到版本号；附件名固定，地址能直接拼出来，照样走一键更新（发布说明缺省、无 digest）
+        let chip = isAppleSilicon ? "AppleSilicon" : "Intel"
+        let asset = URL(string: "https://github.com/chenmozhe008/shandian-download/releases/download/\(tag)/Shandian-\(version)-\(chip).zip")
+        return Release(version: version, page: url, asset: asset, digest: nil, notes: [])
     }
 
     nonisolated static func parse(_ data: Data) -> Release? {
@@ -148,24 +158,48 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
-    /// The top bar's 新版本 button.
-    func offerAvailable() {
-        if let available, phase == .idle { offer(available) }
+    /// 「关于」右边的「立即升级」：点一下直接下载安装，不再弹确认框（11-04 用户定）。
+    func startUpdate() {
+        guard let available, phase == .idle else { return }
+        if available.asset != nil { install(available); return }
+        // 发布信息里没有本机芯片的安装包：重新查一次，发布已补齐时继续更新。
+        phase = .checking
+        Task {
+            let refreshed = await check()
+            phase = .idle
+            if let refreshed, Self.isNewer(refreshed.version, than: AppInfo.version) {
+                if refreshed.asset != nil { install(refreshed) } else { offer(refreshed) }
+            } else if refreshed == nil {
+                showRetryCheckAlert()
+            }
+        }
+    }
+
+    private func showRetryCheckAlert() {
+        let alert = NSAlert()
+        alert.messageText = "暂时无法获取更新信息"
+        alert.informativeText = "请检查网络或代理设置，恢复连接后重试。"
+        alert.addButton(withTitle: "重试")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn { checkFromMenu() }
     }
 
     /// What is new, and one button that downloads, installs and reopens.
     private func offer(_ release: Release) {
         let alert = NSAlert()
         alert.messageText = "新版本 \(release.version) 可用"
-        var text = release.asset == nil ? "当前版本 \(AppInfo.version)。请前往发布页面下载并手动安装新版本。" : "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。"
+        var text = release.asset == nil ? "当前版本 \(AppInfo.version)。暂时无法获取自动更新所需的安装包信息，请检查网络或代理设置后重试。" : "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。"
         if !release.notes.isEmpty {
             text += "\n\n" + release.notes.prefix(6).map { "• " + $0 }.joined(separator: "\n")
         }
         alert.informativeText = text
-        alert.addButton(withTitle: release.asset == nil ? "前往下载" : "更新并重新打开")
+        alert.addButton(withTitle: release.asset == nil ? "重新检查" : "更新并重新打开")
         alert.addButton(withTitle: "以后")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        if release.asset == nil { NSWorkspace.shared.open(release.page) } else { install(release) }
+        if release.asset == nil { alert.addButton(withTitle: "前往下载页面") }
+        let response = alert.runModal()
+        if response == .alertThirdButtonReturn, release.asset == nil { NSWorkspace.shared.open(release.page); return }
+        guard response == .alertFirstButtonReturn else { return }
+        if release.asset == nil { checkFromMenu() } else { install(release) }
     }
 
     // MARK: Installing
@@ -182,28 +216,65 @@ final class UpdateChecker: ObservableObject {
                 }
                 phase = .installing
                 let app = try await Task.detached { try Self.prepare(zip, release: release) }.value
-                try Self.swapAndRelaunch(with: app)
-                NSApp.terminate(nil)
+                installPrepared(app)
             } catch {
+                let wasDownloading: Bool
+                if case .downloading = phase { wasDownloading = true } else { wasDownloading = false }
                 phase = .idle
                 let alert = NSAlert()
                 alert.messageText = "未能完成更新"
-                alert.informativeText = "\(error.localizedDescription)\n\n可以前往 GitHub 下载与本机芯片对应的安装包，手动替换「应用程序」中的闪电全能下载。"
-                alert.addButton(withTitle: "前往下载")
+                let hint = wasDownloading ? "请检查网络或代理设置后重试。" : "更新文件无法使用，请重新下载后重试。"
+                alert.informativeText = "\(error.localizedDescription)\n\n\(hint)"
+                alert.addButton(withTitle: "重试")
                 alert.addButton(withTitle: "取消")
-                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.page) }
+                alert.addButton(withTitle: "前往下载页面")
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn { install(release) }
+                else if response == .alertThirdButtonReturn { NSWorkspace.shared.open(release.page) }
             }
+        }
+    }
+
+    /// 下载和校验完成后复用已解压的应用，安装失败不再让用户重复下载。
+    private func installPrepared(_ app: URL) {
+        do {
+            phase = .installing
+            try Self.swapAndRelaunch(with: app)
+            NSApp.terminate(nil)
+        } catch {
+            phase = .idle
+            let alert = NSAlert()
+            alert.messageText = "未能自动安装更新"
+            guard FileManager.default.fileExists(atPath: app.path) else {
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+                return
+            }
+            alert.informativeText = "\(error.localizedDescription)\n\n更新包已下载并校验。可以重试，或显示已下载的应用并手动替换；系统可能要求管理员授权。"
+            alert.addButton(withTitle: "重试安装")
+            alert.addButton(withTitle: "显示已下载的应用")
+            alert.addButton(withTitle: "取消")
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn { installPrepared(app) }
+            else if response == .alertSecondButtonReturn { NSWorkspace.shared.activateFileViewerSelecting([app]) }
         }
     }
 
     struct UpdateError: LocalizedError {
         let errorDescription: String?
-        init(_ message: String) { errorDescription = message }
+        var permissionDenied = false
+        init(_ message: String, permissionDenied: Bool = false) {
+            errorDescription = message
+            self.permissionDenied = permissionDenied
+        }
     }
 
     private nonisolated static func download(_ url: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let delegate = DownloadDelegate(progress: progress)
-        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         return try await withCheckedThrowingContinuation { continuation in
             delegate.continuation = continuation
@@ -234,24 +305,96 @@ final class UpdateChecker: ObservableObject {
 
     /// Moves the running app to the Trash (macOS allows this; the process keeps running), puts the new one in
     /// its place, and leaves a small script to open it once this process has quit. A failed move puts the old app back.
+    /// 没有写权限（标准账号、App 属于别的用户）时弹系统授权框，由管理员密码完成替换，不让用户手动替换。
     private static func swapAndRelaunch(with app: URL) throws {
-        let target = Bundle.main.bundleURL
-        guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-            throw UpdateError("没有权限替换「\(target.deletingLastPathComponent().path)」中的闪电全能下载。")
+        let target = installTarget(for: Bundle.main.bundleURL)
+        let relaunch = {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; open \"$2\"",
+                                 "shandian-update", String(getpid()), target.path]
+            try process.run()
         }
-        var trashed: NSURL?
-        try FileManager.default.trashItem(at: target, resultingItemURL: &trashed)
+        let backupOld: () throws -> URL? = {
+            guard FileManager.default.fileExists(atPath: target.path) else { return nil }
+            var trashed: NSURL?
+            try FileManager.default.trashItem(at: target, resultingItemURL: &trashed)
+            guard let backup = trashed as URL? else {
+                throw UpdateError("旧版已移入废纸篓，但无法确定其位置；请从废纸篓恢复旧版。")
+            }
+            return backup
+        }
+        do {
+            guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
+                throw UpdateError("没有权限写入「\(target.deletingLastPathComponent().path)」。", permissionDenied: true)
+            }
+            try replaceApp(at: target, with: app, backup: backupOld, scheduleRelaunch: relaunch)
+        } catch where isPermissionDenied(error) {
+            try replaceAsAdministrator(target: target, with: app)
+            try relaunch()
+        }
+    }
+
+    /// 从「下载」等位置直接运行时系统把 App 放在只读的临时路径（App Translocation），替换不了也留不住，改装进「应用程序」。
+    nonisolated static func installTarget(for bundle: URL) -> URL {
+        guard bundle.path.contains("/AppTranslocation/") else { return bundle }
+        return URL(fileURLWithPath: "/Applications", isDirectory: true).appendingPathComponent(bundle.lastPathComponent)
+    }
+
+    nonisolated static func isPermissionDenied(_ error: Error) -> Bool {
+        if let error = error as? UpdateError { return error.permissionDenied }
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain { return [NSFileWriteNoPermissionError, NSFileReadNoPermissionError].contains(ns.code) }
+        return ns.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(ns.code)
+    }
+
+    /// 旧版移进废纸篓再放新版，放不进去就把旧版放回；路径单独加引号，可含空格、中文和单引号。
+    nonisolated static func replaceCommand(target: URL, app: URL, backup: URL) -> String {
+        let quote = { (path: String) in "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let (t, a, b) = (quote(target.path), quote(app.path), quote(backup.path))
+        return "if [ -e \(t) ]; then mv \(t) \(b) || exit 1; fi; mv \(a) \(t) || { [ -e \(b) ] && mv \(b) \(t); exit 1; }"
+    }
+
+    private static func replaceAsAdministrator(target: URL, with app: URL) throws {
+        let backup = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash", isDirectory: true)
+            .appendingPathComponent("闪电全能下载-旧版-\(AppInfo.version)-\(UUID().uuidString.prefix(8)).app")
+        let escape = { (text: String) in text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
+        let command = replaceCommand(target: target, app: app, backup: backup)
+        let source = "do shell script \"\(escape(command))\" with prompt \"闪电全能下载需要授权才能安装新版本。\" with administrator privileges"
+        var failure: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&failure)
+        guard let failure else { return }
+        if failure[NSAppleScript.errorNumber] as? Int == -128 { throw UpdateError("已取消授权，闪电全能下载没有更改。") }
+        throw UpdateError("授权安装失败：\(failure[NSAppleScript.errorMessage] as? String ?? "未知错误")")
+    }
+
+    /// 把备份和启动操作作为参数，以便在独立临时目录验证失败回滚。
+    nonisolated static func replaceApp(at target: URL, with app: URL, backup: () throws -> URL?,
+                                       scheduleRelaunch: () throws -> Void) throws {
+        let backup = try backup()
         do {
             try FileManager.default.moveItem(at: app, to: target)
         } catch {
-            if let trashed = trashed as URL? { try? FileManager.default.moveItem(at: trashed, to: target) }
-            throw UpdateError("无法替换闪电全能下载：\(error.localizedDescription)")
+            let failure = error.localizedDescription
+            let denied = isPermissionDenied(error)
+            if let backup {
+                do { try FileManager.default.moveItem(at: backup, to: target) }
+                catch { throw UpdateError("无法替换应用，且自动恢复旧版失败。请从废纸篓恢复旧版。") }
+            }
+            throw UpdateError("无法替换闪电全能下载，旧版已恢复：\(failure)", permissionDenied: denied)
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; open \"$2\"",
-                             "shandian-update", String(getpid()), target.path]
-        try process.run()
+        do {
+            try scheduleRelaunch()
+        } catch {
+            // 重新启动助手未能启动时，恢复旧版；别报告失败却留下已替换的应用。
+            do {
+                try FileManager.default.moveItem(at: target, to: app)
+                if let backup { try FileManager.default.moveItem(at: backup, to: target) }
+            } catch {
+                throw UpdateError("无法启动更新后的应用，且恢复旧版失败；请检查废纸篓中的旧版和更新文件。")
+            }
+            throw UpdateError("无法启动更新后的应用，旧版已恢复。")
+        }
     }
 
     private nonisolated static func run(_ tool: String, _ arguments: [String]) -> Bool {

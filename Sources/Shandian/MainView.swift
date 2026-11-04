@@ -197,10 +197,15 @@ private struct UpdateBadge: View {
 
     var body: some View {
         switch checker.phase {
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("正在检查").fixedSize()
+            }
         case .downloading(let fraction):
             HStack(spacing: 6) {
                 ProgressView(value: fraction).frame(width: 54).tint(Theme.tint)
-                Text("\(Int(fraction * 100))%").monospacedDigit().fixedSize()
+                Text(fraction > 0 ? "\(Int(fraction * 100))%" : "连接中").monospacedDigit().fixedSize()
             }
             .help("正在下载新版本")
         case .installing:
@@ -210,14 +215,14 @@ private struct UpdateBadge: View {
             }
         case .idle:
             if checker.available != nil {
-                Button { checker.offerAvailable() } label: {
-                    Label("发现更新", systemImage: "arrow.down.circle.fill")
+                Button { checker.startUpdate() } label: {
+                    Label("立即升级", systemImage: "arrow.down.circle.fill")
                         .lineLimit(1).fixedSize()
                         .foregroundStyle(Theme.tint).font(.system(size: 12.5, weight: .semibold))
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(Theme.tint.opacity(0.14)))
                 }
-                .help("查看更新说明")
+                .help("升级到 \(checker.available?.version ?? "新版本")：自动下载安装并重新打开，下载中的任务会先暂停，重新打开后继续")
             } else {
                 EmptyView()
             }

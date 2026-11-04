@@ -25,6 +25,8 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     /// 完成后迅雷也照旧留着这个文件，所以「.js 没了才算完」也不成立。这两个数是迅雷自己记的真值
     var checked: Int64?
     var dlSize: Int64?
+    /// 下载中的已写入字节：迅雷 5.80 起边下边写在 `.<文件名>.js` 的 rqWrited 里。只用来显示进度，不作为完成依据
+    var written: Int64? = nil
     /// 文件夹里最后一个字节都没变化的时间：判「老版本迅雷下完删了 .js」用，刚建文件夹时不至于立刻算完成
     var lastChangeAt: Date?
     var verifiedTotal: Int64? = nil
@@ -176,6 +178,38 @@ enum ThunderBridge {
         return total > 0 ? (checked, total) : nil
     }
 
+    /// 迅雷 5.80 下载中不写 `.<infohash>.js`（下完才有），每个文件旁边放一份 `.<文件名>.js`（11-04 实测）：
+    /// base64 包的 JSON，`FileSize` 文件大小，`rqWrited` 已写入的 [起点, 长度] 区间（可能是字符串形式）。
+    /// 没有这份记录的文件按实际大小算（多文件任务里已下完的）；一份记录都没有时返回 nil
+    static func writtenBytes(in folder: URL) -> Int64? {
+        let fm = FileManager.default
+        let files = (fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey])?.allObjects as? [URL] ?? [])
+            .filter { !$0.lastPathComponent.hasPrefix(".") && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        var written: Int64 = 0, found = false
+        for file in files {
+            let record = file.deletingLastPathComponent().appendingPathComponent(".\(file.lastPathComponent).js")
+            if let n = writtenRecord(record) {
+                written += n; found = true
+            } else {
+                written += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            }
+        }
+        return found ? written : nil
+    }
+
+    private static func writtenRecord(_ file: URL) -> Int64? {
+        guard let raw = FileManager.default.contents(atPath: file.path),
+              var text = String(data: raw, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        while text.count % 4 != 0 { text += "=" }
+        guard let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let size = (obj["FileSize"] as? NSNumber)?.int64Value else { return nil }
+        var ranges = obj["rqWrited"]
+        if let text = ranges as? String { ranges = try? JSONSerialization.jsonObject(with: Data(text.utf8)) }
+        guard let list = ranges as? [[NSNumber]] else { return nil }
+        return min(size, list.reduce(0) { $0 + ($1.count == 2 ? $1[1].int64Value : 0) })
+    }
+
     /// 收回前的拦路提示：只提醒一句「先暂停」，不摆一堆说明（11-01 用户反馈字太多）。
     /// 找不到迅雷文件夹时也给一条出路，免得迅雷崩了或换过保存位置就永远收不回来
     static func reclaimAlert(_ state: WriteState) -> NSAlert {
@@ -244,8 +278,8 @@ enum ThunderBridge {
     /// 迅雷自己记的保存位置。交给迅雷之前我们会写这个键，但用户手动改过就不一致，只当补充线索
     static var savedPath: String? { UserDefaults(suiteName: "com.xunlei.Thunder")?.string(forKey: "LastSavePath") }
 
-    /// 找迅雷给这条任务建的文件夹：先认 `.<infohash>.js`（迅雷自己写进度的文件），再按种子名，
-    /// 再按「交给迅雷之后新建、里面有迅雷 .magent_ 种子」认。
+    /// 找迅雷给这条任务建的文件夹：先认 `.<infohash>.js`（迅雷下完才写），再认 `.magent_*.torrent`
+    /// （迅雷 5.80 下载中只有它，算出的 infohash 对得上才算，不靠文件夹名猜）。
     /// 保存位置可能有上百个文件夹，一秒一次的轮询里别反复扫，2 秒才试一次
     private static var lookupAt: [String: Date] = [:]
 
@@ -256,6 +290,9 @@ enum ThunderBridge {
         if let h = job.hash?.uppercased() {
             for root in roots {
                 if let hit = match(root, hash: h, depth: root.path == Folders.downloads.path ? 2 : 1) { return hit }
+            }
+            for root in roots {
+                if let hit = matchTorrent(root, hash: h, depth: root.path == Folders.downloads.path ? 2 : 1) { return hit }
             }
         }
         // 没有确定的任务标识时不猜目录，避免多个任务并行时关联错文件。
@@ -307,6 +344,16 @@ enum ThunderBridge {
         return nil
     }
 
+    private static func matchTorrent(_ root: URL, hash: String, depth: Int) -> String? {
+        if torrentTotal(in: root, hash: hash) != nil { return root.path }
+        guard depth > 0 else { return nil }
+        let kids = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        for k in kids {
+            if let hit = matchTorrent(k, hash: hash, depth: depth - 1) { return hit }
+        }
+        return nil
+    }
+
     static func torrentTotal(in folder: URL, hash: String?) -> Int64? {
         guard let hash, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return nil }
         for name in names where name.hasPrefix(".magent_") && name.hasSuffix(".torrent") {
@@ -334,6 +381,7 @@ enum ThunderBridge {
         } else {
             job.checked = nil; job.dlSize = nil
         }
+        job.written = writtenBytes(in: folderURL)
         var bytes: Int64 = 0
         let en = fm.enumerator(at: folderURL, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
         while let f = en?.nextObject() as? URL {
@@ -355,7 +403,11 @@ enum ThunderBridge {
         job.bytes = bytes; job.measuredAt = now
         // 只在对应任务的进度记录明确到达总量时判完成；无法读取记录时保持未知。
         if let expected = job.verifiedTotal, expected > 0, let dl = job.dlSize, let ck = job.checked {
-            job.done = dl >= expected && ck >= expected
+            // 迅雷会跳过种子里的小附件（常见 71 字节的说明文件，11-04 三条任务都差这点），所以 dlsize 可能略小于种子总量：
+            // 选中的都校验完、没有下载中的 `.<文件名>.js`、差额不超过 1 MB 且不到 1% 才算完成，大文件还没开始时差额大，不会误判
+            let gap = expected - dl
+            let onlySkippedExtras = dl > 0 && ck >= dl && job.written == nil && gap <= 1 << 20 && gap * 100 <= expected
+            job.done = (dl >= expected && ck >= expected) || onlySkippedExtras
             job.completionVerified = job.done
             if job.done { job.speed = 0; job.bytes = expected }
         } else if job.completionVerified != true {

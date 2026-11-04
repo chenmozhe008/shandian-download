@@ -59,6 +59,20 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(DownloadStore.cloudCopyCanBeRemoved(file: dir, expectedSize: 3))
         XCTAssertFalse(DownloadStore.cloudCopyCanBeRemoved(file: dir.appendingPathComponent("missing"), expectedSize: 3))
     }
+
+    @MainActor func testCloudCleanupRequiresSameAccountAndUnchangedLocalFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("copy")
+        try Data("abc".utf8).write(to: file)
+        XCTAssertTrue(DownloadStore.cloudCleanupAllowed(account: "a", currentAccount: "a", path: file.path, size: 3))
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "a", currentAccount: "b", path: file.path, size: 3))
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: nil, currentAccount: "a", path: file.path, size: 3))
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "a", currentAccount: "a", path: file.path, size: 4))
+        try FileManager.default.removeItem(at: file)
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "a", currentAccount: "a", path: file.path, size: 3))
+    }
     func testMissingCloudDownloadURLIsAnError() throws {
         XCTAssertThrowsError(try PikPak.downloadURL([:]))
         XCTAssertEqual(try PikPak.downloadURL(["web_content_link": "", "medias": [["link": ["url": "https://example.com/file"]]]]), "https://example.com/file")
