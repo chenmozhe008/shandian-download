@@ -12,7 +12,7 @@ enum Prefs {
     static let autoThunderKey = "autoThunder"
     static var autoThunder: Bool { UserDefaults.standard.object(forKey: autoThunderKey) as? Bool ?? false }   // 10-28 用户：不想用迅雷
     static let autoCloudKey = "autoCloud"
-    static var autoCloud: Bool { UserDefaults.standard.object(forKey: autoCloudKey) as? Bool ?? false }   // 免费每天 3 次，不自动用
+    static var autoCloud: Bool { UserDefaults.standard.object(forKey: autoCloudKey) as? Bool ?? true }   // 11-04 用户定：下不动就自动转，提示里写清用了几次
     static let autoCleanCloudKey = "autoCleanCloud"
     static var autoCleanCloud: Bool { UserDefaults.standard.object(forKey: autoCleanCloudKey) as? Bool ?? true }   // 免费空间小，拉回后默认清理才能循环用
     static var downloadLimit: Int { UserDefaults.standard.integer(forKey: downloadLimitKey) }
@@ -50,7 +50,8 @@ struct SettingsView: View {
     @AppStorage(Prefs.notifyKey) private var notify = true
     @AppStorage(Prefs.doneSoundKey) private var doneSound = true
     @AppStorage(Prefs.downloadLimitKey) private var limit = 0
-    @AppStorage(Prefs.autoCloudKey) private var autoCloud = false
+    @AppStorage(Prefs.autoCloudKey) private var autoCloud = true
+    @State private var offlinesToday: Int?
     @AppStorage(Prefs.autoCleanCloudKey) private var autoCleanCloud = true
     @State private var pkState = PikPak.loggedInUser
     @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
@@ -119,9 +120,13 @@ struct SettingsView: View {
                     }
                     Text("浏览器已登录 PikPak 时可直接重新关联，需安装闪电全能下载扩展。关联后浏览器中的 PikPak 可能退出登录。")
                         .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
-                    Toggle("磁力、种子太慢时自动交给云盘离线", isOn: $autoCloud)
+                    Toggle("下不动时自动交给云盘离线", isOn: $autoCloud)
                         .help("BT 网络里几乎没人传的资源，交给 PikPak 服务器下好，再从云盘满速拉回")
-                    Text("免费账号每天约 3 次，默认不自动用；卡住的任务右键「交给云盘离线」。").font(.system(size: 12)).foregroundStyle(Theme.sub)
+                    Text("磁力、种子 1 分钟没速度，或 3 分钟几乎没速度时转交，每次用掉一次离线。").font(.system(size: 12)).foregroundStyle(Theme.sub)
+                    LabeledContent("今天已用") {
+                        Text(offlinesToday.map { "\($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）" } ?? "读取中").foregroundStyle(Theme.sub)
+                    }
+                    .task { offlinesToday = try? await PikPak.shared.offlinesUsedToday() }
                 } else {
                     LabeledContent("PikPak 账号") {
                         HStack {

@@ -30,7 +30,7 @@
 - `127.0.0.1:9999` 内核 REST；`127.0.0.1:6800` App 内置网关（`Gateway.swift`）：`/jsonrpc` 兼容 Aria2 RPC（LinkSwift 推网盘直链），`/api/v1/*` 代理 Gopeed 浏览器扩展（新建任务改走 App 的添加流程：存哪、只选正片、片名整理），密钥都是内核 token
 - `shandian://add?url=<编码后的链接>`（可多个 url）：脚本 / skill 交链接给 App，`open -g` 不抢焦点。**测试别再用 System Events 模拟 ⌘V**（窗口没抢到焦点时按键会落到用户正在用的程序里，10-27 踩过）
 - 迅雷通道（`ThunderBridge.swift`，默认关）：BT 慢 3 分钟交给本机迅雷，靠辅助功能 API 点按钮、按文件夹占用量算进度。**不逆向迅雷协议、不碰会员**（用户多次要求 rev 迅雷，已拒绝：等于白用别人的商业服务）
-- 云盘离线（`PikPak.swift`）：接口照开源 PikPakAPI。**不在 App 里输密码**（用户 10-28 定），用网页窗口打开官方登录页取令牌，只存 `pikpak.json`（600）；拉回后删云端文件；免费额度小，默认手动。BT 慢 3 分钟优先云盘、其次迅雷。签名常量会随 PikPak 改版变，细节见 `docs/internals.md`
+- 云盘离线（`PikPak.swift`）：接口照开源 PikPakAPI。**不在 App 里输密码**（用户 10-28 定），用网页窗口打开官方登录页取令牌，只存 `pikpak.json`（600）；取回后彻底删除云端副本（回收站也占容量）；已关联时下不动自动转交（1 分钟没速度或 3 分钟几乎没速度）。转交优先云盘、其次迅雷。签名常量会随 PikPak 改版变，细节见 `docs/internals.md`
 - 回收站：移除任务写 `removed.json`（最多 500 条），可重新下载
 - 磁力默认打开方式已改为闪电全能下载（10-27 用户同意）；`.torrent` 文件关联未改
 - 浏览器扩展：**用自带的**（`browser-extension/`，MV3，Chrome / Edge 通用；10-28 用户说别绑篡改猴）。打包进 App、启动时拷到 `Application Support/ShandianDownload/BrowserExtension`（浏览器记路径，别指向 dist）。用户在扩展页开开发者模式、拖文件夹进去装一次——浏览器不允许第三方静默装扩展，Chrome 137+ 也不认 `--load-extension`

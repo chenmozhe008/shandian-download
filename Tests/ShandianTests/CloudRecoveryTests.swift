@@ -104,6 +104,19 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(PikPak.isRetryableConnectionError(PikPak.PikPakError.notLoggedIn))
     }
 
+    func testOfflinesTodayCountsOnlyAcceptedTasksFromToday() {
+        let now = Date()
+        let yesterday = now.addingTimeInterval(-86_400)
+        XCTAssertEqual(PikPak.offlinesToday([
+            (now, "PHASE_TYPE_ERROR", "云盘文件已删除"),
+            (now, "PHASE_TYPE_ERROR", "云盘文件已删除"),
+            (now, "PHASE_TYPE_ERROR", "空间不足，请清理后再试"),
+            (now, "PHASE_TYPE_RUNNING", ""),
+            (now, "PHASE_TYPE_COMPLETE", ""),
+            (yesterday, "PHASE_TYPE_COMPLETE", ""),
+        ], now: now), 4)
+    }
+
     func testTrashEmptiedOnlyWhenRoomIsNeeded() {
         let q = PikPak.Quota(limit: 6000, used: 5000, inTrash: 4800)
         XCTAssertTrue(PikPak.shouldEmptyTrash(q, need: 3000))

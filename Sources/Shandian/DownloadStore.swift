@@ -155,6 +155,7 @@ final class DownloadStore: ObservableObject {
     private var verifiedSeen: Set<String> = []
     private var autoRetries: [String: (count: Int, at: Date)] = [:]
     private var slowSince: [String: Date] = [:]
+    private var noSpeedSince: [String: Date] = [:]
     private var thunderJobs: [ThunderJob] = ThunderBridge.load()
 
     /// 云盘离线（PikPak）中的任务：云端下好后拉回本地
@@ -595,12 +596,16 @@ final class DownloadStore: ObservableObject {
             let nearlyDone = i.total > 0 && Double(i.downloaded) / Double(i.total) > 0.99
             let stuck = isBT && !i.checking && !nearlyDone && (i.isResolvingState || (i.status == .running && i.avgSpeed < 50 << 10))
             if stuck { slowSince[i.id] = slowSince[i.id] ?? Date() } else { slowSince[i.id] = nil }
-            all[k].slow = stuck && Date().timeIntervalSince(slowSince[i.id] ?? Date()) > 180
+            // 完全没速度 1 分钟就够了（磁力起速实测 5–18 秒）；还有一点速度的多给点时间，3 分钟
+            let noSpeed = i.isResolvingState || i.avgSpeed < 1 << 10
+            if stuck && noSpeed { noSpeedSince[i.id] = noSpeedSince[i.id] ?? Date() } else { noSpeedSince[i.id] = nil }
+            all[k].slow = stuck && (Date().timeIntervalSince(slowSince[i.id] ?? Date()) > 180
+                || Date().timeIntervalSince(noSpeedSince[i.id] ?? Date()) > 60)
             if all[k].slow, !all[k].link.isEmpty, !autoHanded.contains(i.id) {
                 let it = all[k]
                 if Prefs.autoCloud, PikPak.loggedInUser != nil {
                     autoHanded.insert(i.id)
-                    Task { @MainActor in self.sendToCloud(it) }
+                    Task { @MainActor in self.sendToCloud(it, automatic: true) }
                 } else if Prefs.autoThunder, ThunderBridge.installed {
                     autoHanded.insert(i.id)
                     Task { @MainActor in self.handToThunder(it, promptIfMissing: false) }
@@ -1028,7 +1033,7 @@ final class DownloadStore: ObservableObject {
     }
 
     /// 云盘离线：BT 任务先暂停（云盘失败了还能接着 BT），交给 PikPak；云端下好后按直链拉回同一个位置
-    func sendToCloud(_ item: Item) {
+    func sendToCloud(_ item: Item, automatic: Bool = false) {
         guard PikPak.loggedInUser != nil else { notice = "先在设置里登录 PikPak，才能用云盘离线"; return }
         guard !item.link.isEmpty, !cloudJobs.contains(where: { $0.link == item.link && $0.cleanupReady != true }) else { return }
         let base = item.location ?? item.file
@@ -1071,7 +1076,9 @@ final class DownloadStore: ObservableObject {
                 if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                     cloudJobs[k].taskID = t.id; cloudJobs[k].fileID = t.fileID; cloudJobs[k].progress = t.progress; saveCloud()
                 }
-                notice = thunderJob == nil ? "已交给 PikPak 云盘离线「\(item.title)」" : "已交给 PikPak；迅雷任务请在迅雷中暂停"
+                let used = (try? await PikPak.shared.offlinesUsedToday()).map { "，今天第 \($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）" } ?? ""
+                if automatic { notice = "「\(item.title)」下不动，已自动交给 PikPak\(used)" }
+                else { notice = thunderJob == nil ? "已交给 PikPak 云盘离线「\(item.title)」\(used)" : "已交给 PikPak\(used)；迅雷任务请在迅雷中暂停" }
                 pollCloud()
             } catch { cloudFailed(job.id, error.localizedDescription) }
         }

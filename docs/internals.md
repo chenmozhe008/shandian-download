@@ -56,7 +56,7 @@
 - 接口照开源 PikPakAPI：登录 captcha_init → signin；离线 POST `/drive/v1/files`（UPLOAD_TYPE_URL）；进度 `/drive/v1/tasks`；下载地址要 captcha 的 GET `/drive/v1/files/{id}` → web_content_link
 - 登录：App 里的网页窗口打开 PikPak 官方登录页，读 localStorage 的 `credentials_<client_id>` 和 `deviceid` 后删掉网页那份，之后只由 App 刷新（网页端常量来自开源 peach ADR-0093 / AList）。只存令牌 `pikpak.json`（600）
 - 网页端签名时间戳会随改版变（2026-10-28 为 1793092691562，盐没变），设备号用 deviceid 最后一段前 32 位；签名被拒时 `refreshWebSign` 自动从网页脚本重取
-- 免费约 3 次/天、20 GB/天，所以交给云盘默认手动；免费空间只有 6 GB，所以拉回后默认自动清理（11-04 用户定，设置「拉回后自动清理云端副本」可关，关了在提示里手动确认）
+- 免费约 3 次/天（经验值，接口查不到；`PikPak.freeDailyOfflines` 一处定义，只显示不拦截，以服务端是否拒绝为准）。用了几次按离线任务记录算（`offlinesToday`），被「空间不足」拒绝的不算：11-04 被拒 6 次后仍能成功。11-04 用户定：已关联 PikPak 时默认自动转交，1 分钟没速度或 3 分钟 <50 KB/s 触发。免费空间只有 6 GB，所以拉回后默认自动清理（11-04 用户定，设置「拉回后自动清理云端副本」可关，关了在提示里手动确认）
 - 清理（`DownloadStore.cleanCloudCopy`）：同账号 + 本地每个文件大小都对 + 云端条目没进回收站且每个拉回的文件大小都在里面（`PikPak.holds`），任一不过就保留并提示。文件夹任务清理的是整个任务文件夹，没拉回的说明、花絮一起清。只比大小，不校验内容
 - PikPak 只是中转（11-04 用户定：用完就清，不让用户管）。`reclaim` 直接 `batchTrash` + `batchDelete` 彻底删除：**回收站也占容量**（11-04 实测 `usage` 4.84 GB = `usage_in_trash`，正常目录是空的，新任务照样报「空间不足」；回收站 15 天后才自动删）
 - 腾地方（`makeRoom` / `emptyOfflineTrash`）：提交离线前，空间不够或磁力还不知道大小时，把回收站里能对上离线任务 `file_id` 的条目彻底删除；任务报「空间」错误时再清一次并重交一次。对不上的（用户自己扔的、PikPak 自带教程）不动。列回收站要 `parent_id=*`，不带只列根目录

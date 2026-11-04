@@ -254,6 +254,28 @@ actor PikPak {
         return ids.count
     }
 
+    /// 免费账号每天大约几次离线。接口不给这个数（11-04 查过），是经验值，PikPak 改政策时只改这里
+    nonisolated static let freeDailyOfflines = 3
+
+    /// 今天真正用掉的离线次数：空间不足等被拒的不算（11-04 实测被拒 6 次后仍能成功离线），
+    /// 下完后云端文件被删的任务会变成 ERROR「云盘文件已删除」，要算
+    nonisolated static func offlinesToday(_ tasks: [(created: Date, phase: String, message: String)], now: Date = Date(), calendar: Calendar = .current) -> Int {
+        tasks.filter { task in
+            calendar.isDate(task.created, inSameDayAs: now) && (task.phase != "PHASE_TYPE_ERROR" || task.message.contains("已删除"))
+        }.count
+    }
+
+    /// 今天用了几次（含网页端提交的）
+    func offlinesUsedToday() async throws -> Int {
+        let phases = #"{"phase":{"in":"PHASE_TYPE_RUNNING,PHASE_TYPE_ERROR,PHASE_TYPE_PENDING,PHASE_TYPE_COMPLETE"}}"#.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let r = try await api("GET", "\(apiHost)/drive/v1/tasks?type=offline&limit=200&filters=\(phases)", body: nil)
+        let tasks = ((r["tasks"] as? [[String: Any]]) ?? []).compactMap { t -> (created: Date, phase: String, message: String)? in
+            guard let created = ISO8601DateFormatter.flexible.date(from: t["created_time"] as? String ?? "") else { return nil }
+            return (created, t["phase"] as? String ?? "", t["message"] as? String ?? "")
+        }
+        return Self.offlinesToday(tasks)
+    }
+
     /// 提交离线前先腾地方。容量读不到时照常提交，由任务报错后的重试兜底
     func makeRoom(need: Int64) async {
         guard let quota = try? await quota(), Self.shouldEmptyTrash(quota, need: need) else { return }
