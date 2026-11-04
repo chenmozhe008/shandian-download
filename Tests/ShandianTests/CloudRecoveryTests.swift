@@ -104,6 +104,63 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(PikPak.isRetryableConnectionError(PikPak.PikPakError.notLoggedIn))
     }
 
+    @MainActor func testAutoHandSkipsHalfDoneAndJustLaunched() {
+        XCTAssertTrue(DownloadStore.canAutoHand(progress: 0, sinceLaunch: 300))
+        XCTAssertTrue(DownloadStore.canAutoHand(progress: 0.49, sinceLaunch: 300))
+        XCTAssertFalse(DownloadStore.canAutoHand(progress: 0.5, sinceLaunch: 300))
+        XCTAssertFalse(DownloadStore.canAutoHand(progress: 0, sinceLaunch: 30))
+    }
+
+    func testCloudBaseOnlyMatchesHandoffFolders() {
+        XCTAssertEqual(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/PikPak 下载/cloud-1"))?.path, "/m")
+        XCTAssertNil(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/movie")))
+        XCTAssertNil(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/other/cloud-1")))
+    }
+
+    func testOnlySmallerPartialInsideBaseIsDisposable() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let finished = base.appendingPathComponent("迅雷下载/thunder-1/片名")
+        try FileManager.default.createDirectory(at: finished, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 300_000).write(to: finished.appendingPathComponent("a.mp4"))
+        let partial = base.appendingPathComponent("片名")
+        try FileManager.default.createDirectory(at: partial, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 8192).write(to: partial.appendingPathComponent("a.mp4"))
+        let size = HandoffFiles.allocatedSize(of: finished)
+        XCTAssertTrue(HandoffFiles.isDisposablePartial(partial, base: base, finished: finished, finishedSize: size))
+        XCTAssertFalse(HandoffFiles.isDisposablePartial(base, base: base, finished: finished, finishedSize: size))
+        XCTAssertFalse(HandoffFiles.isDisposablePartial(finished, base: base, finished: finished, finishedSize: size))
+        XCTAssertFalse(HandoffFiles.isDisposablePartial(base.appendingPathComponent("迅雷下载"), base: base, finished: finished, finishedSize: size))
+        XCTAssertFalse(HandoffFiles.isDisposablePartial(partial, base: base, finished: finished, finishedSize: 1))
+        XCTAssertFalse(HandoffFiles.isDisposablePartial(URL(fileURLWithPath: "/tmp/elsewhere"), base: base, finished: finished, finishedSize: size))
+    }
+
+    func testMoveThunderFolderClearsPartialAndKeepsLargerConflict() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = base.appendingPathComponent("迅雷下载/thunder-1/片名")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 300_000).write(to: folder.appendingPathComponent("a.mp4"))
+        let target = base.appendingPathComponent("片名")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 900_000).write(to: target.appendingPathComponent("big.mp4"))
+        // 同名的比迅雷这份还大：收回时不能动；下完时另起名字，两份都保留
+        var trashed: [URL] = []
+        XCTAssertNil(try HandoffFiles.moveThunderFolder(folder, to: target, partial: target, keepName: true) { trashed.append($0) })
+        XCTAssertTrue(trashed.isEmpty)
+        let renamed = try XCTUnwrap(HandoffFiles.moveThunderFolder(folder, to: target, partial: target, keepName: false) { trashed.append($0) })
+        XCTAssertEqual(renamed.lastPathComponent, "片名 (2)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.appendingPathComponent("big.mp4").path))
+        // 同名的是更小的半截：清掉后用原名
+        let second = base.appendingPathComponent("迅雷下载/thunder-2/别的片")
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 300_000).write(to: second.appendingPathComponent("a.mp4"))
+        let small = base.appendingPathComponent("别的片")
+        try FileManager.default.createDirectory(at: small, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4096).write(to: small.appendingPathComponent("a.mp4"))
+        let home = try XCTUnwrap(HandoffFiles.moveThunderFolder(second, to: small, partial: small, keepName: true) { try FileManager.default.removeItem(at: $0); trashed.append($0) })
+        XCTAssertEqual(home.lastPathComponent, "别的片")
+        XCTAssertEqual(trashed.count, 1)
+    }
+
     func testOfflinesTodayCountsOnlyAcceptedTasksFromToday() {
         let now = Date()
         let yesterday = now.addingTimeInterval(-86_400)

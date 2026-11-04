@@ -98,6 +98,12 @@ import CryptoKit
         XCTAssertFalse(try measured(checked: 1000, length: 3_322_403_616, activeRecord: false).done)
     }
 
+    func testHomeFolderUnwrapsNestedHandoffDirectories() {
+        XCTAssertEqual(ThunderBridge.homeFolder(of: URL(fileURLWithPath: "/m/迅雷下载/thunder-1/片名"))?.path, "/m/片名")
+        XCTAssertEqual(ThunderBridge.homeFolder(of: URL(fileURLWithPath: "/m/迅雷下载/thunder-1/迅雷下载/thunder-2/片名"))?.path, "/m/片名")
+        XCTAssertNil(ThunderBridge.homeFolder(of: URL(fileURLWithPath: "/m/片名")))
+    }
+
     func testUnchangedOrMissingDirectoryDoesNotProvePaused() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

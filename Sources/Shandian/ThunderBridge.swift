@@ -32,6 +32,7 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     var verifiedTotal: Int64? = nil
     var completionVerified: Bool? = nil
     var legacyCompletionPreserved: Bool? = nil
+    var homeMoveTried: Bool? = nil   // 下完后试过移回保存目录（失败也不反复试）
 }
 
 @MainActor
@@ -307,6 +308,24 @@ enum ThunderBridge {
             base = base.deletingLastPathComponent().deletingLastPathComponent()
         }
         return base
+    }
+
+    /// 任务文件夹在中转目录里时，算出它该回到哪：`保存目录/迅雷下载/thunder-…/片名` → `保存目录/片名`
+    static func homeFolder(of folder: URL) -> URL? {
+        let holder = folder.deletingLastPathComponent()
+        guard holder.lastPathComponent.hasPrefix("thunder-"),
+              holder.deletingLastPathComponent().lastPathComponent == "迅雷下载" else { return nil }
+        return handoffBase(holder).appendingPathComponent(folder.lastPathComponent)
+    }
+
+    /// 文件夹移走后清掉空的中转目录（重复转交可能套了几层）
+    static func removeEmptyHolders(from folder: URL) {
+        var holder = folder.deletingLastPathComponent()
+        while holder.lastPathComponent.hasPrefix("thunder-") || holder.lastPathComponent == "迅雷下载" {
+            HandoffFiles.removeIfEmpty(holder)
+            guard !FileManager.default.fileExists(atPath: holder.path) else { return }
+            holder = holder.deletingLastPathComponent()
+        }
     }
 
     /// 迅雷可能把任务放在哪：我们指定的位置、迅雷记的上次保存位置、系统「下载」

@@ -280,7 +280,27 @@ final class DownloadStore: ObservableObject {
     }
     func deleteRecord(_ r: RemovedRecord) { removedRecords.removeAll { $0.id == r.id }; saveRemoved() }
     func clearRecords() { removedRecords.removeAll(); saveRemoved() }
-    private var autoHanded = Set<String>()
+    /// 自动转交试过的任务（按链接记）：云盘失败后任务恢复，再下不动就轮到迅雷，不会反复消耗云盘次数
+    private var cloudTried = Set<String>()
+    private var thunderTried = Set<String>()
+    private let launchedAt = Date()
+
+    /// 下了一半以上不自动转：云端要整部重新取回，反而更慢。刚启动时任务还在重新连接，也先不转
+    static func canAutoHand(progress: Double, sinceLaunch: TimeInterval) -> Bool {
+        progress < 0.5 && sinceLaunch > 120
+    }
+
+    /// 从中转目录移回保存目录的已完成任务：内核记的还是旧路径，界面按这里的显示
+    struct RelocatedFile: Codable, Equatable { var file: String; var folder: String? }
+    private var relocated: [String: RelocatedFile] = DownloadStore.loadRelocated()
+    private var migratedOldCloudFolders = false
+    private static var relocatedFile: URL { EngineConfig.supportDir.appendingPathComponent("relocated.json") }
+    private static func loadRelocated() -> [String: RelocatedFile] {
+        (try? Data(contentsOf: relocatedFile)).flatMap { try? JSONDecoder().decode([String: RelocatedFile].self, from: $0) } ?? [:]
+    }
+    private func saveRelocated() {
+        if let d = try? JSONEncoder().encode(relocated) { try? PrivateFile.write(d, to: Self.relocatedFile) }
+    }
     /// 退出时各 BT 任务已下的量；重启后低于它就是在校验
     private var checkFloor: [String: Int64] = (UserDefaults.standard.dictionary(forKey: "progressAtQuit") as? [String: Int64]) ?? [:]
     /// 每个任务上次进度变化的时间和字节数：判断「卡在最后一点」
@@ -489,6 +509,10 @@ final class DownloadStore: ObservableObject {
             firstLoad = !engineSeeded
             engineItems = tasks.map { t in
                 var it = Self.item(from: t)
+                if let moved = relocated[t.id] {
+                    it.file = URL(fileURLWithPath: moved.file)
+                    it.location = URL(fileURLWithPath: moved.folder ?? moved.file)
+                }
                 // 从迅雷收回的任务是拿本地种子建的，内核那边没有原始链接；补回去，菜单才完整
                 if let o = sourceLinks[t.id] {
                     if it.link.isEmpty { it.link = o }
@@ -498,6 +522,9 @@ final class DownloadStore: ObservableObject {
             }
             // 已经不在内核里的任务，别再留着链接
             let alive = Set(tasks.map(\.id))
+            if relocated.contains(where: { !alive.contains($0.key) }) {
+                relocated = relocated.filter { alive.contains($0.key) }; saveRelocated()
+            }
             if sourceLinks.contains(where: { !alive.contains($0.key) }) {
                 sourceLinks = sourceLinks.filter { alive.contains($0.key) }; saveSourceLinks()
             }
@@ -560,8 +587,13 @@ final class DownloadStore: ObservableObject {
             for k in thunderJobs.indices where !thunderJobs[k].done || (thunderJobs[k].completionVerified != true && thunderJobs[k].legacyCompletionPreserved != true && thunderJobs[k].folder.map { FileManager.default.fileExists(atPath: $0) } == true) { ThunderBridge.measure(&thunderJobs[k]) }
             ThunderBridge.save(thunderJobs)
         }
+        moveFinishedThunderJobsHome()
         rebuild()
         if firstLoad { engineSeeded = true }
+        if engineSeeded, !migratedOldCloudFolders {
+            migratedOldCloudFolders = true
+            await migrateOldHandoffFolders()
+        }
         if engineSettled, engineSeeded, !waitingForEngine.isEmpty {
             let waiting = waitingForEngine
             waitingForEngine.removeAll()
@@ -578,6 +610,7 @@ final class DownloadStore: ObservableObject {
         var all = pending + engineItems.filter { e in
             !cloudJobs.contains { $0.engineID == e.id || $0.thunderJob?.sourceEngineID == e.id }
                 && !thunderJobs.contains { $0.sourceEngineID == e.id }
+                && !(pulling.contains(e.id) && Self.isSubtitle(e))   // 字幕跟着片子走，一部片只显示一条
         }.map { e in
             var e = e
             if pulling.contains(e.id), e.isActive { e.origin = "PikPak 中转 · 取回本机" }
@@ -601,13 +634,13 @@ final class DownloadStore: ObservableObject {
             if stuck && noSpeed { noSpeedSince[i.id] = noSpeedSince[i.id] ?? Date() } else { noSpeedSince[i.id] = nil }
             all[k].slow = stuck && (Date().timeIntervalSince(slowSince[i.id] ?? Date()) > 180
                 || Date().timeIntervalSince(noSpeedSince[i.id] ?? Date()) > 60)
-            if all[k].slow, !all[k].link.isEmpty, !autoHanded.contains(i.id) {
+            if all[k].slow, !all[k].link.isEmpty, Self.canAutoHand(progress: i.progress, sinceLaunch: Date().timeIntervalSince(launchedAt)) {
                 let it = all[k]
-                if Prefs.autoCloud, PikPak.loggedInUser != nil {
-                    autoHanded.insert(i.id)
+                if Prefs.autoCloud, PikPak.loggedInUser != nil, !cloudTried.contains(i.linkKey) {
+                    cloudTried.insert(i.linkKey)
                     Task { @MainActor in self.sendToCloud(it, automatic: true) }
-                } else if Prefs.autoThunder, ThunderBridge.installed {
-                    autoHanded.insert(i.id)
+                } else if Prefs.autoThunder, ThunderBridge.installed, !thunderTried.contains(i.linkKey) {
+                    thunderTried.insert(i.linkKey)
                     Task { @MainActor in self.handToThunder(it, promptIfMissing: false) }
                 }
             }
@@ -1138,6 +1171,105 @@ final class DownloadStore: ObservableObject {
         Task { await cleanCloudCopy(job) }
     }
 
+    private static func isSubtitle(_ item: Item) -> Bool {
+        item.file.map { FileSelection.subtitleExt.contains($0.pathExtension.lowercased()) } ?? false
+    }
+
+    /// 迅雷下完：片子移回保存目录，原任务和它的半截文件一起清掉。这之后迅雷里那条任务会显示文件不在，不影响这边
+    private func moveFinishedThunderJobsHome() {
+        for k in thunderJobs.indices where thunderJobs[k].done && thunderJobs[k].homeMoveTried != true {
+            guard let path = thunderJobs[k].folder, FileManager.default.fileExists(atPath: path),
+                  let home = ThunderBridge.homeFolder(of: URL(fileURLWithPath: path)) else { continue }
+            let folder = URL(fileURLWithPath: path)
+            thunderJobs[k].homeMoveTried = true
+            let source = thunderJobs[k].sourceEngineID
+            let partial = source.flatMap { id in engineItems.first { $0.id == id } }.flatMap { $0.location ?? $0.file }
+            do {
+                if let moved = try HandoffFiles.moveThunderFolder(folder, to: home, partial: partial, keepName: false) {
+                    thunderJobs[k].folder = moved.path
+                    thunderJobs[k].dir = moved.deletingLastPathComponent().path
+                    ThunderBridge.removeEmptyHolders(from: folder)
+                }
+                if let source {
+                    thunderJobs[k].sourceEngineID = nil
+                    Task { try? await host.client.delete(source, withFiles: false) }
+                }
+            } catch {
+                notice = "「\(thunderJobs[k].title)」已下完，但没能移回保存目录：\(error.localizedDescription)"
+            }
+            ThunderBridge.save(thunderJobs)
+        }
+    }
+
+    /// 云盘取回的文件移回保存目录。一个文件直接放保存目录；片子带字幕时放进以片名命名的文件夹。
+    /// 字幕的内核任务随后移除（文件留着），已完成里只留片子一条。返回移动后的路径和大小，移动失败的保持原路径
+    @discardableResult
+    private func moveCloudFilesHome(_ items: [Item], directory: URL, title: String, partial: URL?) async -> [CloudLocalFile] {
+        let current = items.compactMap { item in item.file.map { CloudLocalFile(path: $0.path, size: item.total) } }
+        guard let base = HandoffFiles.cloudBase(of: directory) else { return current }
+        let fm = FileManager.default
+        let total = items.reduce(Int64(0)) { $0 + $1.total }
+        if let partial, HandoffFiles.isDisposablePartial(partial, base: base, finished: directory, finishedSize: total) {
+            try? fm.trashItem(at: partial, resultingItemURL: nil)
+        }
+        var home = base
+        if items.count > 1 {
+            home = HandoffFiles.unique(base.appendingPathComponent(HandoffFiles.safeName(title)))
+            guard (try? fm.createDirectory(at: home, withIntermediateDirectories: true)) != nil else { return current }
+        }
+        var result: [CloudLocalFile] = []
+        for item in items {
+            guard let file = item.file else { continue }
+            let target = HandoffFiles.unique(home.appendingPathComponent(file.lastPathComponent))
+            guard (try? fm.moveItem(at: file, to: target)) != nil else {
+                result.append(CloudLocalFile(path: file.path, size: item.total))
+                continue
+            }
+            result.append(CloudLocalFile(path: target.path, size: item.total))
+            relocated[item.id] = RelocatedFile(file: target.path, folder: items.count > 1 ? home.path : nil)
+        }
+        saveRelocated()
+        HandoffFiles.removeIfEmpty(directory)
+        HandoffFiles.removeIfEmpty(directory.deletingLastPathComponent())
+        let videos = items.contains { !Self.isSubtitle($0) }
+        for item in items where videos && Self.isSubtitle(item) && relocated[item.id] != nil {
+            relocated[item.id] = nil
+            try? await host.client.delete(item.id, withFiles: false)
+        }
+        saveRelocated()
+        await poll()
+        return result
+    }
+
+    /// 以前的版本把片子留在中转目录：启动时整理一次，并清掉没用的空目录。没在进行的任务才动
+    private func migrateOldHandoffFolders() async {
+        let inUse = Set(cloudJobs.map { URL(fileURLWithPath: $0.dir).standardizedFileURL.path })
+            .union(thunderJobs.filter { !$0.done }.map { URL(fileURLWithPath: $0.dir).standardizedFileURL.path })
+        var groups: [URL: [Item]] = [:]
+        for item in engineItems where item.status == .done && relocated[item.id] == nil {
+            guard let file = item.file, FileManager.default.fileExists(atPath: file.path) else { continue }
+            let directory = file.deletingLastPathComponent().standardizedFileURL
+            if HandoffFiles.cloudBase(of: directory) != nil, !inUse.contains(directory.path) { groups[directory, default: []].append(item) }
+        }
+        for (directory, items) in groups {
+            let main = items.first { !Self.isSubtitle($0) } ?? items[0]
+            await moveCloudFilesHome(items, directory: directory, title: main.title, partial: nil)
+        }
+        // 实际保存位置不一定是默认目录（内核另有设置、任务可单独选目录），连已有任务所在的目录一起看
+        let used = items.compactMap { ($0.location ?? $0.file)?.deletingLastPathComponent() }
+        let roots = Set(([Folders.movies, Folders.downloads, Folders.others] + used).map(\.standardizedFileURL))
+        for root in roots {
+            for name in ["PikPak 下载", "迅雷下载"] {
+                let holder = root.appendingPathComponent(name)
+                for child in (try? FileManager.default.contentsOfDirectory(at: holder, includingPropertiesForKeys: nil)) ?? []
+                where !inUse.contains(child.standardizedFileURL.path) {
+                    HandoffFiles.removeIfEmpty(child)
+                }
+                HandoffFiles.removeIfEmpty(holder)
+            }
+        }
+    }
+
     /// 空间不足：清掉回收站里离线任务留下的东西，重交一次。清不出东西就算真的放不下
     private func retryAfterEmptyingTrash(_ job: CloudJob) async -> Bool {
         guard let index = cloudJobs.firstIndex(where: { $0.id == job.id }) else { return false }
@@ -1214,10 +1346,20 @@ final class DownloadStore: ObservableObject {
                         continue
                     }
                     if finished {
-                        let pulled = ids.compactMap { id in engineItems.first { $0.id == id } }
+                        let items = ids.compactMap { id in engineItems.first { $0.id == id } }
                             .filter { Self.cloudCopyCanBeRemoved(file: $0.file, expectedSize: $0.total) }
-                            .compactMap { item in item.file.map { CloudLocalFile(path: $0.path, size: item.total) } }
-                        if pulled.count == ids.count, !job.fileID.isEmpty, job.cleanupAccount != nil,
+                        guard items.count == ids.count else {
+                            cloudJobs.removeAll { $0.id == job.id }; saveCloud()
+                            notice = "「\(job.title)」本地文件和云端大小不一致，云端文件已保留"
+                            continue
+                        }
+                        // 先移回保存目录、清半截文件，云端清理核对的是移动后的路径
+                        let pulled = await moveCloudFilesHome(items, directory: URL(fileURLWithPath: job.dir), title: job.title,
+                                                              partial: job.partial.map(URL.init(fileURLWithPath:)))
+                        if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
+                            cloudJobs[k].pulling = items.filter { !Self.isSubtitle($0) }.map(\.id)
+                        }
+                        if !job.fileID.isEmpty, job.cleanupAccount != nil,
                            let index = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                             cloudJobs[index].cleanupReady = true
                             cloudJobs[index].cleanupFiles = pulled
@@ -1406,7 +1548,7 @@ final class DownloadStore: ObservableObject {
                 // 在写：只能等用户去暂停；找不到文件夹：默认再等等，用户坚持才往下走
                 if state == .writing || answer != .alertFirstButtonReturn { return }
             }
-            guard let job = thunderJobs.first(where: { $0.id == id }) else { return }
+            guard var job = thunderJobs.first(where: { $0.id == id }) else { return }
             let torrent = job.folder.flatMap { folder -> String? in
                 let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
                 guard let hash = job.hash else { return nil }
@@ -1423,6 +1565,18 @@ final class DownloadStore: ObservableObject {
             // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
             let origin = job.link.isEmpty ? nil : job.link
             // 复用旧迅雷任务时，已下载文件在定位出的目录，而非本次预设的新目录。
+            // 接着下之前先把文件夹移回保存目录，之后内核就在正常位置继续；同名的东西清不掉就留在原处
+            if let path = job.folder, let home = ThunderBridge.homeFolder(of: URL(fileURLWithPath: path)),
+               let index = thunderJobs.firstIndex(where: { $0.id == id }) {
+                let partial = job.sourceEngineID.flatMap { source in engineItems.first { $0.id == source } }.flatMap { $0.location ?? $0.file }
+                if let moved = try? HandoffFiles.moveThunderFolder(URL(fileURLWithPath: path), to: home, partial: partial, keepName: true) {
+                    thunderJobs[index].folder = moved.path
+                    thunderJobs[index].dir = moved.deletingLastPathComponent().path
+                    ThunderBridge.save(thunderJobs)
+                    ThunderBridge.removeEmptyHolders(from: URL(fileURLWithPath: path))
+                    job = thunderJobs[index]
+                }
+            }
             let downloadDir = job.folder.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
                 ?? URL(fileURLWithPath: job.dir)
             start(link: link, dir: downloadDir,
@@ -1436,6 +1590,7 @@ final class DownloadStore: ObservableObject {
     func reverify(_ item: Item) {
         guard case .engine(let id) = item.source else { return }
         guard !item.checking else { return }
+        guard relocated[item.id] == nil else { notice = "这条已下完并整理到保存目录，不需要重新校验"; return }
         notice = "正在重新校验「\(item.title)」已下的数据…"
         Task {
             do { try await host.client.verifyExisting(id: id) }
@@ -1743,7 +1898,7 @@ final class DownloadStore: ObservableObject {
     }
 
     private static func item(from j: CloudJob) -> Item {
-        var it = Item(id: j.id, source: .cloud(j.id), title: j.title, rawTitle: j.title, origin: "PikPak 云盘", category: .movie,
+        var it = Item(id: j.id, source: .cloud(j.id), title: j.title, rawTitle: j.title, origin: "PikPak 中转 · 云端下载", category: .movie,
                       status: .running, downloaded: Int64(Double(j.total) * Double(j.progress) / 100), total: j.total, speed: 0,
                       file: nil, createdAt: j.createdAt, thumbRemote: nil, linkKey: linkKey(j.link), location: nil)
         it.link = j.link

@@ -595,6 +595,7 @@ struct TaskRow: View {
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
         case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
+        case .running where item.cloudProgress == 100: "云端已下好"
         case .running where item.cloudProgress != nil: "云端下载中"
         case .running where item.fromThunder && item.checking: "正在取回迅雷素材"
         case .running: item.verificationFailed ? "检查失败" : item.checking ? "正在检查" : item.avgSpeed.speedText
@@ -607,6 +608,7 @@ struct TaskRow: View {
     }
     private var secondary: String {
         switch item.status {
+        case .running where item.cloudProgress == 100: "正在准备取回本机"
         case .running where item.cloudProgress != nil: "\(item.cloudProgress ?? 0)%，完成后取回本机"
         case .running where item.isThunder: item.avgSpeed > 0 ? "写入约 \(item.avgSpeed.speedText)" : "状态以迅雷为准"
         case .running where store.buffering.contains(item.id): "正在打开播放器"

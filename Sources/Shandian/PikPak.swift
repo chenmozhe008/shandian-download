@@ -196,14 +196,26 @@ actor PikPak {
         }
         let entries = ids.map { EngineTask.Meta.File(name: $0.1, path: nil, size: $0.2) }
         let keep = FileSelection.pick(entries) ?? Array(ids.indices)
-        var out: [RemoteFile] = []
-        for i in keep {
-            let (id, name, size) = ids[i]
-            let d = try await api("GET", "\(apiHost)/drive/v1/files/\(id)", body: nil, captchaAction: "GET:/drive/v1/files/\(id)")
-            out.append(RemoteFile(name: name, size: size, url: try Self.downloadURL(d)))
+        // 每个文件要一次验证码 + 一次查询，串行时 10 个文件要等约 1 分钟（11-04 实测），一起查
+        let out = try await withThrowingTaskGroup(of: (Int, RemoteFile).self) { group in
+            for (order, i) in keep.enumerated() {
+                let (id, name, size) = ids[i]
+                group.addTask { [self] in
+                    let url = try await downloadURL(fileID: id)
+                    return (order, RemoteFile(name: name, size: size, url: url))
+                }
+            }
+            var found: [(Int, RemoteFile)] = []
+            for try await item in group { found.append(item) }
+            return found.sorted { $0.0 < $1.0 }.map(\.1)
         }
         // 文件夹列表目前没有验证分页完整性，不能据此判断整个目录都已拉回。
         return (out, info["kind"] as? String == "drive#file" && ids.count == 1 && keep == [0])
+    }
+
+    private func downloadURL(fileID: String) async throws -> String {
+        let response = try await api("GET", "\(apiHost)/drive/v1/files/\(fileID)", body: nil, captchaAction: "GET:/drive/v1/files/\(fileID)")
+        return try Self.downloadURL(response)
     }
 
     func trash(_ fileID: String) async throws {
