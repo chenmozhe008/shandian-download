@@ -41,9 +41,11 @@ enum BrowserExtension {
     }
 }
 
-/// 「浏览器扩展」设置页
+/// 「浏览器扩展」设置页：完整版功能多但要手动装，商店版一键安装但只能发文件链接，两个都讲清楚让用户选
 struct BrowserSetupView: View {
+    enum Edition: Hashable { case full, store }
     let token: String
+    @State private var edition = Edition.full
     @State private var seen: [String] = []
     @State private var copied = ""
     @State private var showPan = false
@@ -52,18 +54,33 @@ struct BrowserSetupView: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("浏览器扩展").font(.system(size: 20, weight: .bold))
-                Text("装好后，在浏览器里点下载会直接交给闪电全能下载；右键链接可选「用闪电全能下载」。闪电全能下载没打开时，浏览器照常下载。")
-                    .font(.system(size: 13)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                Text("有两个版本，支持 Chrome 和 Edge，装一个就够。")
+                    .font(.system(size: 13)).foregroundStyle(Theme.sub)
             }
+            Picker("版本", selection: $edition) {
+                Text("完整版（推荐）").tag(Edition.full)
+                Text("商店版").tag(Edition.store)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            summary
             VStack(spacing: 10) {
-                step(1, "打开扩展管理页", "在要用的浏览器里打开") {
-                    Button("Chrome") { openPage("chrome://extensions", app: "Google Chrome") }.controlSize(.small)
-                    Button("Edge") { openPage("edge://extensions", app: "Microsoft Edge") }.controlSize(.small)
-                }
-                step(2, "打开「开发者模式」", "Chrome 在页面右上角，Edge 在左侧栏") { EmptyView() }
-                step(3, "把扩展文件夹拖进页面", "安装后软件会更新扩展文件；请在扩展管理页点「重新加载」。扩展与软件版本号分别编号。") {
-                    Button("显示文件夹") { BrowserExtension.install(); NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder]) }
-                        .controlSize(.small)
+                if edition == .full {
+                    step(1, "打开扩展管理页", "在要用的浏览器里打开") {
+                        Button("Chrome") { openPage("chrome://extensions", app: "Google Chrome") }.controlSize(.small)
+                        Button("Edge") { openPage("edge://extensions", app: "Microsoft Edge") }.controlSize(.small)
+                    }
+                    step(2, "打开「开发者模式」", "Chrome 在页面右上角，Edge 在左侧栏") { EmptyView() }
+                    step(3, "把扩展文件夹拖进页面", "软件更新后，在扩展管理页点「重新加载」即可更新扩展。") {
+                        Button("显示文件夹") { BrowserExtension.install(); NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder]) }
+                            .controlSize(.small)
+                    }
+                } else {
+                    step(1, "打开商店页", "也可以在商店搜索 Shandian Download Manager") {
+                        Button("Chrome") { open("https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg", app: "Google Chrome") }.controlSize(.small)
+                        Button("Edge") { open("https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei", app: "Microsoft Edge") }.controlSize(.small)
+                    }
+                    step(2, "点击添加", "由浏览器商店安装和更新，不用开发者模式") { EmptyView() }
+                    step(3, "右键文件链接", "选择「发送到闪电」，使用时需要打开闪电全能下载") { EmptyView() }
                 }
             }
             HStack(spacing: 8) {
@@ -97,6 +114,32 @@ struct BrowserSetupView: View {
         .tint(Theme.tint)
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in reload() }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if edition == .full {
+                feature(true, "网页上点下载，自动交给闪电全能下载")
+                feature(true, "磁力、ed2k 链接，抖音、小红书、视频号等视频")
+                feature(true, "批量抓取链接，支持需要登录的下载")
+                Text("需要手动安装，并授权访问网站、Cookie 和下载。闪电全能下载没打开时，浏览器照常下载。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true).padding(.top, 2)
+            } else {
+                feature(true, "一键安装，权限少：只用右键菜单和连接本机软件")
+                feature(true, "右键发送压缩包、文档、安装包链接")
+                feature(false, "不支持磁力、ed2k、视频网站和自动接管下载")
+                feature(false, "需要登录的下载链接可能无法使用")
+            }
+        }
+    }
+
+    private func feature(_ supported: Bool, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: supported ? "checkmark" : "minus")
+                .font(.system(size: 10.5, weight: .bold)).foregroundStyle(supported ? Theme.tint : Theme.sub)
+            Text(text).font(.system(size: 13)).foregroundStyle(supported ? Theme.text : Theme.sub)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func reload() { seen = UserDefaults.standard.stringArray(forKey: "extensionSeen") ?? [] }
