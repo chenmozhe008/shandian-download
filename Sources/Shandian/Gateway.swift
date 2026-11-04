@@ -151,7 +151,8 @@ final class Gateway: @unchecked Sendable {
     private func fromExtension(_ r: Request) async -> (Int, Data) {
         guard Self.allowsExtensionRequest(origin: r.headers["origin"], method: r.method, path: r.path) else { return (403, json(["ok": false])) }
         let browser = r.headers["user-agent"]?.contains("Edg/") == true ? "Edge" : "Chrome"
-        await MainActor.run { BrowserExtension.markConnected(browser) }
+        let fromStore = r.headers["origin"].map { Self.storeOrigins.contains($0) } ?? false
+        await MainActor.run { BrowserExtension.markConnected(browser, store: fromStore) }
         if r.path.hasPrefix("/extension/pikpak"), r.method == "POST",
            let o = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
            let key = o["key"] as? String, let c = o["c"] as? [String: Any],

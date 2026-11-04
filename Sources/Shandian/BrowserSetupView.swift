@@ -34,61 +34,70 @@ enum BrowserExtension {
         }
     }
 
-    /// 扩展连上过 App 的浏览器（Chrome / Edge），设置页据此显示「已连接」
-    @MainActor static func markConnected(_ browser: String) {
-        var seen = Set(UserDefaults.standard.stringArray(forKey: "extensionSeen") ?? [])
-        if seen.insert(browser).inserted { UserDefaults.standard.set(Array(seen).sorted(), forKey: "extensionSeen") }
+    /// 扩展连上 App 的记录（`Chrome.full` 这样的键 → 时间），窗口据此显示状态。不读浏览器配置文件：新版系统上会弹隐私权限框
+    @MainActor static func markConnected(_ browser: String, store: Bool) {
+        var seen = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Date] ?? [:]
+        seen["\(browser).\(store ? "store" : "full")"] = Date()
+        UserDefaults.standard.set(seen, forKey: seenKey)
     }
+    static let seenKey = "extensionLastSeen"
 }
 
-/// 「浏览器扩展」设置页：完整版功能多但要手动装，商店版一键安装但只能发文件链接，两个都讲清楚让用户选
+/// 「浏览器扩展」设置页：一张对照表讲清两个版本能干什么，安装按钮放在对应列下面，不用切换就能选
 struct BrowserSetupView: View {
-    enum Edition: Hashable { case full, store }
+    private enum Cell { case yes, no, maybe(String), text(String) }
+    private static let comparison: [(String, Cell, Cell)] = [
+        ("右键下载压缩包、安装包、文档", .yes, .yes),
+        ("网页上点下载，自动交给软件", .yes, .no),
+        ("右键下载磁力、电驴链接", .yes, .no),
+        ("抖音、小红书、新片场、视频号的视频", .yes, .no),
+        ("需要登录才能下的文件（网盘等）", .yes, .maybe("可能失败")),
+        ("安装", .text("手动，约 1 分钟"), .text("点一下")),
+        ("以后更新", .text("手动点「重新加载」"), .text("自动")),
+        ("需要的权限", .text("多：读取网页和登录状态"), .text("少：看不到网页内容")),
+    ]
     let token: String
-    @State private var edition = Edition.full
-    @State private var seen: [String] = []
+    @State private var seen: [String: Date] = [:]
     @State private var copied = ""
     @State private var showPan = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("浏览器扩展").font(.system(size: 20, weight: .bold))
-                Text("有两个版本，支持 Chrome 和 Edge，装一个就够。")
-                    .font(.system(size: 13)).foregroundStyle(Theme.sub)
+                Text("下电影、视频、网盘文件，选**完整版**；只偶尔下安装包、文档，选**商店版**，安装最省事。")
+                    .font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+                Text("两个都不装也能用：复制链接后在软件里按 ⌘V。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
             }
-            Picker("版本", selection: $edition) {
-                Text("完整版（推荐）").tag(Edition.full)
-                Text("商店版").tag(Edition.store)
-            }
-            .pickerStyle(.segmented).labelsHidden()
-            summary
-            VStack(spacing: 10) {
-                if edition == .full {
-                    step(1, "打开扩展管理页", "在要用的浏览器里打开") {
-                        Button("Chrome") { openPage("chrome://extensions", app: "Google Chrome") }.controlSize(.small)
-                        Button("Edge") { openPage("edge://extensions", app: "Microsoft Edge") }.controlSize(.small)
-                    }
-                    step(2, "打开「开发者模式」", "Chrome 在页面右上角，Edge 在左侧栏") { EmptyView() }
-                    step(3, "把扩展文件夹拖进页面", "软件更新后，在扩展管理页点「重新加载」即可更新扩展。") {
-                        Button("显示文件夹") { BrowserExtension.install(); NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder]) }
-                            .controlSize(.small)
-                    }
-                } else {
-                    step(1, "打开商店页", "也可以在商店搜索 Shandian Download Manager") {
-                        Button("Chrome") { open("https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg", app: "Google Chrome") }.controlSize(.small)
-                        Button("Edge") { open("https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei", app: "Microsoft Edge") }.controlSize(.small)
-                    }
-                    step(2, "点击添加", "由浏览器商店安装和更新，不用开发者模式") { EmptyView() }
-                    step(3, "右键文件链接", "选择「发送到闪电」，使用时需要打开闪电全能下载") { EmptyView() }
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 9) {
+                GridRow {
+                    Color.clear.frame(width: 1, height: 1)
+                    Text("完整版（推荐）").font(.system(size: 13.5, weight: .bold)).foregroundStyle(Theme.tint)
+                    Text("商店版").font(.system(size: 13.5, weight: .bold))
                 }
+                Divider().gridCellUnsizedAxes(.horizontal)
+                ForEach(Self.comparison, id: \.0) { row in
+                    GridRow {
+                        Text(row.0).font(.system(size: 13)).frame(width: 232, alignment: .leading)
+                        cell(row.1).frame(width: 158, alignment: .leading)
+                        cell(row.2).frame(width: 158, alignment: .leading)
+                    }
+                }
+                Divider().gridCellUnsizedAxes(.horizontal)
+                browserRow("Chrome", bundle: "com.google.Chrome", page: "chrome://extensions",
+                           store: "https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg")
+                browserRow("Edge", bundle: "com.microsoft.edgemac", page: "edge://extensions",
+                           store: "https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei")
             }
-            HStack(spacing: 8) {
-                Image(systemName: seen.isEmpty ? "circle.dashed" : "checkmark.circle.fill")
-                    .foregroundStyle(seen.isEmpty ? Theme.sub : Color.green)
-                Text(seen.isEmpty ? "尚未连接。装好后此处会显示已连接的浏览器。" : "已连接：" + seen.joined(separator: "、"))
-                    .font(.system(size: 13)).foregroundStyle(seen.isEmpty ? Theme.sub : Theme.text)
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("**完整版怎么装**：点「手动添加」会打开扩展页和文件夹。在页面上打开「开发者模式」（Chrome 在右上角，Edge 在左侧栏），再把文件夹拖进页面。")
+                Text("**商店版怎么装**：点「添加」会直接打开商店页，再点页面上的添加按钮。使用时需要打开闪电全能下载。")
             }
+            .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
             DisclosureGroup(isExpanded: $showPan) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("百度网盘等需要在网页里先取得直链。可另装篡改猴和 LinkSwift 脚本，把直链推送给闪电全能下载。")
@@ -109,55 +118,64 @@ struct BrowserSetupView: View {
             }
         }
         .padding(26)
-        .frame(width: 560)
+        .frame(width: 660)
         .background(Theme.window)
         .tint(Theme.tint)
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in reload() }
     }
 
-    private var summary: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if edition == .full {
-                feature(true, "网页上点下载，自动交给闪电全能下载")
-                feature(true, "磁力、ed2k 链接，抖音、小红书、视频号等视频")
-                feature(true, "批量抓取链接，支持需要登录的下载")
-                Text("需要手动安装，并授权访问网站、Cookie 和下载。闪电全能下载没打开时，浏览器照常下载。")
-                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true).padding(.top, 2)
-            } else {
-                feature(true, "一键安装，权限少：只用右键菜单和连接本机软件")
-                feature(true, "右键发送压缩包、文档、安装包链接")
-                feature(false, "不支持磁力、ed2k、视频网站和自动接管下载")
-                feature(false, "需要登录的下载链接可能无法使用")
+    @ViewBuilder private func cell(_ value: Cell) -> some View {
+        switch value {
+        case .yes: Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.tint)
+        case .no: Text("不支持").font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        case .maybe(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        case .text(let text): Text(text).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func reload() { seen = UserDefaults.standard.dictionary(forKey: BrowserExtension.seenKey) as? [String: Date] ?? [:] }
+
+    /// 完整版每 10 分钟连一次 App，近 20 分钟连过才算已连接；商店版只在发送链接时连接，所以只能说「用过」
+    private func status(_ browser: String, store: Bool) -> (text: String, connected: Bool) {
+        let at = seen["\(browser).\(store ? "store" : "full")"]
+        if store { return at == nil ? ("", false) : ("已用过", true) }
+        guard let at, Date().timeIntervalSince(at) < 1200 else { return ("", false) }
+        return ("已连接", true)
+    }
+
+    private func browserRow(_ name: String, bundle: String, page: String, store: String) -> some View {
+        let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
+        return GridRow {
+            HStack(spacing: 9) {
+                if let app {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable().frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: "globe").font(.system(size: 18)).foregroundStyle(Theme.sub).frame(width: 24, height: 24)
+                }
+                Text(app == nil ? "\(name)（未安装）" : name).font(.system(size: 13.5, weight: .semibold))
+            }
+            installCell(status(name, store: false), title: "手动添加", enabled: app != nil) {
+                guard let app else { return }
+                BrowserExtension.install()
+                NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder])
+                openPage(page, app: app.deletingPathExtension().lastPathComponent)
+            }
+            installCell(status(name, store: true), title: "添加", enabled: app != nil) {
+                guard let app else { return }
+                NSWorkspace.shared.open([URL(string: store)!], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             }
         }
     }
 
-    private func feature(_ supported: Bool, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Image(systemName: supported ? "checkmark" : "minus")
-                .font(.system(size: 10.5, weight: .bold)).foregroundStyle(supported ? Theme.tint : Theme.sub)
-            Text(text).font(.system(size: 13)).foregroundStyle(supported ? Theme.text : Theme.sub)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func reload() { seen = UserDefaults.standard.stringArray(forKey: "extensionSeen") ?? [] }
-
-    private func step<Trailing: View>(_ n: Int, _ title: String, _ detail: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: 12) {
-            Text("\(n)").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                .frame(width: 24, height: 24).background(Circle().fill(Theme.tint))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(Theme.sub)
+    private func installCell(_ status: (text: String, connected: Bool), title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Button(title, action: action).disabled(!enabled)
+            if status.connected {
+                Label(status.text, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.sub)
+                    .labelStyle(.titleAndIcon).fixedSize()
             }
-            Spacer()
-            trailing()
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line))
     }
 
     private func field(_ label: String, _ value: String) -> some View {
