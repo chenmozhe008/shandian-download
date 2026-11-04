@@ -387,7 +387,9 @@ private struct SpeedHero: View {
                     let n = store.activeItems.count - failed
                     if n > 0 { Text("\(n) 项进行中") }
                     if failed > 0 { Text("\(failed) 项失败") }
-                    let checking = store.activeItems.filter(\.checking).count
+                    let reclaiming = store.activeItems.filter { $0.checking && $0.fromThunder }.count
+                    let checking = store.activeItems.filter(\.checking).count - reclaiming
+                    if reclaiming > 0 { Text("\(reclaiming) 项正在取回迅雷素材") }
                     if checking > 0 { Text("\(checking) 项正在校验已下载的部分") }
                     let eta = remainingText(store.etaAll).replacingOccurrences(of: "剩余 ", with: "")
                     if moving, !eta.isEmpty { Text("预计 \(eta)后全部完成") }
@@ -514,7 +516,7 @@ struct TaskRow: View {
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).lineLimit(1)
-                ProgressBar(value: item.progress, dim: item.status == .paused || item.isResolving || item.checking,
+                ProgressBar(value: item.cloudProgress.map { Double($0) / 100 } ?? item.progress, dim: item.status == .paused || item.isResolving || item.checking,
                             busy: item.videoStage == .preparing,
                             finishing: item.videoStage == .merging || item.videoStage == .converting)
                     .padding(.top, 7)
@@ -529,7 +531,7 @@ struct TaskRow: View {
                     .buttonStyle(.plain)
                     .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再从云盘满速拉回")
                 } else {
-                    Text(secondary).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit()
+                    Text(secondary).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit().lineLimit(1)
                 }
             }
             .frame(width: 140, alignment: .trailing)
@@ -583,6 +585,7 @@ struct TaskRow: View {
     private var sizeText: String {
         if item.total == 0 { return "" }
         if item.thunderDiskEstimate { return "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
+        if item.fromThunder, item.checking { return "已取回 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
         if item.fromThunder, item.isActive { return "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
         return item.downloaded >= item.total ? item.total.bytesText : "\(item.downloaded.bytesText) / \(item.total.bytesText)"
     }
@@ -592,6 +595,8 @@ struct TaskRow: View {
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
         case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
+        case .running where item.cloudProgress != nil: "云端下载中"
+        case .running where item.fromThunder && item.checking: "正在取回迅雷素材"
         case .running: item.verificationFailed ? "检查失败" : item.checking ? "正在检查" : item.avgSpeed.speedText
         case .paused: "已暂停"
         case .waiting: "排队中"
@@ -602,11 +607,11 @@ struct TaskRow: View {
     }
     private var secondary: String {
         switch item.status {
-        case .running where item.cloudProgress != nil: "云端下载中 \(item.cloudProgress ?? 0)%"
+        case .running where item.cloudProgress != nil: "\(item.cloudProgress ?? 0)%，完成后取回本机"
         case .running where item.isThunder: item.avgSpeed > 0 ? "写入约 \(item.avgSpeed.speedText)" : "状态以迅雷为准"
         case .running where store.buffering.contains(item.id): "正在打开播放器"
         case .running where item.verificationFailed: "请重新检查已下载文件"
-        case .running where item.checking: item.fromThunder ? "正在检查迅雷已下载的文件" : "正在检查已下载的文件"
+        case .running where item.checking: item.fromThunder ? "取完自动继续下载" : "正在检查已下载的文件"
         case .running where item.waitingLastPiece: "漏了最后一小块，正在补"
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: "合并视频和音频"

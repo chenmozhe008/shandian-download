@@ -29,6 +29,7 @@ struct Item: Identifiable, Equatable {
     var link = ""               // 原始链接（交给迅雷用）
     var checking = false        // 正在检查本地已下载的数据
     var verificationFailed = false
+    var verificationFinished = false
     var fromThunder = false
     var fileGone = false        // 下完后文件被用户在访达里删了或移走（硬盘没插不算）
     var avgSpeed: Int64 = 0     // 平滑后的速度，算剩余时间用；瞬时速度跳得厉害，行内和顶部估算会对不上
@@ -148,6 +149,10 @@ final class DownloadStore: ObservableObject {
     private var engineSettled = false  // 内核已启动且设置已写入（新磁力要带上 tracker）；之前收到的链接先排队
     private var waitingForEngine: [() -> Void] = []
     private var smoothSpeed: [String: Double] = [:]
+    /// 校验刚结束的时间：内核的速度是滚动窗口，校验时读硬盘的 30–40 MB/s 会当下载速度残留几秒（11-04 实测）
+    private var checkedAt: [String: Date] = [:]
+    /// 已处理过「校验完成」的任务：校验只要几秒时，轮询可能看不到 checking，直接看到 complete
+    private var verifiedSeen: Set<String> = []
     private var autoRetries: [String: (count: Int, at: Date)] = [:]
     private var slowSince: [String: Date] = [:]
     private var thunderJobs: [ThunderJob] = ThunderBridge.load()
@@ -167,6 +172,7 @@ final class DownloadStore: ObservableObject {
         var cleanupSize: Int64?
         var cleanupAccount: String?
         var cleanupFiles: [CloudLocalFile]?
+        var spaceRetried: Bool?     // 空间不足后已清回收站重交过一次
         /// 拉回本地的文件；旧记录只有单个路径
         var localCopies: [CloudLocalFile] {
             if let cleanupFiles { return cleanupFiles }
@@ -536,6 +542,13 @@ final class DownloadStore: ObservableObject {
                 }
             }
         }
+        for k in engineItems.indices {
+            let id = engineItems[k].id
+            if engineItems[k].checking { checkedAt[id] = Date(); verifiedSeen.insert(id); continue }
+            if engineItems[k].verificationFinished, verifiedSeen.insert(id).inserted { checkedAt[id] = Date() }
+            guard let at = checkedAt[id] else { continue }
+            if Date().timeIntervalSince(at) < 10 { engineItems[k].speed = 0 } else { checkedAt[id] = nil }
+        }
         // 指数平滑，约 5 次轮询的窗口；行内剩余时间和顶部「全部完成」用同一个值
         var next: [String: Double] = [:]
         for i in engineItems + videoJobs.map(Self.item(from:)) where i.status == .running {
@@ -560,9 +573,15 @@ final class DownloadStore: ObservableObject {
 
     private func rebuild() {
         let videos = videoJobs.map(Self.item(from:))
+        let pulling = Set(cloudJobs.flatMap { $0.pulling ?? [] })
         var all = pending + engineItems.filter { e in
             !cloudJobs.contains { $0.engineID == e.id || $0.thunderJob?.sourceEngineID == e.id }
                 && !thunderJobs.contains { $0.sourceEngineID == e.id }
+        }.map { e in
+            var e = e
+            if pulling.contains(e.id), e.isActive { e.origin = "PikPak 中转 · 取回本机" }
+            else if e.fromThunder, e.isActive { e.origin = e.checking ? "迅雷中转 · 取回素材" : e.status == .running ? "迅雷素材已取回 · 继续下载" : "迅雷素材已取回" }
+            return e
         }
             + videos + thunderJobs.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
         all.sort { $0.createdAt > $1.createdAt }
@@ -885,7 +904,7 @@ final class DownloadStore: ObservableObject {
                     if let replacingThunderID, let previous = thunderJobs.first(where: { $0.id == replacingThunderID }) {
                         if let old = previous.sourceEngineID { try? await host.client.delete(old, withFiles: false) }
                         thunderJobs.removeAll { $0.id == replacingThunderID }; ThunderBridge.save(thunderJobs)
-                        notice = "已收回，正在检查迅雷已下载的文件；闪电只显示已选文件的大小"
+                        notice = "正在取回迅雷素材，取完后自动继续下载"
                     }
                 } catch {
                     notice = replacingThunderID == nil ? "添加失败：\(error.localizedDescription)" : "收回失败，迅雷任务仍保留：\(error.localizedDescription)"
@@ -1047,6 +1066,7 @@ final class DownloadStore: ObservableObject {
         Task {
             do {
                 if let engineID { try await host.client.pause(engineID) }
+                await PikPak.shared.makeRoom(need: item.total)
                 let t = try await PikPak.shared.offline(item.link)
                 if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                     cloudJobs[k].taskID = t.id; cloudJobs[k].fileID = t.fileID; cloudJobs[k].progress = t.progress; saveCloud()
@@ -1111,6 +1131,20 @@ final class DownloadStore: ObservableObject {
         Task { await cleanCloudCopy(job) }
     }
 
+    /// 空间不足：清掉回收站里离线任务留下的东西，重交一次。清不出东西就算真的放不下
+    private func retryAfterEmptyingTrash(_ job: CloudJob) async -> Bool {
+        guard let index = cloudJobs.firstIndex(where: { $0.id == job.id }) else { return false }
+        cloudJobs[index].spaceRetried = true
+        saveCloud()
+        guard let removed = try? await PikPak.shared.emptyOfflineTrash(), removed > 0,
+              let retried = try? await PikPak.shared.offline(job.link),
+              let k = cloudJobs.firstIndex(where: { $0.id == job.id }) else { return false }
+        cloudJobs[k].taskID = retried.id; cloudJobs[k].fileID = retried.fileID; cloudJobs[k].progress = retried.progress
+        saveCloud()
+        notice = "已清理 PikPak 回收站，重新离线「\(job.title)」"
+        return true
+    }
+
     /// 拉回完成后清理云端副本。任何一项核对不过或请求失败都保留云端文件，可在提示或设置里重试
     private func cleanCloudCopy(_ job: CloudJob) async {
         let files = job.localCopies
@@ -1132,7 +1166,6 @@ final class DownloadStore: ObservableObject {
             switch result {
             case .freed(let bytes): notice = "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)"
             case .unconfirmed: notice = "「\(job.title)」已下载到本机，已清理云端副本，容量稍后更新"
-            case .trashed: notice = "「\(job.title)」已下载到本机，云端副本已移入 PikPak 回收站"
             }
         } catch {
             keep("「\(job.title)」已下载到本机，云端副本清理失败：\(error.localizedDescription)")
@@ -1168,6 +1201,11 @@ final class DownloadStore: ObservableObject {
                 for job in cloudJobs where job.pulling != nil && job.preparingPulls != true && job.cleanupReady != true {
                     let ids = job.pulling ?? []
                     let finished = !ids.isEmpty && ids.allSatisfy { id in engineItems.first { $0.id == id }?.status == .done }
+                    // 取回任务都被移除了，这条记录永远等不到完成
+                    if engineSeeded, !ids.isEmpty, !ids.contains(where: { id in engineItems.contains { $0.id == id } }) {
+                        cloudJobs.removeAll { $0.id == job.id }; saveCloud()
+                        continue
+                    }
                     if finished {
                         let pulled = ids.compactMap { id in engineItems.first { $0.id == id } }
                             .filter { Self.cloudCopyCanBeRemoved(file: $0.file, expectedSize: $0.total) }
@@ -1196,7 +1234,11 @@ final class DownloadStore: ObservableObject {
                 }
                 for job in cloudJobs where !job.taskID.isEmpty && job.pulling == nil {
                     guard let t = try? await PikPak.shared.status(job.taskID, fileID: job.fileID) else { continue }
-                    if t.phase == "PHASE_TYPE_ERROR" { cloudFailed(job.id, t.message ?? "云端下载出错"); continue }
+                    if t.phase == "PHASE_TYPE_ERROR" {
+                        if t.message?.contains("空间") == true, job.spaceRetried != true, await retryAfterEmptyingTrash(job) { continue }
+                        cloudFailed(job.id, t.message ?? "云端下载出错")
+                        continue
+                    }
                     if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) { cloudJobs[k].progress = t.progress }
                     guard t.phase == "PHASE_TYPE_COMPLETE" else { continue }
                     do {
@@ -1246,7 +1288,7 @@ final class DownloadStore: ObservableObject {
                         }
                         if let e = job.engineID { try? await host.client.delete(e, withFiles: false) }
                         if let index = files.indices.max(by: { files[$0].size < files[$1].size }) { selectedID = created[index] }
-                        notice = "「\(job.title)」云端已下好，正在从云盘拉回"
+                        notice = "「\(job.title)」云端已下好，正在取回本机，取完自动清理云端"
                         await poll()
                     } catch {
                         if let current = cloudJobs.first(where: { $0.id == job.id }), current.preparingPulls == true {
@@ -1372,14 +1414,14 @@ final class DownloadStore: ObservableObject {
             guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
             // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
             // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
-            let origin = job.link != link && !job.link.isEmpty ? job.link : nil
+            let origin = job.link.isEmpty ? nil : job.link
             // 复用旧迅雷任务时，已下载文件在定位出的目录，而非本次预设的新目录。
             let downloadDir = job.folder.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
                 ?? URL(fileURLWithPath: job.dir)
             start(link: link, dir: downloadDir,
                   carry: (job.checked ?? 0, job.dlSize ?? job.total), title: item.title,
                   originLink: origin, verifyExisting: true, replacingThunderID: id)
-            notice = "正在收回「\(item.title)」并校验已下好的部分"
+            notice = "正在取回迅雷素材「\(item.title)」，取完后自动继续下载"
         }
     }
 
@@ -1686,6 +1728,7 @@ final class DownloadStore: ObservableObject {
                     location: location)
         it.checking = t.shandianVerification == "checking"
         it.verificationFailed = t.shandianVerification == "failed"
+        it.verificationFinished = t.shandianVerification == "complete"
         if it.checking || it.verificationFailed { it.speed = 0 }
         // 迅雷只认磁力和网页链接；本地种子交给内核时是 data: 地址，交不了
         if lower.hasPrefix("magnet:") || lower.hasPrefix("http") { it.link = url }

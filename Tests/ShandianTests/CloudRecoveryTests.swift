@@ -104,6 +104,19 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(PikPak.isRetryableConnectionError(PikPak.PikPakError.notLoggedIn))
     }
 
+    func testTrashEmptiedOnlyWhenRoomIsNeeded() {
+        let q = PikPak.Quota(limit: 6000, used: 5000, inTrash: 4800)
+        XCTAssertTrue(PikPak.shouldEmptyTrash(q, need: 3000))
+        XCTAssertTrue(PikPak.shouldEmptyTrash(q, need: 0))      // 磁力还没解析出大小
+        XCTAssertFalse(PikPak.shouldEmptyTrash(q, need: 500))
+        XCTAssertFalse(PikPak.shouldEmptyTrash(PikPak.Quota(limit: 6000, used: 5000, inTrash: 0), need: 3000))
+    }
+
+    func testOnlyOfflineLeftoversAreDeletedFromTrash() {
+        XCTAssertEqual(PikPak.offlineLeftovers(trash: ["tutorial", "movie", "bunny"], taskFiles: ["movie", "bunny", "other"]), ["movie", "bunny"])
+        XCTAssertEqual(PikPak.offlineLeftovers(trash: ["mine"], taskFiles: []), [])
+    }
+
     func testSpaceCountsAsFreedOnlyWhenUsageDrops() {
         XCTAssertTrue(PikPak.spaceFreed(before: 5000, after: 4000, size: 1000))
         XCTAssertTrue(PikPak.spaceFreed(before: 5000, after: 4400, size: 1000))

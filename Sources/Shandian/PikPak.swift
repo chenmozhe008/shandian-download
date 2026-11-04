@@ -214,19 +214,57 @@ actor PikPak {
         _ = try await api("POST", "\(apiHost)/drive/v1/files:batchDelete", body: ["ids": [fileID]])
     }
 
-    /// 云盘已用空间（字节）
-    func usedBytes() async throws -> Int64 {
+    struct Quota: Equatable { var limit: Int64; var used: Int64; var inTrash: Int64 }
+
+    /// 云盘容量。回收站也算在已用里（11-04 实测：used 4.84 GB 全部是 inTrash，正常目录是空的，新任务照样报空间不足）
+    func quota() async throws -> Quota {
         let r = try await api("GET", "\(apiHost)/drive/v1/about", body: nil)
-        guard let usage = (r["quota"] as? [String: Any])?["usage"] as? String, let bytes = Int64(usage) else {
+        let q = r["quota"] as? [String: Any]
+        guard let limit = Int64(q?["limit"] as? String ?? ""), let used = Int64(q?["usage"] as? String ?? "") else {
             throw PikPakError.server("无法读取云盘容量")
         }
-        return bytes
+        return Quota(limit: limit, used: used, inTrash: Int64(q?["usage_in_trash"] as? String ?? "") ?? 0)
     }
 
-    /// 清理前再核对一次：拉回的每个文件，大小都能在这个云端条目里对上，且条目没在回收站
+    func usedBytes() async throws -> Int64 { try await quota().used }
+
+    /// 需要的空间不够、或大小还不知道（磁力没解析完）时才清回收站
+    nonisolated static func shouldEmptyTrash(_ quota: Quota, need: Int64) -> Bool {
+        quota.inTrash > 0 && (need <= 0 || quota.limit - quota.used < need)
+    }
+
+    /// 回收站里哪些是离线任务留下的。用户自己扔进去的（比如 PikPak 自带的教程视频）对不上任务记录，不动
+    nonisolated static func offlineLeftovers(trash: [String], taskFiles: Set<String>) -> [String] {
+        trash.filter { taskFiles.contains($0) }
+    }
+
+    /// PikPak 只是中转：把回收站里离线任务留下的东西彻底删除，返回删掉的条数
+    @discardableResult
+    func emptyOfflineTrash() async throws -> Int {
+        let trashed = #"{"trashed":{"eq":true}}"#.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let listed = try await api("GET", "\(apiHost)/drive/v1/files?parent_id=*&limit=500&filters=\(trashed)", body: nil)
+        let trash = try Self.folderEntries(listed).map(\.id)
+        guard !trash.isEmpty else { return 0 }
+        let phases = #"{"phase":{"in":"PHASE_TYPE_ERROR,PHASE_TYPE_COMPLETE"}}"#.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let tasks = try await api("GET", "\(apiHost)/drive/v1/tasks?type=offline&limit=200&filters=\(phases)", body: nil)
+        let files = Set(((tasks["tasks"] as? [[String: Any]]) ?? []).compactMap { $0["file_id"] as? String })
+        let ids = Self.offlineLeftovers(trash: trash, taskFiles: files)
+        guard !ids.isEmpty else { return 0 }
+        _ = try await api("POST", "\(apiHost)/drive/v1/files:batchDelete", body: ["ids": ids])
+        return ids.count
+    }
+
+    /// 提交离线前先腾地方。容量读不到时照常提交，由任务报错后的重试兜底
+    func makeRoom(need: Int64) async {
+        guard let quota = try? await quota(), Self.shouldEmptyTrash(quota, need: need) else { return }
+        _ = try? await emptyOfflineTrash()
+    }
+
+    /// 清理前再核对一次：拉回的每个文件，大小都能在这个云端条目里对上。
+    /// 已在回收站说明上一次清理只完成了一半，继续删就行
     func holds(_ fileID: String, sizes: [Int64]) async throws -> Bool {
         let info = try await api("GET", "\(apiHost)/drive/v1/files/\(fileID)", body: nil)
-        guard info["trashed"] as? Bool != true else { return false }
+        if info["trashed"] as? Bool == true { return true }
         let cloud = info["kind"] as? String == "drive#folder"
             ? try await list(fileID).map(\.2)
             : [Int64(info["size"] as? String ?? "") ?? 0]
@@ -245,8 +283,7 @@ actor PikPak {
 
     enum Reclaimed: Equatable {
         case freed(Int64)   // 容量确实降了
-        case unconfirmed    // 已彻底删除，容量还没变，可能稍后更新
-        case trashed        // 已进回收站，读不到容量，没有继续彻底删除
+        case unconfirmed    // 已彻底删除，容量还没变或读不到，可能稍后更新
     }
 
     /// 容量至少降了文件大小的一半才算释放（容量统计取整、同时可能有别的任务在写）
@@ -254,17 +291,12 @@ actor PikPak {
         before - after >= size / 2
     }
 
-    /// 先移入回收站；回收站仍占容量时才彻底删除（循环离线要靠空间真的释放）。
-    /// 回收站是否占容量由 PikPak 决定，所以每次看容量变化，不写死
+    /// 彻底删除：回收站也占容量，只移进去腾不出地方（11-04 实测）
     func reclaim(_ fileID: String, size: Int64) async throws -> Reclaimed {
-        guard let before = try? await usedBytes() else {
-            try await trash(fileID)
-            return .trashed
-        }
+        let before = try? await usedBytes()
         try await trash(fileID)
-        if let freed = await waitForFreed(before: before, size: size) { return .freed(freed) }
         try await deleteForever(fileID)
-        if let freed = await waitForFreed(before: before, size: size) { return .freed(freed) }
+        if let before, let freed = await waitForFreed(before: before, size: size) { return .freed(freed) }
         return .unconfirmed
     }
 

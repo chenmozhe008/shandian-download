@@ -102,7 +102,7 @@ struct SettingsView: View {
 
             Section("云盘离线（PikPak）") {
                 Toggle("拉回后自动清理云端副本", isOn: $autoCleanCloud)
-                Text("本地文件核对无误后清理并提示，腾出的空间可继续离线。文件夹任务中未拉回的说明、花絮等会一并清理。")
+                Text("PikPak 只作中转：取回本机并核对后彻底删除云端副本，不进回收站。云盘空间不够时，也会清理回收站里离线任务留下的文件。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub)
                 Button(store.cloudCleanupCount > 0 ? "清理已下载的云端副本（\(store.cloudCleanupCount)）" : "打开 PikPak 云盘管理空间") {
                     store.manageCloudCopies()
