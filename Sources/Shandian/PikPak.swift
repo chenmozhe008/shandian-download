@@ -206,9 +206,74 @@ actor PikPak {
         return (out, info["kind"] as? String == "drive#file" && ids.count == 1 && keep == [0])
     }
 
-    /// 仅在用户确认后将单个文件移入云盘回收站。
     func trash(_ fileID: String) async throws {
         _ = try await api("POST", "\(apiHost)/drive/v1/files:batchTrash", body: ["ids": [fileID]])
+    }
+
+    func deleteForever(_ fileID: String) async throws {
+        _ = try await api("POST", "\(apiHost)/drive/v1/files:batchDelete", body: ["ids": [fileID]])
+    }
+
+    /// 云盘已用空间（字节）
+    func usedBytes() async throws -> Int64 {
+        let r = try await api("GET", "\(apiHost)/drive/v1/about", body: nil)
+        guard let usage = (r["quota"] as? [String: Any])?["usage"] as? String, let bytes = Int64(usage) else {
+            throw PikPakError.server("无法读取云盘容量")
+        }
+        return bytes
+    }
+
+    /// 清理前再核对一次：拉回的每个文件，大小都能在这个云端条目里对上，且条目没在回收站
+    func holds(_ fileID: String, sizes: [Int64]) async throws -> Bool {
+        let info = try await api("GET", "\(apiHost)/drive/v1/files/\(fileID)", body: nil)
+        guard info["trashed"] as? Bool != true else { return false }
+        let cloud = info["kind"] as? String == "drive#folder"
+            ? try await list(fileID).map(\.2)
+            : [Int64(info["size"] as? String ?? "") ?? 0]
+        return Self.cloudHolds(pulled: sizes, cloud: cloud)
+    }
+
+    nonisolated static func cloudHolds(pulled: [Int64], cloud: [Int64]) -> Bool {
+        guard !pulled.isEmpty, pulled.allSatisfy({ $0 > 0 }) else { return false }
+        var remaining = cloud
+        for size in pulled {
+            guard let index = remaining.firstIndex(of: size) else { return false }
+            remaining.remove(at: index)
+        }
+        return true
+    }
+
+    enum Reclaimed: Equatable {
+        case freed(Int64)   // 容量确实降了
+        case unconfirmed    // 已彻底删除，容量还没变，可能稍后更新
+        case trashed        // 已进回收站，读不到容量，没有继续彻底删除
+    }
+
+    /// 容量至少降了文件大小的一半才算释放（容量统计取整、同时可能有别的任务在写）
+    nonisolated static func spaceFreed(before: Int64, after: Int64, size: Int64) -> Bool {
+        before - after >= size / 2
+    }
+
+    /// 先移入回收站；回收站仍占容量时才彻底删除（循环离线要靠空间真的释放）。
+    /// 回收站是否占容量由 PikPak 决定，所以每次看容量变化，不写死
+    func reclaim(_ fileID: String, size: Int64) async throws -> Reclaimed {
+        guard let before = try? await usedBytes() else {
+            try await trash(fileID)
+            return .trashed
+        }
+        try await trash(fileID)
+        if let freed = await waitForFreed(before: before, size: size) { return .freed(freed) }
+        try await deleteForever(fileID)
+        if let freed = await waitForFreed(before: before, size: size) { return .freed(freed) }
+        return .unconfirmed
+    }
+
+    private func waitForFreed(before: Int64, size: Int64) async -> Int64? {
+        for _ in 0..<3 {
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+            if let after = try? await usedBytes(), Self.spaceFreed(before: before, after: after, size: size) { return before - after }
+        }
+        return nil
     }
 
     struct FolderEntry {
@@ -303,7 +368,8 @@ actor PikPak {
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = LocalProxy.sessionDictionary(for: url)   // 境外服务，走本机代理
-        let (data, response) = try await URLSession(configuration: cfg).data(for: req)
+        let request = req
+        let (data, response) = try await Self.withConnectionRetry { try await URLSession(configuration: cfg).data(for: request) }
         if data.isEmpty, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) { return [:] }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PikPakError.server("PikPak 返回无法识别的结果，请稍后重试")
@@ -312,6 +378,20 @@ actor PikPak {
             throw PikPakError.server(Self.message(json) ?? "PikPak 请求失败（HTTP \(http.statusCode)）")
         }
         return json
+    }
+
+    /// 代理节点偶尔握手失败（11-04 实测同一接口时好时坏）。只重试请求发出之前的连接错误，不会重复提交离线任务
+    nonisolated static func isRetryableConnectionError(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        return [.secureConnectionFailed, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code)
+    }
+
+    private static func withConnectionRetry<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
+        for delay: UInt64 in [1, 3, 6] {
+            do { return try await work() }
+            catch where isRetryableConnectionError(error) { try await _Concurrency.Task.sleep(nanoseconds: delay * 1_000_000_000) }
+        }
+        return try await work()
     }
 
     private static func message(_ r: [String: Any]) -> String? {

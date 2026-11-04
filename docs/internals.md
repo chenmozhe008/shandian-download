@@ -56,7 +56,11 @@
 - 接口照开源 PikPakAPI：登录 captcha_init → signin；离线 POST `/drive/v1/files`（UPLOAD_TYPE_URL）；进度 `/drive/v1/tasks`；下载地址要 captcha 的 GET `/drive/v1/files/{id}` → web_content_link
 - 登录：App 里的网页窗口打开 PikPak 官方登录页，读 localStorage 的 `credentials_<client_id>` 和 `deviceid` 后删掉网页那份，之后只由 App 刷新（网页端常量来自开源 peach ADR-0093 / AList）。只存令牌 `pikpak.json`（600）
 - 网页端签名时间戳会随改版变（2026-10-28 为 1793092691562，盐没变），设备号用 deviceid 最后一段前 32 位；签名被拒时 `refreshWebSign` 自动从网页脚本重取
-- 拉回本地后删云端文件（免费 6 GB）。免费约 3 次/天、20 GB/天，所以默认手动
+- 免费约 3 次/天、20 GB/天，所以交给云盘默认手动；免费空间只有 6 GB，所以拉回后默认自动清理（11-04 用户定，设置「拉回后自动清理云端副本」可关，关了在提示里手动确认）
+- 清理（`DownloadStore.cleanCloudCopy`）：同账号 + 本地每个文件大小都对 + 云端条目没进回收站且每个拉回的文件大小都在里面（`PikPak.holds`），任一不过就保留并提示。文件夹任务清理的是整个任务文件夹，没拉回的说明、花絮一起清。只比大小，不校验内容
+- 释放空间（`PikPak.reclaim`）：先进回收站、看 `/drive/v1/about` 的 `quota.usage` 降没降（等 3×2 秒），没降才 `batchDelete` 彻底删除。读不到容量时只进回收站，不彻底删
+- 2026-11-04 实测（Sintel 公开片，文件夹 10 个文件）：离线 → 全部拉回 → 自动清理，提示「释放 129.3 MB」，`quota.usage` 回到离线前的字节数；之后查该文件返回「不存在」，说明这次走到了彻底删除，回收站里找不回来
+- 云端完成后读文件信息遇到网络错误（`URLError`）下一轮重试，不判失败；`send` 对请求发出前的连接错误（TLS 握手等）重试 3 次。11-04 实测这条代理偶发 TLS 错误，以前会丢任务、文件留在云盘占空间
 - 2026-10-28 实测：一部国内热门片 BT 为 0，PikPak 7.9 秒云端完成，拉回约 3 MB/s，自动删云端成功
 
 ## 迅雷通道（`ThunderBridge.swift`，默认关）

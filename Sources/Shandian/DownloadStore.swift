@@ -166,7 +166,15 @@ final class DownloadStore: ObservableObject {
         var cleanupPath: String?
         var cleanupSize: Int64?
         var cleanupAccount: String?
+        var cleanupFiles: [CloudLocalFile]?
+        /// 拉回本地的文件；旧记录只有单个路径
+        var localCopies: [CloudLocalFile] {
+            if let cleanupFiles { return cleanupFiles }
+            guard let cleanupPath, let cleanupSize else { return [] }
+            return [CloudLocalFile(path: cleanupPath, size: cleanupSize)]
+        }
     }
+    struct CloudLocalFile: Codable, Equatable { var path: String; var size: Int64 }
     @Published private var cloudJobs: [CloudJob] = DownloadStore.loadCloud()
     var cloudCleanupCount: Int { cloudJobs.filter { $0.cleanupReady == true }.count }
     private var protectedEngineIDs: Set<String> {
@@ -211,6 +219,10 @@ final class DownloadStore: ObservableObject {
     static func cloudCleanupAllowed(account: String?, currentAccount: String?, path: String?, size: Int64?) -> Bool {
         guard let account, !account.isEmpty, account == currentAccount, let path, let size else { return false }
         return cloudCopyCanBeRemoved(file: URL(fileURLWithPath: path), expectedSize: size)
+    }
+
+    static func cloudCleanupAllowed(account: String?, currentAccount: String?, files: [CloudLocalFile]) -> Bool {
+        !files.isEmpty && files.allSatisfy { cloudCleanupAllowed(account: account, currentAccount: currentAccount, path: $0.path, size: $0.size) }
     }
 
     static func rollbackCloudPulls(_ ids: [String], existing: Set<String>, delete: (String) async throws -> Void) async throws {
@@ -1083,31 +1095,47 @@ final class DownloadStore: ObservableObject {
             notice = "已打开 PikPak 云盘；请检查容量和不需要的文件"
             return
         }
-        guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser,
-                                       path: job.cleanupPath, size: job.cleanupSize),
-              let account = job.cleanupAccount, let path = job.cleanupPath, let size = job.cleanupSize else {
+        guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser, files: job.localCopies) else {
             notice = "无法确认关联账号或本地文件，请在 PikPak 网页中检查云端副本"
             NSWorkspace.shared.open(URL(string: "https://mypikpak.com/drive/")!)
             return
         }
         let alert = NSAlert()
-        alert.messageText = "将云端副本移入回收站？"
-        alert.informativeText = "\(job.title)\n\n本地文件：\(path)\n已检查本地文件大小，尚未校验文件内容。云端副本会移入 PikPak 回收站，本地文件不会删除。空间是否立即释放取决于 PikPak 的回收站规则。"
+        alert.messageText = "清理云端副本？"
+        alert.informativeText = "\(job.title)\n\n本地文件已核对大小。云端副本会移入 PikPak 回收站，容量没有释放时会彻底删除；本地文件不会删除。"
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "移入云盘回收站")
+        alert.addButton(withTitle: "清理云端副本")
         alert.addButton(withTitle: "稍后处理")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        Task {
-            do {
-                guard Self.cloudCleanupAllowed(account: account, currentAccount: PikPak.loggedInUser, path: path, size: size) else {
-                    notice = "账号或本地文件已变化，未删除云端副本"; return
-                }
-                try await PikPak.shared.trash(job.fileID)
-                cloudJobs.removeAll { $0.id == job.id }
-                saveCloud()
-                notice = "已请求将云端副本移入回收站，请在 PikPak 确认空间"
-            } catch { notice = "云端副本处理失败，请检查网络和 PikPak 回收站：\(error.localizedDescription)" }
+        Task { await cleanCloudCopy(job) }
+    }
+
+    /// 拉回完成后清理云端副本。任何一项核对不过或请求失败都保留云端文件，可在提示或设置里重试
+    private func cleanCloudCopy(_ job: CloudJob) async {
+        let files = job.localCopies
+        func keep(_ text: String) {
+            noticeAction = NoticeAction(title: "管理云盘空间", forText: text, run: { [weak self] in self?.manageCloudCopies() })
+            notice = text
+        }
+        guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser, files: files) else {
+            keep("「\(job.title)」的账号或本地文件已变化，云端副本已保留"); return
+        }
+        do {
+            guard try await PikPak.shared.holds(job.fileID, sizes: files.map(\.size)) else {
+                keep("「\(job.title)」云端内容和本地文件对不上，云端副本已保留"); return
+            }
+            let size = files.reduce(Int64(0)) { $0 + $1.size }
+            let result = try await PikPak.shared.reclaim(job.fileID, size: size)
+            cloudJobs.removeAll { $0.id == job.id }
+            saveCloud()
+            switch result {
+            case .freed(let bytes): notice = "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)"
+            case .unconfirmed: notice = "「\(job.title)」已下载到本机，已清理云端副本，容量稍后更新"
+            case .trashed: notice = "「\(job.title)」已下载到本机，云端副本已移入 PikPak 回收站"
+            }
+        } catch {
+            keep("「\(job.title)」已下载到本机，云端副本清理失败：\(error.localizedDescription)")
         }
     }
 
@@ -1136,25 +1164,30 @@ final class DownloadStore: ObservableObject {
                 for job in cloudJobs where job.preparingPulls == true {
                     await recoverCloudPreparation(job, message: "云盘拉回任务创建中断")
                 }
-                // 拉回完成的：删云端文件、结束这个云盘任务
+                // 拉回完成的：核对本地文件后清理云端副本、结束这个云盘任务
                 for job in cloudJobs where job.pulling != nil && job.preparingPulls != true && job.cleanupReady != true {
                     let ids = job.pulling ?? []
                     let finished = !ids.isEmpty && ids.allSatisfy { id in engineItems.first { $0.id == id }?.status == .done }
                     if finished {
-                        if job.includesAllCloudFiles == true, ids.count == 1,
-                           let item = engineItems.first(where: { $0.id == ids[0] }),
-                           let file = item.file, Self.cloudCopyCanBeRemoved(file: file, expectedSize: item.total), !job.fileID.isEmpty,
-                           job.cleanupAccount != nil, let index = cloudJobs.firstIndex(where: { $0.id == job.id }) {
+                        let pulled = ids.compactMap { id in engineItems.first { $0.id == id } }
+                            .filter { Self.cloudCopyCanBeRemoved(file: $0.file, expectedSize: $0.total) }
+                            .compactMap { item in item.file.map { CloudLocalFile(path: $0.path, size: item.total) } }
+                        if pulled.count == ids.count, !job.fileID.isEmpty, job.cleanupAccount != nil,
+                           let index = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                             cloudJobs[index].cleanupReady = true
-                            cloudJobs[index].cleanupPath = file.path
-                            cloudJobs[index].cleanupSize = item.total
+                            cloudJobs[index].cleanupFiles = pulled
                             if saveCloud() {
-                                let text = "云盘文件已下载到本机；可检查后选择清理云端副本"
-                                noticeAction = NoticeAction(title: "查看云端副本", forText: text, run: { [weak self] in self?.manageCloudCopies() })
-                                notice = text
+                                if Prefs.autoCleanCloud {
+                                    await cleanCloudCopy(cloudJobs[index])
+                                } else {
+                                    let text = "「\(job.title)」已下载到本机，可清理云端副本"
+                                    noticeAction = NoticeAction(title: "清理云端副本", forText: text, run: { [weak self] in self?.manageCloudCopies() })
+                                    notice = text
+                                }
                             } else {
                                 cloudJobs[index].cleanupReady = nil
-                                notice = "无法保存云端清理提醒，云端文件已保留"
+                                cloudJobs[index].cleanupFiles = nil
+                                notice = "无法保存云端清理记录，云端文件已保留"
                             }
                         } else {
                             cloudJobs.removeAll { $0.id == job.id }; saveCloud()
@@ -1218,7 +1251,9 @@ final class DownloadStore: ObservableObject {
                     } catch {
                         if let current = cloudJobs.first(where: { $0.id == job.id }), current.preparingPulls == true {
                             await recoverCloudPreparation(current, message: error.localizedDescription)
-                        } else { cloudFailed(job.id, error.localizedDescription) }
+                        } else if !(error is URLError) {   // 网络抖动（11-04 实测 TLS 错误）下一轮重试，别丢任务、把文件留在云盘占空间
+                            cloudFailed(job.id, error.localizedDescription)
+                        }
                     }
                 }
                 saveCloud(); rebuild()

@@ -73,6 +73,44 @@ final class CloudRecoveryTests: XCTestCase {
         try FileManager.default.removeItem(at: file)
         XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "a", currentAccount: "a", path: file.path, size: 3))
     }
+    @MainActor func testMultiFileCleanupRequiresEveryLocalFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = dir.appendingPathComponent("a"), b = dir.appendingPathComponent("b")
+        try Data("abc".utf8).write(to: a)
+        try Data("abcd".utf8).write(to: b)
+        let files = [DownloadStore.CloudLocalFile(path: a.path, size: 3), DownloadStore.CloudLocalFile(path: b.path, size: 4)]
+        XCTAssertTrue(DownloadStore.cloudCleanupAllowed(account: "x", currentAccount: "x", files: files))
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "x", currentAccount: "x", files: []))
+        try FileManager.default.removeItem(at: b)
+        XCTAssertFalse(DownloadStore.cloudCleanupAllowed(account: "x", currentAccount: "x", files: files))
+    }
+
+    func testCloudContentMustContainEveryPulledFile() {
+        // 文件夹里多出没拉回的小附件可以清理；拉回的文件对不上不行；同样大小的两个文件要对上两个
+        XCTAssertTrue(PikPak.cloudHolds(pulled: [1000], cloud: [71, 1000]))
+        XCTAssertTrue(PikPak.cloudHolds(pulled: [1000, 1000], cloud: [1000, 1000, 5]))
+        XCTAssertFalse(PikPak.cloudHolds(pulled: [1000, 1000], cloud: [1000, 5]))
+        XCTAssertFalse(PikPak.cloudHolds(pulled: [1000], cloud: [999]))
+        XCTAssertFalse(PikPak.cloudHolds(pulled: [], cloud: [1000]))
+        XCTAssertFalse(PikPak.cloudHolds(pulled: [0], cloud: [0]))
+    }
+
+    func testOnlyPreSendConnectionErrorsAreRetried() {
+        XCTAssertTrue(PikPak.isRetryableConnectionError(URLError(.secureConnectionFailed)))
+        XCTAssertTrue(PikPak.isRetryableConnectionError(URLError(.cannotConnectToHost)))
+        XCTAssertFalse(PikPak.isRetryableConnectionError(URLError(.timedOut)))
+        XCTAssertFalse(PikPak.isRetryableConnectionError(PikPak.PikPakError.notLoggedIn))
+    }
+
+    func testSpaceCountsAsFreedOnlyWhenUsageDrops() {
+        XCTAssertTrue(PikPak.spaceFreed(before: 5000, after: 4000, size: 1000))
+        XCTAssertTrue(PikPak.spaceFreed(before: 5000, after: 4400, size: 1000))
+        XCTAssertFalse(PikPak.spaceFreed(before: 5000, after: 5000, size: 1000))
+        XCTAssertFalse(PikPak.spaceFreed(before: 5000, after: 6000, size: 1000))
+    }
+
     func testMissingCloudDownloadURLIsAnError() throws {
         XCTAssertThrowsError(try PikPak.downloadURL([:]))
         XCTAssertEqual(try PikPak.downloadURL(["web_content_link": "", "medias": [["link": ["url": "https://example.com/file"]]]]), "https://example.com/file")

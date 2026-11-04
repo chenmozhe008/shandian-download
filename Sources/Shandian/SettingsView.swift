@@ -13,6 +13,8 @@ enum Prefs {
     static var autoThunder: Bool { UserDefaults.standard.object(forKey: autoThunderKey) as? Bool ?? false }   // 10-28 用户：不想用迅雷
     static let autoCloudKey = "autoCloud"
     static var autoCloud: Bool { UserDefaults.standard.object(forKey: autoCloudKey) as? Bool ?? false }   // 免费每天 3 次，不自动用
+    static let autoCleanCloudKey = "autoCleanCloud"
+    static var autoCleanCloud: Bool { UserDefaults.standard.object(forKey: autoCleanCloudKey) as? Bool ?? true }   // 免费空间小，拉回后默认清理才能循环用
     static var downloadLimit: Int { UserDefaults.standard.integer(forKey: downloadLimitKey) }
 
     static var maxRunning: Int { let v = UserDefaults.standard.integer(forKey: maxRunningKey); return v > 0 ? v : 5 }
@@ -49,6 +51,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.doneSoundKey) private var doneSound = true
     @AppStorage(Prefs.downloadLimitKey) private var limit = 0
     @AppStorage(Prefs.autoCloudKey) private var autoCloud = false
+    @AppStorage(Prefs.autoCleanCloudKey) private var autoCleanCloud = true
     @State private var pkState = PikPak.loggedInUser
     @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
     @Environment(\.openWindow) private var openWindow
@@ -98,11 +101,12 @@ struct SettingsView: View {
             ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {
-                Button(store.cloudCleanupCount > 0 ? "检查已下载的云端副本（\(store.cloudCleanupCount)）" : "打开 PikPak 云盘管理空间") {
+                Toggle("拉回后自动清理云端副本", isOn: $autoCleanCloud)
+                Text("本地文件核对无误后清理并提示，腾出的空间可继续离线。文件夹任务中未拉回的说明、花絮等会一并清理。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
+                Button(store.cloudCleanupCount > 0 ? "清理已下载的云端副本（\(store.cloudCleanupCount)）" : "打开 PikPak 云盘管理空间") {
                     store.manageCloudCopies()
                 }
-                Text("下载完成后可检查本地文件，再选择是否将对应云端副本移入回收站。")
-                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
                 if let u = pkState {
                     LabeledContent(pkProblem ? "关联需检查" : "已关联") {
                         HStack { Text(u).foregroundStyle(Theme.sub); Button("退出") { Task { await PikPak.shared.logout(); pkState = nil } } }
