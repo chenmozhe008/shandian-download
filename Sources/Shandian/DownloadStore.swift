@@ -782,7 +782,7 @@ final class DownloadStore: ObservableObject {
                 || Date().timeIntervalSince(noSpeedSince[i.id] ?? Date()) > 60)
             if all[k].slow, !all[k].link.isEmpty, Self.canAutoHand(progress: i.progress, sinceLaunch: Date().timeIntervalSince(launchedAt)) {
                 let it = all[k]
-                if Prefs.autoCloud, PikPak.loggedInUser != nil, !PikPak.sessionInvalid, !cloudTried.contains(i.linkKey) {
+                if Prefs.autoCloud, PikPak.loggedInUser != nil, !PikPak.sessionInvalid, !PikPak.recentlyUnreachable, !cloudTried.contains(i.linkKey) {
                     cloudTried.insert(i.linkKey)
                     Task { @MainActor in self.sendToCloud(it, automatic: true) }
                 } else if Prefs.autoThunder, ThunderBridge.installed, !thunderTried.contains(i.linkKey) {
@@ -1823,7 +1823,7 @@ final class DownloadStore: ObservableObject {
                         return TorrentMetadata.totalSize(data: data, expectedHash: hash) != nil
                     }?.path
             }
-            let link = torrent ?? job.link
+            var link = torrent ?? job.link
             guard !link.isEmpty else { notice = L("这条任务没留下链接，收不回来"); return }
             // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
             // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
@@ -1839,8 +1839,11 @@ final class DownloadStore: ObservableObject {
                     ThunderBridge.save(thunderJobs)
                     ThunderBridge.removeEmptyHolders(from: URL(fileURLWithPath: path))
                     job = thunderJobs[index]
+                    // 种子跟着文件夹搬了，旧路径已经读不到，不改的话下面建任务会静默失败（11-05 用户：一直「请查看迅雷」）
+                    if torrent != nil { link = ThunderBridge.pathAfterMove(link, from: path, to: moved.path) }
                 }
             }
+            guard LinkKind.of(link) != nil else { notice = L("没能收回：找不到迅雷留下的种子文件，任务仍保留"); return }
             let downloadDir = job.folder.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
                 ?? URL(fileURLWithPath: job.dir)
             start(link: link, dir: downloadDir,

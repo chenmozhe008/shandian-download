@@ -50,6 +50,21 @@ final class AIToolTests: XCTestCase {
         XCTAssertNil(ThunderBridge.submitResult(inLog: "11/5/26 14:00:52 - [log] NSWindow >> didBecomeKeyNotification: title=新建任务"))
     }
 
+    /// 收回时文件夹会先搬回保存目录，种子路径要跟着变，否则任务建不出来、一直停在「请查看迅雷」
+    func testReclaimFindsTorrentAfterFolderMoves() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reclaim 测试-\(UUID().uuidString)")
+        let old = root.appendingPathComponent("迅雷下载/thunder-1/影片")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let torrent = old.appendingPathComponent(".magent_1.torrent").path
+        try Data("d".utf8).write(to: URL(fileURLWithPath: torrent))
+        XCTAssertEqual(LinkKind.of(torrent), .torrentFile)
+        let moved = try XCTUnwrap(HandoffFiles.moveThunderFolder(old, to: root.appendingPathComponent("影片"), partial: nil, keepName: true))
+        XCTAssertNil(LinkKind.of(torrent))   // 旧路径确实失效了，这就是原来的 bug
+        XCTAssertEqual(LinkKind.of(ThunderBridge.pathAfterMove(torrent, from: old.path, to: moved.path)), .torrentFile)
+        XCTAssertEqual(ThunderBridge.pathAfterMove("magnet:?xt=1", from: old.path, to: moved.path), "magnet:?xt=1")
+    }
+
     func testChatGPTCopiesThePathAsIs() {
         XCTAssertEqual(AITool.chatGPT.snippet(path: path), path)
     }

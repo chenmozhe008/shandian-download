@@ -10,7 +10,7 @@ enum Prefs {
     static let notifyKey = "notifyOnFinish"
     static let downloadLimitKey = "downloadLimit"   // KB/s，0 不限
     static let autoThunderKey = "autoThunder"
-    static var autoThunder: Bool { UserDefaults.standard.object(forKey: autoThunderKey) as? Bool ?? false }   // 10-28 用户：不想用迅雷
+    static var autoThunder: Bool { UserDefaults.standard.object(forKey: autoThunderKey) as? Bool ?? true }   // 11-05 用户定：没关联云盘或云盘连不上时，下不动就自动交给迅雷（没装迅雷不会交）
     static let autoCloudKey = "autoCloud"
     static var autoCloud: Bool { UserDefaults.standard.object(forKey: autoCloudKey) as? Bool ?? true }   // 11-04 用户定：下不动就自动转，提示里写清用了几次
     static let autoCleanCloudKey = "autoCleanCloud"
@@ -281,13 +281,13 @@ private struct UpdateToggle: View {
 /// 迅雷是第三方软件、可选：装了能把任务交给它下，没装也不用藏开关——
 /// 说清「不装也能下」，给出官网，装完点重新检测就能用（11-01 用户反馈：别人电脑上没装迅雷怎么办）
 struct ThunderSettingsSection: View {
-    @AppStorage(Prefs.autoThunderKey) private var autoThunder = false
+    @AppStorage(Prefs.autoThunderKey) private var autoThunder = true
     @State private var installed = ThunderBridge.installed
 
     var body: some View {
         Section("迅雷（可选）") {
             if installed {
-                Toggle("磁力、种子太慢时交给迅雷（没登录云盘时）", isOn: $autoThunder)
+                Toggle("下不动时自动交给迅雷（没关联云盘或云盘连不上时）", isOn: $autoThunder)
                     .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里")
                 Text("已检测到本机的迅雷。单个任务也可以在右键菜单里选「用迅雷下载」。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)

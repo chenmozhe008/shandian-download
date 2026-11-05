@@ -495,6 +495,12 @@ enum ThunderBridge {
         return handoffBase(holder).appendingPathComponent(folder.lastPathComponent)
     }
 
+    /// 文件夹搬走后，里面某个文件的新路径
+    nonisolated static func pathAfterMove(_ path: String, from folder: String, to moved: String) -> String {
+        guard path.hasPrefix(folder + "/") else { return path }
+        return moved + path.dropFirst(folder.count)
+    }
+
     /// 文件夹移走后清掉空的中转目录（重复转交可能套了几层）
     static func removeEmptyHolders(from folder: URL) {
         var holder = folder.deletingLastPathComponent()

@@ -83,6 +83,10 @@ actor PikPak {
         (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(Session.self, from: $0) }?.username
     }
 
+    /// 刚连不上时，自动转交直接跳到迅雷，别让用户再等一轮超时重试（约 2 分钟）；过 10 分钟再试云盘
+    nonisolated(unsafe) private static var unreachableAt: Date?
+    nonisolated static var recentlyUnreachable: Bool { unreachableAt.map { Date().timeIntervalSince($0) < 600 } ?? false }
+
     enum PikPakError: LocalizedError {
         case server(String), notLoggedIn, unreachable
         var errorDescription: String? {
@@ -452,7 +456,11 @@ actor PikPak {
         let request = req
         let data: Data, response: URLResponse
         do { (data, response) = try await Self.withConnectionRetry { try await URLSession(configuration: cfg).data(for: request) } }
-        catch where LocalProxy.isUnreachable(error) { throw PikPakError.unreachable }
+        catch where LocalProxy.isUnreachable(error) {
+            Self.unreachableAt = Date()
+            throw PikPakError.unreachable
+        }
+        Self.unreachableAt = nil
         if data.isEmpty, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) { return [:] }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PikPakError.server(L("PikPak 返回无法识别的结果，请稍后重试"))
