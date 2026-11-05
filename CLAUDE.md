@@ -91,6 +91,7 @@
 - `download-movie` skill 10-28 改成 `dl_shandian.sh` → `shandian://add?confirm=0&url=…`（不弹确认框）；闪电全能下载不可用时退回迅雷 `dl_fast.sh`
 
 - **PikPak 和迅雷都只是中转**（11-04 用户定）：下完文件回保存目录、清中转目录和半截文件、云端副本彻底删（回收站也占容量），都不让用户动手；细节见 `docs/internals.md`
+- **自动化测试别挪用户的鼠标**：11-05 为测悬停把光标移到「移除」按钮上，弹出了移除确认框。悬停效果让用户看
 - **测试别碰用户迅雷的任务状态**：11-04 按「全部开始」把两条已暂停任务变成了报错。控制迅雷的测试先确认列表里没有用户任务
 - 留多少包看 `tools/mac-app-workflow/README.md`：`--install-dev` 只在 `tmp/previous-install` 留上一版；发版收尾时把 `output/release` 的旧版本移到废纸篓
 
