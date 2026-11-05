@@ -57,6 +57,13 @@ enum HandoffFiles {
         return cleaned.isEmpty ? "PikPak 下载" : cleaned
     }
 
+    /// 再次交给迅雷：把文件夹搬回迅雷记着的位置，它的旧任务才找得到种子和文件
+    static func moveBackForThunder(_ folder: URL, to original: URL) throws {
+        guard folder.standardizedFileURL.path != original.standardizedFileURL.path else { return }
+        try FileManager.default.createDirectory(at: original.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: folder, to: original)
+    }
+
     /// 把迅雷的任务文件夹移回保存目录。半截文件先进废纸篓（可恢复）；
     /// keepName：收回给内核接着下时名字必须和种子一致，同名的东西清不掉就不移，返回 nil
     @discardableResult

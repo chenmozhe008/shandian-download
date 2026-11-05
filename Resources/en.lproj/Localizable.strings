@@ -623,3 +623,4 @@
 "更新包放在 GitHub 上，需要科学上网。请检查网络设置，或前往下载页面手动下载。" = "Updates are hosted on GitHub, which may require a VPN or proxy in your region. Check your network and retry, or go to the download page.";
 "没能收回：找不到迅雷留下的种子文件，任务仍保留" = "Couldn't take back: Thunder's torrent file wasn't found. The task was kept";
 "下不动时自动交给迅雷（没关联云盘或云盘连不上时）" = "Hand Stuck Tasks to Thunder (When Cloud Isn't Linked or Reachable)";
+"已交回迅雷接着下「%@」" = "Handed “%@” back to Thunder to continue";

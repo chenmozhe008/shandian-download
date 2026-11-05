@@ -431,6 +431,15 @@ final class DownloadStore: ObservableObject {
     private var lastPieceRetryAt: [String: Date] = [:]
     /// 内核任务 id → 原始链接。从迅雷收回的任务是拿本地种子建的（内核那边 url 是 data:），
     /// 原始磁力得另外记着，右键的「交给云盘离线」「用迅雷下载」才有得用
+    /// 收回时搬走的文件夹原来在哪（按 infohash）。迅雷的旧任务还认那个位置，再交给它时要搬回去（11-05 用户：获取种子文件失败）
+    private var thunderFolders: [String: String] = {
+        (try? Data(contentsOf: DownloadStore.thunderFoldersFile)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+    }()
+    private static var thunderFoldersFile: URL { EngineConfig.supportDir.appendingPathComponent("thunder-folders.json") }
+    private func saveThunderFolders() {
+        if let d = try? JSONEncoder().encode(thunderFolders) { try? PrivateFile.write(d, to: Self.thunderFoldersFile) }
+    }
+
     private var sourceLinks: [String: String] = DownloadStore.loadSourceLinks()
     private static var sourceLinkFile: URL { EngineConfig.supportDir.appendingPathComponent("source-links.json") }
     private static func loadSourceLinks() -> [String: String] {
@@ -1714,6 +1723,27 @@ final class DownloadStore: ObservableObject {
         let safeDir = ThunderBridge.handoffBase(URL(fileURLWithPath: dir)).appendingPathComponent("迅雷下载", isDirectory: true)
             .appendingPathComponent(jobID, isDirectory: true).path
         Task {
+            // 收回过的任务：迅雷里的旧任务还在就接着用它，重新提交只会被判重
+            if item.fromThunder, let hash, let existingFolder, let original = thunderFolders[hash],
+               await ThunderBridge.taskExists(folderName: URL(fileURLWithPath: original).lastPathComponent, name: item.rawTitle) {
+                do {
+                    if let sourceID { try await host.client.pause(sourceID) }
+                    try HandoffFiles.moveBackForThunder(URL(fileURLWithPath: existingFolder), to: URL(fileURLWithPath: original))
+                } catch {
+                    if let sourceID { try? await host.client.resume(sourceID) }
+                    notice = String(localized: "无法交给迅雷：\(error.localizedDescription)，原任务仍保留")
+                    return
+                }
+                let job = ThunderJob(id: jobID, title: item.title, link: item.link, dir: URL(fileURLWithPath: original).deletingLastPathComponent().path,
+                                     folder: original, hash: hash, name: item.rawTitle, total: item.total,
+                                     createdAt: Date(), sourceEngineID: sourceID, sourcePending: pendingRecord)
+                thunderJobs.append(job); ThunderBridge.save(thunderJobs)
+                if pendingRecord != nil { dropPending(item.id) }
+                selectedID = job.id; rebuild()
+                notice = String(localized: "已交回迅雷接着下「\(item.title)」")
+                startThunderIfPaused(jobID)
+                return
+            }
             do {
                 if !useExisting { try FileManager.default.createDirectory(atPath: safeDir, withIntermediateDirectories: true) }
                 if let sourceID { try await host.client.pause(sourceID) }
@@ -1841,6 +1871,7 @@ final class DownloadStore: ObservableObject {
                     job = thunderJobs[index]
                     // 种子跟着文件夹搬了，旧路径已经读不到，不改的话下面建任务会静默失败（11-05 用户：一直「请查看迅雷」）
                     if torrent != nil { link = ThunderBridge.pathAfterMove(link, from: path, to: moved.path) }
+                    if let hash = job.hash { thunderFolders[hash] = path; saveThunderFolders() }
                 }
             }
             guard LinkKind.of(link) != nil else { notice = L("没能收回：找不到迅雷留下的种子文件，任务仍保留"); return }
@@ -1875,6 +1906,12 @@ final class DownloadStore: ObservableObject {
 
     func restoreOriginalFromThunder(_ item: Item) {
         guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
+        // 这条是搬回迅雷位置的：原任务的文件在保存目录，要先搬回去
+        if let hash = job.hash, let folder = job.folder, thunderFolders[hash] == folder,
+           let home = ThunderBridge.homeFolder(of: URL(fileURLWithPath: folder)) {
+            _ = try? HandoffFiles.moveThunderFolder(URL(fileURLWithPath: folder), to: home, partial: nil, keepName: true)
+            ThunderBridge.removeEmptyHolders(from: URL(fileURLWithPath: folder))
+        }
         if let engineID = job.sourceEngineID {
             Task {
                 do {

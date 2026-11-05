@@ -495,6 +495,18 @@ enum ThunderBridge {
         return handoffBase(holder).appendingPathComponent(folder.lastPathComponent)
     }
 
+    /// 迅雷的「正在下载」里还有没有这条能继续的任务。报过错的（比如种子文件丢了）算没有。迅雷没开就先打开
+    static func taskExists(folderName: String, name: String?) async -> Bool {
+        guard AXIsProcessTrusted(), let app = appURL else { return false }
+        if !isRunning {
+            NSWorkspace.shared.open(app)
+            for _ in 0..<20 where !isRunning || mainWindow() == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
+        }
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first else { return false }
+        await showThunderWindow(running)
+        return taskRows().contains { rowMatches($0, folderName: folderName, name: name) && !$0.status.contains("失败") }
+    }
+
     /// 文件夹搬走后，里面某个文件的新路径
     nonisolated static func pathAfterMove(_ path: String, from folder: String, to moved: String) -> String {
         guard path.hasPrefix(folder + "/") else { return path }

@@ -65,6 +65,20 @@ final class AIToolTests: XCTestCase {
         XCTAssertEqual(ThunderBridge.pathAfterMove("magnet:?xt=1", from: old.path, to: moved.path), "magnet:?xt=1")
     }
 
+    /// 再次交给迅雷：文件夹回到迅雷记着的位置，种子还在；中转目录被清掉了也能重建
+    func testHandBackRestoresThunderFolderWithItsTorrent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("handback 测试-\(UUID().uuidString)")
+        let home = root.appendingPathComponent("影片")
+        let original = root.appendingPathComponent("迅雷下载/thunder-1/影片")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("d".utf8).write(to: home.appendingPathComponent(".magent_1.torrent"))
+        try HandoffFiles.moveBackForThunder(home, to: original)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.appendingPathComponent(".magent_1.torrent").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.path))
+        XCTAssertNoThrow(try HandoffFiles.moveBackForThunder(original, to: original))
+    }
+
     func testChatGPTCopiesThePathAsIs() {
         XCTAssertEqual(AITool.chatGPT.snippet(path: path), path)
     }
