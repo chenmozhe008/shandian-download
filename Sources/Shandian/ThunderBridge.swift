@@ -109,21 +109,41 @@ enum ThunderBridge {
     }
 
     /// 用迅雷打开链接（保存位置预设好），再替用户点迅雷新建任务窗口里的「立即下载」
-    static func open(link: String, saveDir: String, onClicked: @escaping (Bool) -> Void) {
-        guard let app = appURL, let url = URL(string: link) else { onClicked(false); return }
+    /// alreadyExists：迅雷认为任务已存在，拒绝新建。收回后旧任务还留在迅雷，回收站里的也算（11-05 迅雷日志确认）
+    enum SubmitResult { case submitted, unconfirmed, alreadyExists }
+
+    static func open(link: String, saveDir: String, onResult: @escaping (SubmitResult) -> Void) {
+        guard let app = appURL, let url = URL(string: link) else { onResult(.unconfirmed); return }
         UserDefaults(suiteName: "com.xunlei.Thunder")?.set(saveDir, forKey: "LastSavePath")
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
         Task {
             // 第一次会请求「辅助功能」权限；没给就只能让用户自己在迅雷里点
             guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) else {
-                onClicked(false); return
+                onResult(.unconfirmed); return
             }
             for _ in 0..<40 {
-                if pressDownload() { onClicked(true); return }
+                if hasDuplicateWindow() { onResult(.alreadyExists); return }
+                if pressDownload() {
+                    // 迅雷按下之后才判重，多等几秒看它拒没拒
+                    for _ in 0..<6 {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        if hasDuplicateWindow() { onResult(.alreadyExists); return }
+                    }
+                    onResult(.submitted); return
+                }
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
-            onClicked(false)
+            onResult(.unconfirmed)
         }
+    }
+
+    private static func hasDuplicateWindow() -> Bool {
+        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first?.processIdentifier
+        else { return false }
+        var winsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &winsRef) == .success,
+              let wins = winsRef as? [AXUIElement] else { return false }
+        return wins.contains { attr($0, kAXTitleAttribute) == "下载任务已存在" }
     }
 
     /// 在迅雷的「新建下载任务 / 新建 BT 任务」窗口里找「立即下载」按钮按下

@@ -1671,7 +1671,8 @@ final class DownloadStore: ObservableObject {
                                    hash: hash, total: item.total, createdAt: Date())
         let existingFolder = ThunderBridge.locateNow(candidate)
         var useExisting = false
-        if existingFolder != nil {
+        // 收回时文件夹已被移回保存目录，迅雷的旧任务指不到它了，关联不上，只能重新提交
+        if existingFolder != nil, !item.fromThunder {
             guard promptIfMissing else {
                 notice = L("发现迅雷已有下载文件，请手动选择是否关联迅雷任务")
                 return
@@ -1708,11 +1709,41 @@ final class DownloadStore: ObservableObject {
                 openThunder()
                 return
             }
-            ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] clicked in
-                self?.notice = clicked ? String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
-                                       : L("请在迅雷中确认下载；原任务和文件仍保留")
+            ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .submitted: self.notice = String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
+                case .unconfirmed: self.notice = L("请在迅雷中确认下载；原任务和文件仍保留")
+                case .alreadyExists: self.thunderRefusedDuplicate(jobID: jobID, safeDir: safeDir, title: item.title, manual: promptIfMissing)
+                }
             }
         }
+    }
+
+    /// 迅雷说任务已存在：撤销这次转交、原任务接着下，并说清楚要去迅雷删哪里。我们删不了迅雷的任务
+    private func thunderRefusedDuplicate(jobID: String, safeDir: String, title: String, manual: Bool) {
+        guard let job = thunderJobs.first(where: { $0.id == jobID }) else { return }
+        thunderJobs.removeAll { $0.id == jobID }; ThunderBridge.save(thunderJobs)
+        HandoffFiles.removeIfEmpty(URL(fileURLWithPath: safeDir))
+        ThunderBridge.removeEmptyHolders(from: URL(fileURLWithPath: safeDir))
+        if let engineID = job.sourceEngineID {
+            Task { try? await host.client.resume(engineID); await poll() }
+        } else if let record = job.sourcePending {
+            start(link: record.link, headers: record.headers, name: record.name, dir: URL(fileURLWithPath: record.dir),
+                  selectFiles: record.selectFiles, originLink: record.originLink)
+        }
+        rebuild()
+        guard manual else {
+            notice = String(localized: "「\(title)」没交给迅雷：迅雷里已有同一个任务，继续由闪电下载")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = L("迅雷里已有这条任务")
+        alert.informativeText = L("迅雷不允许重复添加同一个任务，放进回收站的也算。任务已继续由闪电下载。\n\n如果还想交给迅雷，请先到迅雷把这条任务彻底删除（回收站里也要删），再点一次「用迅雷下载」。")
+        alert.addButton(withTitle: L("打开迅雷"))
+        alert.addButton(withTitle: L("知道了"))
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { openThunder() }
     }
 
     /// 收回：不再让迅雷下，改由闪电全能下载接着下。用迅雷文件夹里它自己存的种子建任务、目录指回原处，

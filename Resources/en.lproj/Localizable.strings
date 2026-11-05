@@ -610,3 +610,6 @@
 "复制路径" = "Copy Path";
 "桌面版：设置 → MCP servers → Add server，类型选 STDIO，命令粘贴这个路径，保存后重启。" = "Desktop app: Settings → MCP servers → Add server. Choose STDIO, paste this path as the command, save, then restart.";
 "闪电全能下载需要授权才能安装新版本。" = "Shandian needs your approval to install the new version.";
+"「%@」没交给迅雷：迅雷里已有同一个任务，继续由闪电下载" = "“%@” wasn't handed to Thunder because Thunder already has the same task. Shandian keeps downloading it";
+"迅雷里已有这条任务" = "Thunder Already Has This Task";
+"迅雷不允许重复添加同一个任务，放进回收站的也算。任务已继续由闪电下载。\n\n如果还想交给迅雷，请先到迅雷把这条任务彻底删除（回收站里也要删），再点一次「用迅雷下载」。" = "Thunder doesn't allow the same task twice, even if it's in Thunder's trash. Shandian is continuing the download.\n\nTo use Thunder anyway, permanently delete the task in Thunder (including from its trash), then click Download with Thunder again.";
