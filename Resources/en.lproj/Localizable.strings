@@ -614,3 +614,10 @@
 "迅雷里已有这条任务" = "Thunder Already Has This Task";
 "迅雷不允许重复添加同一个任务，放进回收站的也算。任务已继续由闪电下载。\n\n如果还想交给迅雷，请先到迅雷把这条任务彻底删除（回收站里也要删），再点一次「用迅雷下载」。" = "Thunder doesn't allow the same task twice, even if it's in Thunder's trash. Shandian is continuing the download.\n\nTo use Thunder anyway, permanently delete the task in Thunder (including from its trash), then click Download with Thunder again.";
 "迅雷里这条是暂停的，已让它开始；迅雷里其他暂停的任务也会一起开始" = "This task was paused in Thunder, so it was started. Other paused tasks in Thunder start too";
+"连不上 PikPak：需要科学上网（连接境外网络），请检查网络后重试" = "Can't reach PikPak. A VPN or proxy may be required in your region. Check your network and retry";
+"网页打不开：PikPak 需要科学上网（连接境外网络），请检查网络后点「重新加载」" = "The page won't load. PikPak may require a VPN or proxy in your region. Check your network and click Reload";
+"PikPak 需要科学上网（连接境外网络）才能使用。" = "PikPak may require a VPN or proxy in your region.";
+"连不上服务器，可能需要科学上网" = "Can't reach the server. A VPN or proxy may be needed";
+"连不上这个网站：需要科学上网（连接境外网络），请检查网络后重试" = "Can't reach this site. A VPN or proxy may be required in your region. Check your network and retry";
+"连不上 GitHub：检查更新需要科学上网（连接境外网络），请检查网络后重试。" = "Can't reach GitHub to check for updates. A VPN or proxy may be required in your region. Check your network and retry.";
+"更新包放在 GitHub 上，需要科学上网（连接境外网络）。请检查网络后重试，或前往下载页面手动下载。" = "Updates are hosted on GitHub, which may require a VPN or proxy in your region. Check your network and retry, or go to the download page.";

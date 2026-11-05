@@ -47,9 +47,19 @@ enum LocalProxy {
         "dytt89.com", "btsj6.com",
     ]
 
+    /// 请求根本没连上（不是服务器拒绝）：境外服务多半是当前网络访问不到
+    nonisolated static func isUnreachable(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        return [.timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost,
+                .secureConnectionFailed, .notConnectedToInternet].contains(error.code)
+    }
+
     /// 这个链接要不要走代理（Clash 没开时一律不走）
-    static func needed(for link: String) -> Bool {
-        guard isUp, let host = URL(string: link)?.host?.lowercased() else { return false }
+    static func needed(for link: String) -> Bool { isUp && isOverseas(link) }
+
+    /// 不在国内名单里的站。连不上时靠它决定要不要提示科学上网
+    static func isOverseas(_ link: String) -> Bool {
+        guard let host = URL(string: link)?.host?.lowercased() else { return false }
         if host == "localhost" || host.hasPrefix("127.") || host.hasPrefix("192.168.") || host.hasPrefix("10.") { return false }
         return !domesticSuffixes.contains { host == $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")) || host.hasSuffix($0.hasPrefix(".") ? $0 : "." + $0) }
     }

@@ -29,6 +29,27 @@ final class AIToolTests: XCTestCase {
         }
     }
 
+    func testUnreachableDetectionSeparatesConnectionFromServerErrors() {
+        XCTAssertTrue(LocalProxy.isUnreachable(URLError(.timedOut)))
+        XCTAssertTrue(LocalProxy.isUnreachable(URLError(.cannotFindHost)))
+        XCTAssertFalse(LocalProxy.isUnreachable(URLError(.badServerResponse)))
+        XCTAssertFalse(LocalProxy.isUnreachable(PikPak.PikPakError.notLoggedIn))
+        XCTAssertTrue(LocalProxy.isOverseas("https://www.youtube.com/watch?v=1"))
+        XCTAssertFalse(LocalProxy.isOverseas("https://www.bilibili.com/video/1"))
+        XCTAssertFalse(LocalProxy.isOverseas("magnet:?xt=urn:btih:abc"))
+        XCTAssertTrue(YtDlp.isConnectionError("Unable to download webpage: The read operation timed out"))
+        XCTAssertFalse(YtDlp.isConnectionError("HTTP Error 403: Forbidden"))
+    }
+
+    func testThunderLogTellsWhetherTheTaskWasCreated() {
+        let ok = #"11/5/26 14:00:53 - [report] taskevent/createtask, data: ["taskid": "1284", "createfrom": "scheme", "result": "success"]"#
+        let refused = #"11/5/26 14:11:50 - [report] taskevent/createtask, data: ["result": "fail", "taskid": "0", "createfrom": "scheme"]"#
+        XCTAssertEqual(ThunderBridge.submitResult(inLog: ok), .submitted)
+        XCTAssertEqual(ThunderBridge.submitResult(inLog: refused), .alreadyExists)
+        XCTAssertEqual(ThunderBridge.submitResult(inLog: "11/5/26 14:01:24 - [log] NSWindow >> didBecomeKeyNotification: title=下载任务已存在"), .alreadyExists)
+        XCTAssertNil(ThunderBridge.submitResult(inLog: "11/5/26 14:00:52 - [log] NSWindow >> didBecomeKeyNotification: title=新建任务"))
+    }
+
     func testChatGPTCopiesThePathAsIs() {
         XCTAssertEqual(AITool.chatGPT.snippet(path: path), path)
     }

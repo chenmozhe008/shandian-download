@@ -84,7 +84,7 @@ final class DownloadStore: ObservableObject {
         }
     }
     static func noticeNeedsAttention(_ text: String) -> Bool {
-        ["失败", "无法", "出错", "不足", "过期", "没找到", "failed", "can't", "couldn't", "error", "not enough", "expired", "not found"]
+        ["失败", "无法", "出错", "不足", "过期", "没找到", "连不上", "failed", "can't", "couldn't", "error", "not enough", "expired", "not found"]
             .contains { text.lowercased().contains($0) }
     }
     /// 提示右侧的按钮：重复链接时是「定位任务」，点了滚到那条任务并选中。
@@ -402,6 +402,7 @@ final class DownloadStore: ObservableObject {
 
     /// 自动转交试过的任务（按链接记）：云盘失败后任务恢复，再下不动就轮到迅雷，不会反复消耗云盘次数
     private var cloudTried = Set<String>()
+    private var cloudUnreachableNoticed = false
     private var thunderTried = Set<String>()
     private let launchedAt = Date()
 
@@ -1584,7 +1585,18 @@ final class DownloadStore: ObservableObject {
                     }
                 }
                 for job in cloudJobs where !job.taskID.isEmpty && job.pulling == nil {
-                    guard let t = try? await PikPak.shared.status(job.taskID, fileID: job.fileID) else { continue }
+                    let t: PikPak.Task
+                    do {
+                        t = try await PikPak.shared.status(job.taskID, fileID: job.fileID)
+                        cloudUnreachableNoticed = false
+                    } catch {
+                        // 云盘任务查不到进度时列表一动不动，要说清原因；断网期间只说一次，别每轮都弹
+                        if case PikPak.PikPakError.unreachable = error, !cloudUnreachableNoticed {
+                            cloudUnreachableNoticed = true
+                            notice = error.localizedDescription
+                        }
+                        continue
+                    }
                     if t.phase == "PHASE_TYPE_ERROR" {
                         if t.message?.contains("空间") == true, job.spaceRetried != true, await retryAfterEmptyingTrash(job) { continue }
                         cloudFailed(job.id, t.message ?? L("云端下载出错"))
@@ -2130,7 +2142,7 @@ final class DownloadStore: ObservableObject {
         case "running": .running
         case "pause": .paused
         case "done": .done
-        case "error": .failed(t.failureText)
+        case "error": .failed(t.isConnectionFailure && LocalProxy.isOverseas(url) ? L("连不上服务器，可能需要科学上网") : t.failureText)
         default: .waiting
         }
         let created = ISO8601DateFormatter.flexible.date(from: t.createdAt ?? "") ?? .distantPast

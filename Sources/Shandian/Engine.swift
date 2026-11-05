@@ -52,6 +52,12 @@ struct EngineTask: Decodable {
     var shandianError: String?   // 内核补丁：最近一次失败的原因
 
     /// 失败原因翻译成人话（内核原话如 http request fail, code:429 / connection 2 failed: retries=3, status=403）
+    /// 根本没连上服务器（不是服务器拒绝）
+    var isConnectionFailure: Bool {
+        let e = (shandianError ?? "").lowercased()
+        return ["no such host", "timeout", "deadline exceeded", "connection refused", "connection reset", "eof"].contains { e.contains($0) }
+    }
+
     var failureText: String {
         let e = (shandianError ?? "").lowercased()
         let code = e.range(of: #"(code:|status=)\s*([0-9]{3})"#, options: .regularExpression)

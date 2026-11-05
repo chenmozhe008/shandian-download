@@ -50,6 +50,13 @@ struct VideoJob: Codable, Identifiable {
 /// 用官方「目录版」yt-dlp_macos.zip：单文件版 yt-dlp_macos 每次启动都要解包到临时目录、系统再扫一遍，
 /// 10-29 实测每条视频白等 16 秒；目录版只有装好后第一次 16 秒，之后 0.3 秒。目录版不支持 -U，更新靠重新下载。
 enum YtDlp {
+    /// yt-dlp 报的是没连上（超时、解析不了域名、握手失败等）
+    static func isConnectionError(_ error: String?) -> Bool {
+        let lower = (error ?? "").lowercased()
+        return ["timed out", "connection refused", "connection reset", "connection aborted", "network is unreachable", "nodename nor servname",
+                "name or service not known", "failed to resolve", "unable to connect", "handshake", "remote end closed"].contains { lower.contains($0) }
+    }
+
     static let dir = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp_macos")
     static let bundled = dir.appendingPathComponent("yt-dlp_macos")
     static var packaged: URL? { Bundle.main.resourceURL?.appendingPathComponent("yt-dlp_macos/yt-dlp_macos") }
@@ -324,7 +331,9 @@ private final class JobState: @unchecked Sendable {
                 job.error = (URL(string: job.url)?.host ?? "").hasSuffix("douyin.com")
                     ? L("请在浏览器里打开这个抖音视频，点扩展里的「下载这个视频」")
                     : SiteCookies.site(of: job.url) != nil && SiteCookies.ytdlpArguments(for: job.url).isEmpty
-                    ? L("需要在浏览器里登录后，右键「用闪电全能下载这个视频」") : Self.readableError(lastError)
+                    ? L("需要在浏览器里登录后，右键「用闪电全能下载这个视频」")
+                    : YtDlp.isConnectionError(lastError) && LocalProxy.isOverseas(job.url)
+                    ? L("连不上这个网站：需要科学上网（连接境外网络），请检查网络后重试") : Self.readableError(lastError)
             }
             if let path = job.filePath, let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 {
                 job.total = size; if ok { job.downloaded = size }

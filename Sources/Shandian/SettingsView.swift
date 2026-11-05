@@ -164,6 +164,8 @@ struct SettingsView: View {
             ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {
+                Text("PikPak 需要科学上网（连接境外网络）才能使用。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
                 Toggle("拉回后自动清理云端副本", isOn: $autoCleanCloud)
                 Text("PikPak 只作中转：取回本机并核对后彻底删除云端副本，不进回收站。云盘空间不够时，也会清理回收站里离线任务留下的文件。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub)

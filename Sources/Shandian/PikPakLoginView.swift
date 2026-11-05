@@ -14,7 +14,7 @@ struct PikPakLoginView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "lock.shield").foregroundStyle(Theme.tint)
-                Text(pageProblem ? L("网页没有显示出来") : status).font(.system(size: 13))
+                Text(pageProblem ? L("网页打不开：PikPak 需要科学上网（连接境外网络），请检查网络后点「重新加载」") : status).font(.system(size: 13))
                 Spacer()
                 if pageProblem {
                     Button("重新加载") { pageProblem = false; reloadCount += 1 }

@@ -106,6 +106,8 @@ The script downloads the latest release, checks its SHA-256 when provided by Git
 2. On first launch macOS will report that it cannot verify the developer (the app is not notarized). Click Done, open **System Settings → Privacy & Security**, and click **Open Anyway** near the bottom. Subsequent launches work normally
 3. For video platforms, install ffmpeg: `brew install ffmpeg`
 
+Updates come from GitHub, and PikPak and some video sites are hosted overseas. In regions where they are blocked, you need a VPN or proxy; the app shows a message when it can't reach them.
+
 ## Browser extension
 
 There are two versions, both for Chrome and Edge. Pick one:

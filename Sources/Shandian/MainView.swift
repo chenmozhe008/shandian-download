@@ -191,7 +191,7 @@ private struct DetailPane: View {
         }
         .padding(.horizontal, 24).padding(.top, 8)
         // 提示条浮在内容上，不占位：占位的话出现和消失都会把下面整块顶上顶下（11-05 用户反馈）
-        .overlay(alignment: .top) { Banners(store: store).padding(.horizontal, 24).padding(.top, 8) }
+        .overlay(alignment: .bottom) { Banners(store: store).padding(.horizontal, 24).padding(.bottom, 16) }   // 放底部：不挡速度区和工具栏（11-05 用户）
         .focusable().focusEffectDisabled()
         .onKeyPress(keys: [.upArrow, .downArrow, .space, .return, .delete, .deleteForward]) { press in
             store.handleKey(press.key) ? .handled : .ignored
@@ -327,7 +327,7 @@ private struct Banners: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.window))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 

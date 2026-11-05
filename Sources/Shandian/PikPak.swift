@@ -84,9 +84,13 @@ actor PikPak {
     }
 
     enum PikPakError: LocalizedError {
-        case server(String), notLoggedIn
+        case server(String), notLoggedIn, unreachable
         var errorDescription: String? {
-            switch self { case .server(let m): m; case .notLoggedIn: L("还没有登录 PikPak") }
+            switch self {
+            case .server(let m): m
+            case .notLoggedIn: L("还没有登录 PikPak")
+            case .unreachable: L("连不上 PikPak：需要科学上网（连接境外网络），请检查网络后重试")
+            }
         }
     }
 
@@ -446,7 +450,9 @@ actor PikPak {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = LocalProxy.sessionDictionary(for: url)   // 境外服务，走本机代理
         let request = req
-        let (data, response) = try await Self.withConnectionRetry { try await URLSession(configuration: cfg).data(for: request) }
+        let data: Data, response: URLResponse
+        do { (data, response) = try await Self.withConnectionRetry { try await URLSession(configuration: cfg).data(for: request) } }
+        catch where LocalProxy.isUnreachable(error) { throw PikPakError.unreachable }
         if data.isEmpty, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) { return [:] }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PikPakError.server(L("PikPak 返回无法识别的结果，请稍后重试"))

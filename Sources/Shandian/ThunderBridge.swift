@@ -112,8 +112,31 @@ enum ThunderBridge {
     /// alreadyExists：迅雷认为任务已存在，拒绝新建。收回后旧任务还留在迅雷，回收站里的也算（11-05 迅雷日志确认）
     enum SubmitResult { case submitted, unconfirmed, alreadyExists }
 
+    /// 迅雷自己的事件日志（11-05 实测）：建任务写 `taskevent/createtask` 带 result，判重写窗口名。
+    /// 判重窗口的辅助功能标题读不到，要以日志为准；只读，不碰任务
+    private static var eventLog: URL {
+        let f = DateFormatter(); f.dateFormat = "yyyyMMdd"; f.locale = Locale(identifier: "en_US_POSIX")
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Thunder/.events/record_\(f.string(from: Date())).log")
+    }
+
+    nonisolated static func submitResult(inLog text: String) -> SubmitResult? {
+        for line in text.components(separatedBy: .newlines).reversed() where line.contains("taskevent/createtask") {
+            return line.contains("\"result\": \"success\"") ? .submitted : .alreadyExists
+        }
+        return text.contains("title=下载任务已存在") ? .alreadyExists : nil
+    }
+
+    private static func logResult(after offset: UInt64) -> SubmitResult? {
+        guard let handle = try? FileHandle(forReadingFrom: eventLog) else { return nil }
+        defer { try? handle.close() }
+        try? handle.seek(toOffset: offset)
+        return (try? handle.readToEnd()).flatMap { submitResult(inLog: String(decoding: $0, as: UTF8.self)) }
+    }
+
     static func open(link: String, saveDir: String, onResult: @escaping (SubmitResult) -> Void) {
         guard let app = appURL, let url = URL(string: link) else { onResult(.unconfirmed); return }
+        let logStart = ((try? FileManager.default.attributesOfItem(atPath: eventLog.path))?[.size] as? NSNumber)?.uint64Value ?? 0
         UserDefaults(suiteName: "com.xunlei.Thunder")?.set(saveDir, forKey: "LastSavePath")
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
         Task {
@@ -122,15 +145,9 @@ enum ThunderBridge {
                 onResult(.unconfirmed); return
             }
             for _ in 0..<40 {
+                if let result = logResult(after: logStart) { onResult(result); return }
                 if hasDuplicateWindow() { onResult(.alreadyExists); return }
-                if pressDownload() {
-                    // 迅雷按下之后才判重，多等几秒看它拒没拒
-                    for _ in 0..<6 {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        if hasDuplicateWindow() { onResult(.alreadyExists); return }
-                    }
-                    onResult(.submitted); return
-                }
+                _ = pressDownload()
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
             onResult(.unconfirmed)
