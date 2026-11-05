@@ -118,7 +118,7 @@
 - [ ] 真实断网或关代理时的「需要科学上网」提示；没关联 PikPak / PikPak 连不上时自动转迅雷
 - [ ] 卡住引导弹窗（只在 PikPak、迅雷都没有时才出现，从未实际触发）
 - [ ] Claude Desktop、Trae、Windsurf、VS Code、Gemini CLI、ChatGPT 桌面版的 MCP 接入（只按文档写，Claude Code、Cursor 实测过，Codex 只验证到已启用）
-- [ ] 「登录时自动打开」在发布签名下能否启动（用 `SMAppService.mainApp`，小清的同类后台任务被系统按 Launch Constraint Violation 杀掉过）
+- [ ] 「登录时自动打开」真实重新登录一次（0.19.8 起改用普通 LaunchAgent，只实测过启动动作）
 - [ ] 从商店实际安装商店版：正常发送、应用未运行、不支持的链接
 - [ ] 真实 PikPak 带字幕的片子：合并成一条、文件夹正确
 - [ ] 真实 Intel Mac 上的正式版（本机没有 Rosetta，只能编译）

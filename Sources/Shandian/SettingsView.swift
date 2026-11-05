@@ -68,7 +68,7 @@ struct SettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ClipboardWatcher.enabledKey) private var watchClipboard = true
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LoginLaunch.isEnabled
     @State private var tab = SettingsTab.general
     @State private var language = AppLanguage.current
     @State private var aiTool = AITool.claudeCode
@@ -91,8 +91,8 @@ struct SettingsView: View {
                 Toggle("下载完成时播放提示音", isOn: $doneSound)
                 Toggle("登录时自动打开闪电全能下载", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
-                        do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
-                        catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
+                        do { try LoginLaunch.set(on) }
+                        catch { launchAtLogin = LoginLaunch.isEnabled }
                     }
                 UpdateToggle(checker: store.updates)
             }

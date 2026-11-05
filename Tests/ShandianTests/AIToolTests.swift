@@ -109,3 +109,21 @@ final class AIToolTests: XCTestCase {
         XCTAssertFalse(DownloadStore.noticeNeedsAttention("Added: x"))
     }
 }
+
+final class LoginLaunchTests: XCTestCase {
+    func testAgentOpensAppAndCleansUpWhenAppIsGone() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("login 测试's-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("agent.plist")
+        try Data("x".utf8).write(to: file)
+        let plist = LoginLaunch.plist(app: "/Applications/闪电全能下载.app", file: file.path)
+        XCTAssertNil(plist["BundleProgram"])
+        XCTAssertEqual(plist["RunAtLoad"] as? Bool, true)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", LoginLaunch.script, "test", folder.appendingPathComponent("不存在.app").path, file.path]
+        try process.run(); process.waitUntilExit()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+}
