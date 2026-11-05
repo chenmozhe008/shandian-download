@@ -20,6 +20,8 @@
   - **参数带了 `--print` 必须同时带 `--progress`**，否则不出进度（用户：一直 0 突然下好）
   - 固定 `--concurrent-fragments 4`、`-S res,vcodec:h264,acodec:aac`（不设会挑 AV1）；别设 `--http-chunk-size`。依据见 `docs/internals.md`
 - **网盘**：浏览器里的 LinkSwift 油猴脚本拿直链 → 交给内核。**只装 Greasy Fork 上 hmjz100 的版本**；GitHub `Mario82del/LinkSwift` 发安装包，疑似冒名，别碰
+- 多语言（11-05）：`Resources/en.lproj/Localizable.strings`，键是中文原文；`Text("字面量")` 自动取表，String 变量显示时包 `L()`，带插值的用 `String(localized:)`。**`L()` 的结果只能显示，判断逻辑（如 `origin == "磁力"`）必须用中文原值**。中文表由 `build_app.sh` 从英文表的键生成，缺了系统会退回英文；设置里可选语言（`AppLanguage`，写 AppleLanguages，重开生效），**界面不许中英混排**：新增文字必须进翻译表；靠文字判断的地方（`noticeNeedsAttention`、`cloudFailureNotice`）两种语言都要认
+- 设置页顺序（11-05 用户定）：通用（默认打开，语言在最上）→ 下载 → 保存位置 → 下载加速 → 浏览器扩展 → AI 工具
 - 客户端界面（P2）：原生 SwiftUI，`NavigationSplitView` 系统侧栏 + 系统工具栏/搜索框（10-27 用户嫌手搓侧栏和红绿灯对不齐，别再手工画侧栏）；侧栏顶部 App 图标+名字，技术约定沿用小清（`Coding Project/mac-cleanup-manager/CLAUDE.md`）：本机 SwiftUI 宏编译不过，状态放 `ObservableObject @Published`；文案像专业 Mac 软件
   - 重复投同一个链接（已在下载 / 已下过）：**切到列表、滚到那条任务并高亮**，顶部提示带「定位任务」按钮停 15 秒；只弹一条小字、人还留在新建界面上是不行的（11-01 用户反馈）。实现集中在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
   - 内核启动中（刚打开 App、推出硬盘后重启）收到的链接先排队，读到任务列表后再走查重和确认框（`deferUntilEngineReady`）；只有内核真的启动失败才提示没添加
@@ -61,7 +63,7 @@
 ## 脚本
 
 - `script/engine.sh start|stop|status|configure`：启停内核；`configure` 写下载设置（每次内核重装/任务库重建后跑一次）
-- `Sources/ShandianMCP`：给 AI 工具用的 MCP（stdio），打包到 `Contents/MacOS/shandian-mcp`，工具有 add_download / list_downloads / pause_download / resume_download；只连本机，**不提供删除**
+- `Sources/ShandianMCP`：给 AI 工具用的 MCP（stdio），打包到 `Contents/MacOS/shandian-mcp`，工具有 add_download / list_downloads / pause_download / resume_download；只连本机，**不提供删除**；各家接入方式在 `AITool.swift`（设置里选工具复制）
 - `script/dl.sh "<链接或本地.torrent>"`：统一入口，自动分流
 - `script/build_app.sh [run|package]`：编译打包成 `dist/闪电全能下载.app`（会带上已编好的内核）。**不带参数＝run：会杀掉并重开用户正在用的 App**（用户日常用 `/Applications` 里的安装版，装开发版走 `--install-dev`，见 `AGENTS.md`）；只想编译验证用 `package`
 - `script/build_engine.sh`：下 Go、拉 Gopeed v1.9.3、打补丁、编译内核

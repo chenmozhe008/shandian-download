@@ -6,7 +6,7 @@ import WebKit
 /// 每次刷新会作废旧的 refresh token，同一份会话只能有一个刷新者（做法参照开源项目 peach 的 ADR-0093）
 struct PikPakLoginView: View {
     var onDone: (String?) -> Void
-    @State private var status = "在下面的网页里登录 PikPak，登录后会自动关联"
+    @State private var status = L("在下面的网页里登录 PikPak，登录后会自动关联")
     @State private var pageProblem = false
     @State private var reloadCount = 0
 
@@ -14,7 +14,7 @@ struct PikPakLoginView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "lock.shield").foregroundStyle(Theme.tint)
-                Text(pageProblem ? "网页没有显示出来" : status).font(.system(size: 13))
+                Text(pageProblem ? L("网页没有显示出来") : status).font(.system(size: 13))
                 Spacer()
                 if pageProblem {
                     Button("重新加载") { pageProblem = false; reloadCount += 1 }
@@ -24,14 +24,14 @@ struct PikPakLoginView: View {
             .padding(.horizontal, 16).frame(height: 44)
             Divider()
             PikPakWebView(reloadCount: reloadCount, onPageProblem: { pageProblem = true }) { cred in
-                status = "已登录，正在关联…"
+                status = L("已登录，正在关联…")
                 pageProblem = false
                 Task {
                     do {
                         try await PikPak.shared.adoptWebSession(clientID: cred.clientID, deviceID: cred.deviceID, accessToken: cred.access,
                                                                 refreshToken: cred.refresh, userID: cred.sub, name: cred.name)
                         onDone(cred.name)
-                    } catch { status = "关联信息保存失败，请关闭窗口后重试" }
+                    } catch { status = L("关联信息保存失败，请关闭窗口后重试") }
                 }
             }
         }
@@ -121,7 +121,7 @@ private struct PikPakWebView: NSViewRepresentable {
             popup.uiDelegate = self
             popup.customUserAgent = webView.customUserAgent
             let window = NSWindow(contentRect: popup.frame, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "登录 PikPak"
+            window.title = L("登录 PikPak")
             window.isReleasedWhenClosed = false
             window.contentView = popup
             window.center()
@@ -163,7 +163,7 @@ private struct PikPakWebView: NSViewRepresentable {
                     var device = o["device"] as? String ?? ""
                     if device.hasPrefix("\"") { device = device.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
                     let sub = c["sub"] as? String ?? (c["user_id"] as? String ?? "")
-                    let name = (c["username"] as? String) ?? (c["email"] as? String) ?? "PikPak 账号"
+                    let name = (c["username"] as? String) ?? (c["email"] as? String) ?? L("PikPak 账号")
                     self.onCredential(WebCredential(clientID: client.isEmpty ? PikPak.web.clientID : client, deviceID: device,
                                                     access: c["access_token"] as? String ?? "", refresh: c["refresh_token"] as? String ?? "",
                                                     sub: sub, name: name))

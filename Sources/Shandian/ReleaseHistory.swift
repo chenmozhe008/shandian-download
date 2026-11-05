@@ -21,7 +21,7 @@ enum ReleaseHistory {
             let version = parts[0].trimmingCharacters(in: .whitespaces)
             let date = parts.dropFirst().first?.replacingOccurrences(of: "（开发版）", with: "") ?? ""
             return HistoryEntry(version: version, date: date, notes: notes, page: nil,
-                                isDevelopment: title.contains("开发版") || (version == currentVersion && isDevelopment))
+                                isDevelopment: title.contains(L("开发版")) || (version == currentVersion && isDevelopment))
         }
     }
 

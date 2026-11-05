@@ -148,6 +148,22 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 
 **下载视频**：打开视频页，点击浏览器工具栏中的闪电全能下载图标，再点击「下载这个视频」；也可在视频画面上点按右键，选择「用闪电全能下载」。
 
+## 给 AI 工具用（MCP）
+
+应用内置 MCP 服务，AI 工具可以提交下载、查看进度、暂停和继续；只在本机运行，不能删除任务或文件。在「设置 → AI 工具」选择工具，复制对应的命令或配置：
+
+| 工具 | 接入方式 |
+|---|---|
+| Claude Code、Codex、Gemini CLI | 在终端运行复制的命令 |
+| Claude Desktop | 设置 → 开发者 → 编辑配置，粘贴配置 |
+| Cursor | 粘贴到 `~/.cursor/mcp.json` |
+| Trae | 设置 → MCP → 手动添加 |
+| Windsurf | 在 Cascade 的 MCP 菜单打开配置文件 |
+| VS Code | 命令面板运行 `MCP: Open User Configuration` |
+| 其他支持 MCP 的工具 | 使用通用的 `mcpServers` 配置 |
+
+ChatGPT 桌面版目前只接受远程 HTTPS 地址，无法连接本机服务；同一账号可以改用 Codex。
+
 ## 云盘离线（可选）
 
 **用途**：部分资源在 BT 网络中几乎无人分享，下载速度长期为 0。此时可交由 PikPak 云盘处理：由其服务器先完成下载，再从云盘拉回本地。

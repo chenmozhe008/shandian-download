@@ -30,7 +30,7 @@ final class NewTaskPanels {
         }
         let host = NSHostingView(rootView: NewTaskView(model: model))
         panel.contentView = host
-        panel.title = "新建下载任务"
+        panel.title = L("新建下载任务")
         panel.titleVisibility = .hidden  // 标题画在内容里居中，和迅雷一致
         panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true
@@ -130,14 +130,14 @@ final class NewTaskModel: ObservableObject {
             menu.addItem(ClosureMenuItem.make(item) { [weak self] in self?.dir = d })
         }
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem.make(NSMenuItem(title: "选择其他文件夹…", action: nil, keyEquivalent: "")) { [weak self] in self?.chooseFolder() })
+        menu.addItem(ClosureMenuItem.make(NSMenuItem(title: L("选择其他文件夹…"), action: nil, keyEquivalent: "")) { [weak self] in self?.chooseFolder() })
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     func chooseFolder() {
         let p = NSOpenPanel()
         p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
-        p.directoryURL = dir; p.prompt = "选择"
+        p.directoryURL = dir; p.prompt = L("选择")
         if p.runModal() == .OK, let u = p.url { dir = u }
     }
 
@@ -167,7 +167,7 @@ enum FileGroup: CaseIterable {
         if FileSelection.subtitleExt.contains(e) { return .subtitle }
         return .other
     }
-    var label: String { switch self { case .video: "视频"; case .subtitle: "字幕"; case .other: "其他" } }
+    var label: String { switch self { case .video: L("视频"); case .subtitle: L("字幕"); case .other: L("其他") } }
     var symbol: String { switch self { case .video: "play.rectangle.fill"; case .subtitle: "captions.bubble.fill"; case .other: "doc.fill" } }
 }
 
@@ -192,11 +192,11 @@ struct NewTaskView: View {
     }
 
     private var heading: String {
-        if !model.single { return "批量下载（\(model.links.count) 个）" }
+        if !model.single { return String(localized: "批量下载（\(model.links.count) 个）") }
         switch model.kind {
-        case .magnet, .torrentFile: return "新建 BT 任务"
-        case .videoSite: return "新建视频任务"
-        default: return "新建下载任务"
+        case .magnet, .torrentFile: return L("新建 BT 任务")
+        case .videoSite: return L("新建视频任务")
+        default: return L("新建下载任务")
         }
     }
 
@@ -207,16 +207,16 @@ struct NewTaskView: View {
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.tint.opacity(0.14)))
             VStack(alignment: .leading, spacing: 4) {
                 if model.single && !model.isTorrent && model.kind != .videoSite {
-                    TextField("文件名", text: $model.title).textFieldStyle(.roundedBorder).font(.system(size: 14))
+                    TextField(L("文件名"), text: $model.title).textFieldStyle(.roundedBorder).font(.system(size: 14))
                 } else {
-                    Text(model.single ? model.title : "\(model.links.count) 个下载链接")
+                    Text(model.single ? model.title : String(localized: "\(model.links.count) 个下载链接"))
                         .font(.system(size: 15, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 }
                 HStack(spacing: 8) {
                     if let k = model.kind { Text(k.label) }
                     if model.resolving {
                         ProgressView().controlSize(.mini)
-                        Text(model.kind == .magnet ? "正在获取文件列表，磁力可能需要一会儿，也可以直接下载" : "正在读取文件信息")
+                        Text(model.kind == .magnet ? L("正在获取文件列表，磁力可能需要一会儿，也可以直接下载") : L("正在读取文件信息"))
                     } else if !model.isTorrent, model.size > 0 {
                         Text(model.size.bytesText)
                     } else if model.resolveFailed {
@@ -333,7 +333,7 @@ struct NewTaskView: View {
                 Spacer(minLength: 8)
                 Group {
                     if let free = model.free {
-                        Text(model.notEnoughSpace ? "空间不足，需 \(model.selectedSize.bytesText)" : "剩余 \(free.bytesText)")
+                        Text(model.notEnoughSpace ? String(localized: "空间不足，需 \(model.selectedSize.bytesText)") : String(localized: "剩余 \(free.bytesText)"))
                             .foregroundStyle(model.notEnoughSpace ? Theme.failed : Theme.text)
                     } else {
                         Text("硬盘未连接").foregroundStyle(Theme.failed)

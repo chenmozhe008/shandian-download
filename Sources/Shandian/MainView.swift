@@ -20,9 +20,9 @@ struct MainView: View {
                     }
                     .ignoresSafeArea()
                 }
-                .navigationTitle(store.section.title)
+                .navigationTitle(L(store.section.title))
                 .toolbar { ToolbarItems(store: store) }
-                .searchable(text: $store.search, placement: .toolbar, prompt: "搜索")
+                .searchable(text: $store.search, placement: .toolbar, prompt: L("搜索"))
         }
         .tint(Theme.tint)
         .onDrop(of: [.fileURL, .url, .text], isTargeted: nil) { providers in
@@ -62,13 +62,13 @@ enum RemovalConfirm {
             return FileManager.default.fileExists(atPath: f.path)
         }()
         let alert = NSAlert()
-        alert.messageText = "移除「\(item.title)」？"
-        alert.informativeText = item.isActive ? "下载将停止。" : hasFiles ? "任务移到回收站，可以重新下载。" : "文件已不在原位置，只移除任务。"
-        alert.addButton(withTitle: "移除")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = String(localized: "移除「\(item.title)」？")
+        alert.informativeText = item.isActive ? L("下载将停止。") : hasFiles ? L("任务移到回收站，可以重新下载。") : L("文件已不在原位置，只移除任务。")
+        alert.addButton(withTitle: L("移除"))
+        alert.addButton(withTitle: L("取消"))
         if hasFiles {
             alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = item.isActive ? "同时将已下载的部分移到废纸篓" : "同时将文件移到废纸篓"
+            alert.suppressionButton?.title = item.isActive ? L("同时将已下载的部分移到废纸篓") : L("同时将文件移到废纸篓")
             alert.suppressionButton?.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
         }
         let finish: (NSApplication.ModalResponse) -> Void = { r in
@@ -113,7 +113,7 @@ private struct Sidebar: View {
 
     /// 整块都能点：纯文字按钮只有笔画算点中，图标和文字之间、上下边缘都点不到（11-05 用户：要多点一下）
     private func sidebarLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage).fixedSize()
+        Label(L(title), systemImage: systemImage).fixedSize()
             .padding(.vertical, 5).padding(.horizontal, 4)
             .contentShape(Rectangle())
     }
@@ -157,7 +157,7 @@ private struct Sidebar: View {
     private func row(_ p: Pane, _ icon: Image) -> some View {
         let n = store.count(p)
         // 图标颜色交给系统：未选中用 App 强调色（Assets 里的 AccentColor），选中时变白
-        return Label { Text(p.title) } icon: { icon }
+        return Label { Text(L(p.title)) } icon: { icon }
             .badge(n > 0 ? Text("\(n)").monospacedDigit() : nil)
             .tag(p)
     }
@@ -226,7 +226,7 @@ private struct UpdateBadge: View {
         case .downloading(let fraction):
             HStack(spacing: 6) {
                 ProgressView(value: fraction).frame(width: 54).tint(Theme.tint)
-                Text(fraction > 0 ? "\(Int(fraction * 100))%" : "连接中").monospacedDigit().fixedSize()
+                Text(fraction > 0 ? "\(Int(fraction * 100))%" : L("连接中")).monospacedDigit().fixedSize()
             }
             .help("正在下载新版本")
         case .installing:
@@ -258,19 +258,19 @@ private struct ToolbarItems: ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             if store.section != .active {
                 Button { completedRowLayout.toggle() } label: {
-                    Label(completedRowLayout ? "切换为卡片排列" : "切换为逐行排列",
+                    Label(completedRowLayout ? L("切换为卡片排列") : L("切换为逐行排列"),
                           systemImage: completedRowLayout ? "square.grid.2x2" : "list.bullet")
                 }
-                .help(completedRowLayout ? "切换为卡片排列" : "切换为逐行排列")
+                .help(completedRowLayout ? L("切换为卡片排列") : L("切换为逐行排列"))
             }
             Button { store.toggleAll() } label: {
                 // 带文字：只有图标时看不出是总开关（11-05 用户反馈）
-                Label(store.allPaused ? "全部继续" : "全部暂停", systemImage: store.allPaused ? "play.fill" : "pause.fill")
+                Label(store.allPaused ? L("全部继续") : L("全部暂停"), systemImage: store.allPaused ? "play.fill" : "pause.fill")
                     .labelStyle(.titleAndIcon).font(.system(size: 13, weight: .semibold))
                     .padding(.horizontal, 4)
             }
             .buttonStyle(.bordered)
-            .help(store.allPaused ? "全部继续（包括迅雷里的任务）" : "全部暂停（包括迅雷里的任务）")
+            .help(store.allPaused ? L("全部继续（包括迅雷里的任务）") : L("全部暂停（包括迅雷里的任务）"))
             .disabled(store.items.filter(\.isActive).isEmpty)
             Button { store.showNewSheet = true } label: {
                 Label("新建下载", systemImage: "plus").labelStyle(.titleAndIcon).font(.system(size: 13, weight: .semibold))
@@ -289,8 +289,8 @@ private struct Banners: View {
     var body: some View {
         VStack(spacing: 8) {
             if let links = store.clipboardLinks {
-                bar(icon: "doc.on.clipboard", text: links.count > 1 ? "剪贴板中有 \(links.count) 个链接" : LinkKind.isWeChatChannelShare(links[0]) ? "检测到视频号分享链接" : "剪贴板中有链接：" + DownloadStore.displayName(links[0]), tint: Theme.tint) {
-                    Button(links.count == 1 && LinkKind.isWeChatChannelShare(links[0]) ? "查看方法" : "下载") { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
+                bar(icon: "doc.on.clipboard", text: links.count > 1 ? String(localized: "剪贴板中有 \(links.count) 个链接") : LinkKind.isWeChatChannelShare(links[0]) ? L("检测到视频号分享链接") : L("剪贴板中有链接：") + DownloadStore.displayName(links[0]), tint: Theme.tint) {
+                    Button(links.count == 1 && LinkKind.isWeChatChannelShare(links[0]) ? L("查看方法") : L("下载")) { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
                     Button("忽略") { store.clipboardLinks = nil }.buttonStyle(.plain).foregroundStyle(Theme.sub).font(.system(size: 12))
                 }
             }
@@ -298,7 +298,7 @@ private struct Banners: View {
                 bar(icon: DownloadStore.noticeNeedsAttention(n) ? "exclamationmark.circle.fill" : "info.circle.fill", text: n,
                     tint: DownloadStore.noticeNeedsAttention(n) ? Theme.failed : Theme.tint) {
                     if let action = store.noticeAction, action.forText == n {
-                        Button(action.title) { action.run() }
+                        Button(L(action.title)) { action.run() }
                             .buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
                     }
                     Button {
@@ -317,7 +317,7 @@ private struct Banners: View {
             Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(tint)
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(tint.opacity(0.16)))
-            Text(text).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.text)
+            Text(L(text)).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Theme.text)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true).help(text)
             Spacer(minLength: 8)
             actions()
@@ -343,7 +343,7 @@ private struct ActivePage: View {
                 EmptyState(store: store)
             } else {
                 SpeedHero(store: store).frame(height: 156).padding(.top, 8).padding(.bottom, 20)
-                Text(items.allSatisfy(\.isFailed) ? "未完成" : "进行中").font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
+                Text(items.allSatisfy(\.isFailed) ? L("未完成") : L("进行中")).font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
@@ -392,7 +392,7 @@ private struct SpeedHero: View {
     var body: some View {
         let speed = store.totalSpeed
         let moving = store.activeItems.contains { $0.status == .running || $0.status == .waiting || $0.isResolving }
-        let parts = moving ? speed.speedText.split(separator: " ") : ["已暂停"]
+        let parts = moving ? speed.speedText.split(separator: " ").map { String($0) } : [L("已暂停")]
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         ZStack(alignment: .topLeading) {
             shape.fill(LinearGradient(colors: [Theme.tint.opacity(0.10), Theme.tint.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -403,7 +403,7 @@ private struct SpeedHero: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("本机下载速度").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.sub)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(parts.first.map(String.init) ?? "0").font(.system(size: 52, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(parts.first ?? "0").font(.system(size: 52, weight: .bold, design: .rounded)).monospacedDigit()
                         .contentTransition(.numericText())
                     Text(parts.dropFirst().joined(separator: " ")).font(.system(size: 19, weight: .semibold, design: .rounded)).foregroundStyle(Theme.sub)
                 }
@@ -416,7 +416,7 @@ private struct SpeedHero: View {
                     let checking = store.activeItems.filter(\.checking).count - reclaiming
                     if reclaiming > 0 { Text("\(reclaiming) 项正在取回迅雷素材") }
                     if checking > 0 { Text("\(checking) 项正在校验已下载的部分") }
-                    let eta = remainingText(store.etaAll).replacingOccurrences(of: "剩余 ", with: "")
+                    let eta = remainingText(store.etaAll).replacingOccurrences(of: L("剩余 "), with: "").replacingOccurrences(of: " left", with: "")
                     if moving, !eta.isEmpty { Text("预计 \(eta)后全部完成") }
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).padding(.top, 4)
@@ -461,7 +461,7 @@ private struct SpeedChart: View {
 /// 空闲页：带暖光的放置区（⌘V 或拖入），下面列支持的来源和累计下载
 private struct EmptyState: View {
     @ObservedObject var store: DownloadStore
-    private let sources = ["磁力", "种子", "ed2k", "直链", "网盘", "B 站", "YouTube", "X", "微博", "小红书", "新片场", "抖音", "豆瓣预告", "微信视频号"]
+    private let sources = [L("磁力"), L("种子"), "ed2k", L("直链"), L("网盘"), L("B 站"), "YouTube", "X", L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号")]
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -536,7 +536,7 @@ struct TaskRow: View {
                     if case .thunder = item.source {
                         ThunderTag(active: item.isActive, downloaded: item.downloaded,
                                    createdAt: item.createdAt, located: item.thunderLocated)
-                    } else { Text(item.originLabel ?? item.origin) }
+                    } else { Text(L(item.originLabel ?? item.origin)) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
@@ -548,7 +548,7 @@ struct TaskRow: View {
                     .padding(.top, 7)
             }
             VStack(alignment: .trailing, spacing: 3) {
-                Text(primary).font(.system(size: 15, weight: .medium)).monospacedDigit().frame(height: 20)
+                Text(L(primary)).font(.system(size: 15, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8).frame(height: 20)
                 if item.thunderClosed {
                     Button { store.openThunder() } label: {
                         Text("打开迅雷").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
@@ -560,37 +560,37 @@ struct TaskRow: View {
                     Button {
                         if store.hasCloudRoute { store.sendToCloud(item) } else { store.offerRescue(item) }
                     } label: {
-                        Text(store.hasCloudRoute ? "太慢？云盘离线" : "下不动？换条路").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
+                        Text(store.hasCloudRoute ? L("太慢？云盘离线") : L("下不动？换条路")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
                     }
                     .buttonStyle(.plain)
                     .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再取回本机")
                     .frame(height: 17)
                 } else {
                     // 第二行固定占位：文字有时为空，高度变了第一行会上下跳
-                    Text(secondary).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit().lineLimit(1).frame(height: 17)
+                    Text(L(secondary)).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit().lineLimit(1).frame(height: 17)
                 }
             }
             .frame(width: 140, alignment: .trailing)
             HStack(spacing: 6) {
                 if item.canStream {
                     CircleIconButton(symbol: store.buffering.contains(item.id) ? "hourglass" : "play.tv",
-                                     help: store.buffering.contains(item.id) ? "正在缓冲片头" : "边下边播：一边下载一边观看") { store.playWhileDownloading(item) }
+                                     help: store.buffering.contains(item.id) ? L("正在缓冲片头") : L("边下边播：一边下载一边观看")) { store.playWhileDownloading(item) }
                 }
                 if case .thunder = item.source, item.isActive {
                     // 迅雷那边的任务：边下边播直接打开迅雷已写好的部分；暂停到迅雷里操作
-                    if item.file != nil { CircleIconButton(symbol: "play.tv", help: "边下边播：一边下载一边观看") { store.playThunderFile(item) } }
-                    CircleIconButton(symbol: "arrow.uturn.backward", help: "收回到闪电：保留迅雷已下的部分，改由闪电接着下") { store.reclaimFromThunder(item) }
+                    if item.file != nil { CircleIconButton(symbol: "play.tv", help: L("边下边播：一边下载一边观看")) { store.playThunderFile(item) } }
+                    CircleIconButton(symbol: "arrow.uturn.backward", help: L("收回到闪电：保留迅雷已下的部分，改由闪电接着下")) { store.reclaimFromThunder(item) }
                     if ThunderBridge.installed {
-                        CircleIconButton(symbol: "arrow.up.forward.app", help: "打开迅雷查看这条任务") { store.openThunder() }
+                        CircleIconButton(symbol: "arrow.up.forward.app", help: L("打开迅雷查看这条任务")) { store.openThunder() }
                     }
                 }
                 if case .engine = item.source {
                     CircleIconButton(symbol: item.status == .paused || item.isFailed ? "play.fill" : "pause.fill",
-                                     help: item.status == .paused ? "继续下载" : item.isFailed ? "重新开始" : "暂停下载") { store.togglePause(item) }
+                                     help: item.status == .paused ? L("继续下载") : item.isFailed ? L("重新开始") : L("暂停下载")) { store.togglePause(item) }
                 } else if item.isFailed {
-                    CircleIconButton(symbol: "arrow.clockwise", help: "重试") { store.retry(item) }
+                    CircleIconButton(symbol: "arrow.clockwise", help: L("重试")) { store.retry(item) }
                 }
-                CircleIconButton(symbol: "xmark", help: "移除这条任务") { store.removalTarget = item }
+                CircleIconButton(symbol: "xmark", help: L("移除这条任务")) { store.removalTarget = item }
             }
             .frame(width: 164, alignment: .trailing)
             .opacity(hover.on || selected ? 1 : 0)
@@ -619,46 +619,46 @@ struct TaskRow: View {
 
     private var sizeText: String {
         if item.total == 0 { return "" }
-        if item.thunderDiskEstimate { return "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
-        if item.fromThunder, item.checking { return "已取回 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
-        if item.fromThunder, item.isActive { return "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)" }
+        if item.thunderDiskEstimate { return String(localized: "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
+        if item.fromThunder, item.checking { return String(localized: "已取回 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
+        if item.fromThunder, item.isActive { return String(localized: "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
         return item.downloaded >= item.total ? item.total.bytesText : "\(item.downloaded.bytesText) / \(item.total.bytesText)"
     }
     private var primary: String {
         switch item.status {
-        case .running where item.videoStage == .preparing: "正在解析"
-        case .running where item.videoStage == .merging: "正在合并"
-        case .running where item.videoStage == .converting: "正在转换"
-        case .running where item.thunderClosed: "迅雷没打开"
-        case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
-        case .running where item.cloudProgress == 100: "云端已下好"
-        case .running where item.cloudProgress != nil: "云端下载中"
-        case .running where item.fromThunder && item.checking: "正在取回迅雷素材"
-        case .running: item.verificationFailed ? "检查失败" : item.checking ? "正在检查" : item.avgSpeed.speedText
-        case .paused: "已暂停"
-        case .waiting: "排队中"
-        case .resolving: "正在解析"
-        case .failed: "失败"
-        case .done: "已完成"
+        case .running where item.videoStage == .preparing: L("正在解析")
+        case .running where item.videoStage == .merging: L("正在合并")
+        case .running where item.videoStage == .converting: L("正在转换")
+        case .running where item.thunderClosed: L("迅雷没打开")
+        case .running where item.isThunder: item.avgSpeed > 0 ? L("迅雷下载中") : L("请查看迅雷")
+        case .running where item.cloudProgress == 100: L("云端已下好")
+        case .running where item.cloudProgress != nil: L("云端下载中")
+        case .running where item.fromThunder && item.checking: L("正在取回迅雷素材")
+        case .running: item.verificationFailed ? L("检查失败") : item.checking ? L("正在检查") : item.avgSpeed.speedText
+        case .paused: L("已暂停")
+        case .waiting: L("排队中")
+        case .resolving: L("正在解析")
+        case .failed: L("失败")
+        case .done: L("已完成")
         }
     }
     private var secondary: String {
         switch item.status {
-        case .running where item.cloudProgress == 100: "正在准备取回本机"
-        case .running where item.cloudProgress != nil: "\(item.cloudProgress ?? 0)%，完成后取回本机"
-        case .running where item.isThunder: item.avgSpeed > 0 ? "写入约 \(item.avgSpeed.speedText)" : "状态以迅雷为准"
-        case .running where store.buffering.contains(item.id): "正在打开播放器"
-        case .running where item.verificationFailed: "请重新检查已下载文件"
-        case .running where item.checking: item.fromThunder ? "取完自动继续下载" : "正在检查已下载的文件"
-        case .running where item.waitingLastPiece: "漏了最后一小块，正在补"
+        case .running where item.cloudProgress == 100: L("正在准备取回本机")
+        case .running where item.cloudProgress != nil: String(localized: "\(item.cloudProgress ?? 0)%，完成后取回本机")
+        case .running where item.isThunder: item.avgSpeed > 0 ? String(localized: "写入约 \(item.avgSpeed.speedText)") : L("状态以迅雷为准")
+        case .running where store.buffering.contains(item.id): L("正在打开播放器")
+        case .running where item.verificationFailed: L("请重新检查已下载文件")
+        case .running where item.checking: item.fromThunder ? L("取完自动继续下载") : L("正在检查已下载的文件")
+        case .running where item.waitingLastPiece: L("漏了最后一小块，正在补")
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
-        case .running where item.videoStage == .merging: "合并视频和音频"
-        case .running where item.videoStage == .converting: "转换为 M4A"
-        case .running where item.videoStage == .audio && item.avgSpeed == 0: "正在下载音频"
+        case .running where item.videoStage == .merging: L("合并视频和音频")
+        case .running where item.videoStage == .converting: L("转换为 M4A")
+        case .running where item.videoStage == .audio && item.avgSpeed == 0: L("正在下载音频")
         case .running:
-            item.avgSpeed >= 1024 ? (remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)).isEmpty ? "速度较慢" : remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed))) : "正在连接"
+            item.avgSpeed >= 1024 ? (remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)).isEmpty ? L("速度较慢") : remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed))) : L("正在连接")
         case .resolving(let since):
-            Date().timeIntervalSince(since) > 180 ? "资源较冷门，仍在尝试" : "正在寻找资源"
+            Date().timeIntervalSince(since) > 180 ? L("资源较冷门，仍在尝试") : L("正在寻找资源")
         case .paused, .waiting: item.total > 0 ? "\(Int(item.progress * 100))%" : ""
         default: ""
         }
@@ -672,7 +672,7 @@ private extension Item {
     /// 下载中的 BT 电影可以边下边播
     var canStream: Bool {
         guard case .engine = source, isActive, !isFailed, category == .movie else { return false }
-        return origin == "磁力" || origin == "种子文件"
+        return origin == L("磁力") || origin == L("种子文件")
     }
 }
 
@@ -688,7 +688,7 @@ private struct ThunderTag: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 9.5, weight: .bold))
-            Text(text).font(.system(size: 11.5, weight: .semibold))
+            Text(L(text)).font(.system(size: 11.5, weight: .semibold))
         }
         .foregroundStyle(color)
         .padding(.horizontal, 7).frame(height: 18)
@@ -698,9 +698,9 @@ private struct ThunderTag: View {
     }
 
     private var text: String {
-        guard active else { return "迅雷下载完成" }
-        if downloaded > 0 { return "迅雷任务" }
-        return "请在迅雷查看"
+        guard active else { return L("迅雷下载完成") }
+        if downloaded > 0 { return L("迅雷任务") }
+        return L("请在迅雷查看")
     }
     private var symbol: String {
         guard active else { return "checkmark.circle.fill" }
@@ -714,7 +714,7 @@ private struct ThunderTag: View {
     }
     private var help: String {
         guard active, downloaded == 0 else { return text }
-        return "尚未读取到可靠进度，请到迅雷中查看任务状态"
+        return L("尚未读取到可靠进度，请到迅雷中查看任务状态")
     }
 }
 
@@ -763,7 +763,7 @@ private struct ItemMenu: View {
             if item.isFailed {
                 Button("重试") { store.retry(item) }
             } else if case .engine = item.source, item.isActive {
-                Button(item.status == .paused ? "继续" : "暂停") { store.togglePause(item) }
+                Button(item.status == .paused ? L("继续") : L("暂停")) { store.togglePause(item) }
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
             if case .engine = item.source, item.isActive {
@@ -776,9 +776,9 @@ private struct ItemMenu: View {
                 if item.thunderHasOriginal { Button("不用迅雷，从闪电原来的进度接着下") { store.restoreOriginalFromThunder(item) } }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
-            if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
+            if item.isActive, !item.link.isEmpty, item.origin == L("磁力") || item.origin == L("种子文件") {
                 Button("交给云盘离线（PikPak）") { store.sendToCloud(item) }
-                Button(ThunderBridge.installed ? "用迅雷下载" : "用迅雷下载（需先安装迅雷）…") { store.handToThunder(item) }
+                Button(ThunderBridge.installed ? L("用迅雷下载") : L("用迅雷下载（需先安装迅雷）…")) { store.handToThunder(item) }
             }
             Divider()
             Button("移除…") { store.removalTarget = item }
@@ -836,19 +836,19 @@ private struct DoneRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 6) {
                         if !item.fileGone {
-                            CircleIconButton(symbol: "folder", help: "在访达中显示") { store.reveal(item) }
+                            CircleIconButton(symbol: "folder", help: L("在访达中显示")) { store.reveal(item) }
                         }
-                        CircleIconButton(symbol: "trash", help: "移除") { store.removalTarget = item }
+                        CircleIconButton(symbol: "trash", help: L("移除")) { store.removalTarget = item }
                     }
                     .frame(width: 66, alignment: .trailing)
                     .opacity(hovering || store.selectedID == item.id ? 1 : 0)
                     .allowsHitTesting(hovering || store.selectedID == item.id)
-                    Text(item.fileGone ? "文件不在原位置" : "已完成")
+                    Text(item.fileGone ? L("文件不在原位置") : L("已完成"))
                         .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
                         .fixedSize()
                 }
                 HStack(spacing: 8) {
-                    if !item.origin.isEmpty { Text(item.origin) }
+                    if !item.origin.isEmpty { Text(L(item.origin)) }
                     if item.total > 0 { Text(item.total.bytesText) }
                     if item.createdAt != .distantPast {
                         Text("添加于 " + item.createdAt.formatted(.dateTime.month().day().hour().minute()))
@@ -865,7 +865,7 @@ private struct DoneRow: View {
         .onTapGesture(count: 2) { store.primaryAction(item) }
         .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.fileGone ? "文件已不在原位置，可右键从列表移除" : "双击打开")
+        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开"))
     }
 
 }
@@ -890,7 +890,7 @@ private struct DoneCard: View {
                     Text("文件已删除")
                 } else {
                     Text(item.total.bytesText)
-                    Text(item.origin)
+                    Text(L(item.origin))
                 }
             }
             .font(.system(size: 12.5)).foregroundStyle(Theme.sub).padding(.top, 2)
@@ -899,7 +899,7 @@ private struct DoneCard: View {
         .onTapGesture(count: 2) { store.primaryAction(item) }
         .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.fileGone ? "文件已不在原位置，可右键从列表移除" : "双击打开")
+        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开"))
     }
 }
 
@@ -916,7 +916,7 @@ private struct CategoryPage: View {
                 Text("进行中").font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
                 ForEach(active) { TaskRow(store: store, item: $0) }
                 Spacer().frame(height: 20)
-                DonePage(store: store, items: all.filter { !$0.isActive }, subtitle: "已完成", rowLayout: rowLayout)
+                DonePage(store: store, items: all.filter { !$0.isActive }, subtitle: L("已完成"), rowLayout: rowLayout)
             } else {
                 DonePage(store: store, items: all, rowLayout: rowLayout).padding(.top, 8)
             }
@@ -962,7 +962,7 @@ private struct NewDownloadSheet: View {
                 Spacer()
                 Button("取消") { store.showNewSheet = false }.keyboardShortcut(.cancelAction)
                 // 开着确认框时下一步是确认框（选位置、种子文件、视频画质）
-                Button(NewTaskPanels.ask ? "下一步" : links.count > 1 ? "下载 \(links.count) 项" : "下载") { store.submitNewSheet() }
+                Button(NewTaskPanels.ask ? L("下一步") : links.count > 1 ? String(localized: "下载 \(links.count) 项") : L("下载")) { store.submitNewSheet() }
                     .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).tint(Theme.tint)
                     .disabled(links.isEmpty)
             }
@@ -977,12 +977,12 @@ private struct NewDownloadSheet: View {
     }
     private func label(_ k: LinkKind?) -> String {
         switch k {
-        case .magnet: "磁力"
-        case .torrentFile: "种子文件"
+        case .magnet: L("磁力")
+        case .torrentFile: L("种子文件")
         case .ed2k: "ed2k"
-        case .videoSite: "视频网站"
-        case .http: "直链"
-        case nil: "无法识别"
+        case .videoSite: L("视频网站")
+        case .http: L("直链")
+        case nil: L("无法识别")
         }
     }
     private func folderName(_ k: LinkKind?) -> String { k.map { Folders.displayName(Folders.directory(for: $0)) } ?? "—" }
@@ -1010,7 +1010,7 @@ private struct TrashPage: View {
                 }
             }
             .padding(.vertical, 12)
-            .alert("清空回收站？", isPresented: $confirmClear) {
+            .alert(L("清空回收站？"), isPresented: $confirmClear) {
                 Button("清空", role: .destructive) { store.clearRecords() }
                 Button("取消", role: .cancel) {}
             } message: {
@@ -1047,21 +1047,21 @@ private struct TrashRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(r.title).font(.system(size: 15, weight: .medium)).lineLimit(1).truncationMode(.middle)
                 HStack(spacing: 12) {
-                    Text(r.origin)
+                    Text(L(r.origin))
                     if r.size > 0 { Text(r.size.bytesText) }
-                    Text(r.removedAt.formatted(date: .abbreviated, time: .shortened) + " 移除")
-                    Text(r.filesTrashed ? "文件已移到废纸篓" : exists ? "文件还在原位置" : "文件已不在")
+                    Text(r.removedAt.formatted(date: .abbreviated, time: .shortened) + L(" 移除"))
+                    Text(r.filesTrashed ? L("文件已移到废纸篓") : exists ? L("文件还在原位置") : L("文件已不在"))
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).lineLimit(1)
             }
             Spacer()
             // 和下载列表同一套圆形按钮，悬停显示说明
             HStack(spacing: 6) {
-                if !r.link.isEmpty { CircleIconButton(symbol: "arrow.clockwise", help: "重新下载") { store.redownload(r) } }
+                if !r.link.isEmpty { CircleIconButton(symbol: "arrow.clockwise", help: L("重新下载")) { store.redownload(r) } }
                 if exists, let p = r.path {
-                    CircleIconButton(symbol: "folder", help: "在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) }
+                    CircleIconButton(symbol: "folder", help: L("在访达中显示")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) }
                 }
-                CircleIconButton(symbol: "xmark", help: "从回收站删除这条记录") { store.deleteRecord(r) }
+                CircleIconButton(symbol: "xmark", help: L("从回收站删除这条记录")) { store.deleteRecord(r) }
             }
         }
         .padding(.horizontal, 10)
@@ -1093,7 +1093,7 @@ private struct TrashCard: View {
             Text(r.title).font(.system(size: 14, weight: .medium)).lineLimit(2).help(r.title)
             Text(r.origin + (r.size > 0 ? " · " + r.size.bytesText : ""))
                 .font(.system(size: 12)).foregroundStyle(Theme.sub).lineLimit(1)
-            Text(r.filesTrashed ? "文件已移到废纸篓" : exists ? "文件还在原位置" : "文件已不在")
+            Text(r.filesTrashed ? L("文件已移到废纸篓") : exists ? L("文件还在原位置") : L("文件已不在"))
                 .font(.system(size: 12)).foregroundStyle(Theme.sub).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

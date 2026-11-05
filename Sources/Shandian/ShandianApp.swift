@@ -9,7 +9,7 @@ struct ShandianApp: App {
 
     var body: some Scene {
         // 单个 Window：关掉窗口下载照常进行（菜单栏还在），点 Dock 图标或菜单栏「打开」叫回来
-        Window("闪电全能下载", id: "main") {
+        Window(L("闪电全能下载"), id: "main") {
             MainView(store: store)
                 .frame(minWidth: 960, minHeight: 620)
                 .onAppear { delegate.store = store }
@@ -38,17 +38,17 @@ struct ShandianApp: App {
             SettingsView(store: store)
         }
 
-        Window("浏览器扩展", id: "browser") {
+        Window(L("浏览器扩展"), id: "browser") {
             BrowserSetupView(token: store.engineToken)
         }
         .windowResizability(.contentSize)
 
-        Window("登录 PikPak", id: "pikpak-login") {
+        Window(L("登录 PikPak"), id: "pikpak-login") {
             PikPakLoginWindow()
         }
         .windowResizability(.contentSize)
 
-        Window("关于闪电全能下载", id: "about") {
+        Window(L("关于闪电全能下载"), id: "about") {
             AboutView()
         }
         .windowResizability(.contentSize)
@@ -176,7 +176,7 @@ struct MenuBarContent: View {
         }
         Divider()
         Button("打开闪电全能下载") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
-        Button(store.allPaused ? "全部继续" : "全部暂停") { store.toggleAll() }.disabled(active.isEmpty)
+        Button(store.allPaused ? L("全部继续") : L("全部暂停")) { store.toggleAll() }.disabled(active.isEmpty)
         Divider()
         ClipboardToggle()
         BrowserMenuButton()

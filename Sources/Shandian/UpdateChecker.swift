@@ -151,8 +151,8 @@ final class UpdateChecker: ObservableObject {
                 offer(release)
             } else {
                 let alert = NSAlert()
-                alert.messageText = release == nil ? "无法检查更新" : "闪电全能下载已是最新版本"
-                alert.informativeText = release == nil ? "无法获取 GitHub 发布信息，可能是网络异常或请求次数受限，请稍后重试。" : "当前版本 \(AppInfo.version)。"
+                alert.messageText = release == nil ? L("无法检查更新") : L("闪电全能下载已是最新版本")
+                alert.informativeText = release == nil ? L("无法获取 GitHub 发布信息，可能是网络异常或请求次数受限，请稍后重试。") : String(localized: "当前版本 \(AppInfo.version)。")
                 alert.runModal()
             }
         }
@@ -177,25 +177,25 @@ final class UpdateChecker: ObservableObject {
 
     private func showRetryCheckAlert() {
         let alert = NSAlert()
-        alert.messageText = "暂时无法获取更新信息"
-        alert.informativeText = "请检查网络或代理设置，恢复连接后重试。"
-        alert.addButton(withTitle: "重试")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("暂时无法获取更新信息")
+        alert.informativeText = L("请检查网络或代理设置，恢复连接后重试。")
+        alert.addButton(withTitle: L("重试"))
+        alert.addButton(withTitle: L("取消"))
         if alert.runModal() == .alertFirstButtonReturn { checkFromMenu() }
     }
 
     /// What is new, and one button that downloads, installs and reopens.
     private func offer(_ release: Release) {
         let alert = NSAlert()
-        alert.messageText = "新版本 \(release.version) 可用"
-        var text = release.asset == nil ? "当前版本 \(AppInfo.version)。暂时无法获取自动更新所需的安装包信息，请检查网络或代理设置后重试。" : "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。"
+        alert.messageText = String(localized: "新版本 \(release.version) 可用")
+        var text = release.asset == nil ? String(localized: "当前版本 \(AppInfo.version)。暂时无法获取自动更新所需的安装包信息，请检查网络或代理设置后重试。") : String(localized: "当前版本 \(AppInfo.version)。下载完成后自动更新并重新打开；正在下载的任务会先暂停，重新打开后继续。")
         if !release.notes.isEmpty {
             text += "\n\n" + release.notes.prefix(6).map { "• " + $0 }.joined(separator: "\n")
         }
         alert.informativeText = text
-        alert.addButton(withTitle: release.asset == nil ? "重新检查" : "更新并重新打开")
-        alert.addButton(withTitle: "以后")
-        if release.asset == nil { alert.addButton(withTitle: "前往下载页面") }
+        alert.addButton(withTitle: release.asset == nil ? L("重新检查") : L("更新并重新打开"))
+        alert.addButton(withTitle: L("以后"))
+        if release.asset == nil { alert.addButton(withTitle: L("前往下载页面")) }
         let response = alert.runModal()
         if response == .alertThirdButtonReturn, release.asset == nil { NSWorkspace.shared.open(release.page); return }
         guard response == .alertFirstButtonReturn else { return }
@@ -222,12 +222,12 @@ final class UpdateChecker: ObservableObject {
                 if case .downloading = phase { wasDownloading = true } else { wasDownloading = false }
                 phase = .idle
                 let alert = NSAlert()
-                alert.messageText = "未能完成更新"
-                let hint = wasDownloading ? "请检查网络或代理设置后重试。" : "更新文件无法使用，请重新下载后重试。"
+                alert.messageText = L("未能完成更新")
+                let hint = wasDownloading ? L("请检查网络或代理设置后重试。") : L("更新文件无法使用，请重新下载后重试。")
                 alert.informativeText = "\(error.localizedDescription)\n\n\(hint)"
-                alert.addButton(withTitle: "重试")
-                alert.addButton(withTitle: "取消")
-                alert.addButton(withTitle: "前往下载页面")
+                alert.addButton(withTitle: L("重试"))
+                alert.addButton(withTitle: L("取消"))
+                alert.addButton(withTitle: L("前往下载页面"))
                 let response = alert.runModal()
                 if response == .alertFirstButtonReturn { install(release) }
                 else if response == .alertThirdButtonReturn { NSWorkspace.shared.open(release.page) }
@@ -244,17 +244,17 @@ final class UpdateChecker: ObservableObject {
         } catch {
             phase = .idle
             let alert = NSAlert()
-            alert.messageText = "未能自动安装更新"
+            alert.messageText = L("未能自动安装更新")
             guard FileManager.default.fileExists(atPath: app.path) else {
                 alert.informativeText = error.localizedDescription
-                alert.addButton(withTitle: "好")
+                alert.addButton(withTitle: L("好"))
                 alert.runModal()
                 return
             }
-            alert.informativeText = "\(error.localizedDescription)\n\n更新包已下载并校验。可以重试，或显示已下载的应用并手动替换；系统可能要求管理员授权。"
-            alert.addButton(withTitle: "重试安装")
-            alert.addButton(withTitle: "显示已下载的应用")
-            alert.addButton(withTitle: "取消")
+            alert.informativeText = String(localized: "\(error.localizedDescription)\n\n更新包已下载并校验。可以重试，或显示已下载的应用并手动替换；系统可能要求管理员授权。")
+            alert.addButton(withTitle: L("重试安装"))
+            alert.addButton(withTitle: L("显示已下载的应用"))
+            alert.addButton(withTitle: L("取消"))
             let response = alert.runModal()
             if response == .alertFirstButtonReturn { installPrepared(app) }
             else if response == .alertSecondButtonReturn { NSWorkspace.shared.activateFileViewerSelecting([app]) }
@@ -287,18 +287,18 @@ final class UpdateChecker: ObservableObject {
         if let digest = release.digest, digest.hasPrefix("sha256:") {
             let data = try Data(contentsOf: zip, options: .mappedIfSafe)
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            guard hash == digest.dropFirst("sha256:".count).lowercased() else { throw UpdateError("下载的文件不完整或已损坏。") }
+            guard hash == digest.dropFirst("sha256:".count).lowercased() else { throw UpdateError(L("下载的文件不完整或已损坏。")) }
         }
         let folder = FileManager.default.temporaryDirectory.appending(path: "shandian-update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        guard run("/usr/bin/ditto", ["-x", "-k", zip.path, folder.path]) else { throw UpdateError("无法解压下载的文件。") }
+        guard run("/usr/bin/ditto", ["-x", "-k", zip.path, folder.path]) else { throw UpdateError(L("无法解压下载的文件。")) }
         let apps = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         guard let app = apps.first(where: { $0.pathExtension == "app" }), let bundle = Bundle(url: app),
               bundle.bundleIdentifier == Bundle.main.bundleIdentifier,
               bundle.infoDictionary?["CFBundleShortVersionString"] as? String == release.version else {
-            throw UpdateError("下载的文件不是闪电全能下载 \(release.version)。")
+            throw UpdateError(String(localized: "下载的文件不是闪电全能下载 \(release.version)。"))
         }
-        guard run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) else { throw UpdateError("新版本的签名校验未通过。") }
+        guard run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) else { throw UpdateError(L("新版本的签名校验未通过。")) }
         _ = run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", app.path])
         return app
     }
@@ -320,13 +320,13 @@ final class UpdateChecker: ObservableObject {
             var trashed: NSURL?
             try FileManager.default.trashItem(at: target, resultingItemURL: &trashed)
             guard let backup = trashed as URL? else {
-                throw UpdateError("旧版已移入废纸篓，但无法确定其位置；请从废纸篓恢复旧版。")
+                throw UpdateError(L("旧版已移入废纸篓，但无法确定其位置；请从废纸篓恢复旧版。"))
             }
             return backup
         }
         do {
             guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-                throw UpdateError("没有权限写入「\(target.deletingLastPathComponent().path)」。", permissionDenied: true)
+                throw UpdateError(String(localized: "没有权限写入「\(target.deletingLastPathComponent().path)」。"), permissionDenied: true)
             }
             try replaceApp(at: target, with: app, backup: backupOld, scheduleRelaunch: relaunch)
         } catch where isPermissionDenied(error) {
@@ -364,8 +364,9 @@ final class UpdateChecker: ObservableObject {
         var failure: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&failure)
         guard let failure else { return }
-        if failure[NSAppleScript.errorNumber] as? Int == -128 { throw UpdateError("已取消授权，闪电全能下载没有更改。") }
-        throw UpdateError("授权安装失败：\(failure[NSAppleScript.errorMessage] as? String ?? "未知错误")")
+        if failure[NSAppleScript.errorNumber] as? Int == -128 { throw UpdateError(L("已取消授权，闪电全能下载没有更改。")) }
+        let reason = failure[NSAppleScript.errorMessage] as? String ?? L("未知错误")
+        throw UpdateError(String(localized: "授权安装失败：\(reason)"))
     }
 
     /// 把备份和启动操作作为参数，以便在独立临时目录验证失败回滚。
@@ -379,9 +380,9 @@ final class UpdateChecker: ObservableObject {
             let denied = isPermissionDenied(error)
             if let backup {
                 do { try FileManager.default.moveItem(at: backup, to: target) }
-                catch { throw UpdateError("无法替换应用，且自动恢复旧版失败。请从废纸篓恢复旧版。") }
+                catch { throw UpdateError(L("无法替换应用，且自动恢复旧版失败。请从废纸篓恢复旧版。")) }
             }
-            throw UpdateError("无法替换闪电全能下载，旧版已恢复：\(failure)", permissionDenied: denied)
+            throw UpdateError(String(localized: "无法替换闪电全能下载，旧版已恢复：\(failure)"), permissionDenied: denied)
         }
         do {
             try scheduleRelaunch()
@@ -391,9 +392,9 @@ final class UpdateChecker: ObservableObject {
                 try FileManager.default.moveItem(at: target, to: app)
                 if let backup { try FileManager.default.moveItem(at: backup, to: target) }
             } catch {
-                throw UpdateError("无法启动更新后的应用，且恢复旧版失败；请检查废纸篓中的旧版和更新文件。")
+                throw UpdateError(L("无法启动更新后的应用，且恢复旧版失败；请检查废纸篓中的旧版和更新文件。"))
             }
-            throw UpdateError("无法启动更新后的应用，旧版已恢复。")
+            throw UpdateError(L("无法启动更新后的应用，旧版已恢复。"))
         }
     }
 
@@ -447,7 +448,7 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         if let status = (downloadTask.response as? HTTPURLResponse)?.statusCode, status != 200 {
-            continuation?.resume(throwing: UpdateChecker.UpdateError("下载失败（HTTP \(status)）。"))
+            continuation?.resume(throwing: UpdateChecker.UpdateError(String(localized: "下载失败（HTTP \(status)）。")))
             continuation = nil
             return
         }
@@ -463,7 +464,7 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unc
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error else { return }
-        continuation?.resume(throwing: UpdateChecker.UpdateError("下载中断：\(error.localizedDescription)"))
+        continuation?.resume(throwing: UpdateChecker.UpdateError(String(localized: "下载中断：\(error.localizedDescription)")))
         continuation = nil
     }
 }

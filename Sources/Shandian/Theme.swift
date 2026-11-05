@@ -64,6 +64,10 @@ struct GitHubMark: View {
     }
 }
 
+/// 按系统语言取界面文字；表里没有就用中文原文。键见 Resources/en.lproj/Localizable.strings。
+/// 只用于显示，别把结果拿去做判断
+func L(_ text: String) -> String { Bundle.main.localizedString(forKey: text, value: text, table: nil) }
+
 /// 悬浮提示。全 App 只用这一种：系统同款的浅色小标签，出现在按钮下方。
 /// 不用系统 .help：列表每秒刷新，系统提示等不到出现就被打断（11-05 用户：悬停没反应）；
 /// 放在独立小窗里：不会盖住行内的状态文字，也不会被列表边缘裁掉
@@ -86,7 +90,7 @@ enum HoverTip {
 
     private static func present(_ text: String, below view: NSView?) {
         guard let view, let window = view.window else { return }
-        let host = NSHostingView(rootView: Text(text).font(.system(size: 12)).foregroundStyle(.primary)
+        let host = NSHostingView(rootView: Text(L(text)).font(.system(size: 12)).foregroundStyle(.primary)
             .padding(.horizontal, 9).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))

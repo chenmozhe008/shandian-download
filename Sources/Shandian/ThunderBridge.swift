@@ -65,14 +65,14 @@ enum ThunderBridge {
     /// 用户主动要用迅雷、但本机没装时的提示。说清它是什么、装不装都行，再给官网
     static func installAlert() -> NSAlert {
         let alert = NSAlert()
-        alert.messageText = "还没安装迅雷"
+        alert.messageText = L("还没安装迅雷")
         alert.informativeText = """
         「用迅雷下载」要把任务交给本机的迅雷，没装就交不出去。
 
         不装也能照常下磁力、种子和直链，只是国内冷门资源多在迅雷用户之间传，装上通常更快。到官网下载 Mac 版（免费），装好后回来再点一次。
         """
-        alert.addButton(withTitle: "去迅雷官网")
-        alert.addButton(withTitle: "继续用闪电全能下载")
+        alert.addButton(withTitle: L("去迅雷官网"))
+        alert.addButton(withTitle: L("继续用闪电全能下载"))
         return alert
     }
 
@@ -135,7 +135,7 @@ enum ThunderBridge {
         guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
               let wins = winsRef as? [AXUIElement] else { return false }
         for w in wins where (attr(w, kAXTitleAttribute) ?? "").hasPrefix("新建") {
-            if let b = findButton(w, title: "立即下载", depth: 0) {
+            if let b = findButton(w, title: L("立即下载"), depth: 0) {
                 return AXUIElementPerformAction(b, kAXPressAction as CFString) == .success
             }
         }
@@ -217,19 +217,19 @@ enum ThunderBridge {
         let alert = NSAlert()
         switch state {
         case .writing:
-            alert.messageText = "迅雷还在下这条"
-            alert.informativeText = "先在迅雷里暂停它，再点收回。两边同时写同一个文件会损坏。"
-            alert.addButton(withTitle: "知道了")
+            alert.messageText = L("迅雷还在下这条")
+            alert.informativeText = L("先在迅雷里暂停它，再点收回。两边同时写同一个文件会损坏。")
+            alert.addButton(withTitle: L("知道了"))
         case .unknown:
-            alert.messageText = "请先在迅雷中暂停任务"
-            alert.informativeText = "闪电暂时无法确认迅雷是否已暂停。请先到迅雷暂停这条任务，再回来确认，避免两个程序同时写入文件。"
-            alert.addButton(withTitle: "我已暂停，继续收回")
-            alert.addButton(withTitle: "再等等")
+            alert.messageText = L("请先在迅雷中暂停任务")
+            alert.informativeText = L("闪电暂时无法确认迅雷是否已暂停。请先到迅雷暂停这条任务，再回来确认，避免两个程序同时写入文件。")
+            alert.addButton(withTitle: L("我已暂停，继续收回"))
+            alert.addButton(withTitle: L("再等等"))
         case .needsAccessibility:
-            alert.messageText = "需要允许「辅助功能」才能控制迅雷"
-            alert.informativeText = "在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。也可以先在迅雷里手动暂停这条任务。"
-            alert.addButton(withTitle: "我已暂停，继续收回")
-            alert.addButton(withTitle: "再等等")
+            alert.messageText = L("需要允许「辅助功能」才能控制迅雷")
+            alert.informativeText = L("在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。也可以先在迅雷里手动暂停这条任务。")
+            alert.addButton(withTitle: L("我已暂停，继续收回"))
+            alert.addButton(withTitle: L("再等等"))
         case .idle, .cancelled:
             break
         }
@@ -308,7 +308,7 @@ enum ThunderBridge {
     }
 
     private static func pressPauseAll() -> Bool {
-        guard let window = mainWindow(), let button = findButton(window, title: "全部暂停", depth: 0) else { return false }
+        guard let window = mainWindow(), let button = findButton(window, title: L("全部暂停"), depth: 0) else { return false }
         return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
     }
 
@@ -320,7 +320,7 @@ enum ThunderBridge {
         for _ in 0..<10 where mainWindow() == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
         let rows = taskRows()
         let paused = jobs.contains { job in
-            rows.contains { rowMatches($0, folderName: job.folder.map { URL(fileURLWithPath: $0).lastPathComponent }, name: job.name) && $0.status.contains("暂停") }
+            rows.contains { rowMatches($0, folderName: job.folder.map { URL(fileURLWithPath: $0).lastPathComponent }, name: job.name) && $0.status.contains(L("暂停")) }
         }
         guard paused else { return false }
         return await setAllTasks(paused: false)
@@ -354,10 +354,10 @@ enum ThunderBridge {
         let others = rows.filter { !rowMatches($0, folderName: folderName, name: job.name) && !isHalted($0.status) }
         if !others.isEmpty {
             let alert = NSAlert()
-            alert.messageText = "迅雷里还有 \(others.count) 条任务在下载"
-            alert.informativeText = "收回这条需要先暂停迅雷，其他任务也会一起暂停。之后可以到迅雷点「全部开始」继续。"
-            alert.addButton(withTitle: "一起暂停并收回")
-            alert.addButton(withTitle: "取消")
+            alert.messageText = String(localized: "迅雷里还有 \(others.count) 条任务在下载")
+            alert.informativeText = L("收回这条需要先暂停迅雷，其他任务也会一起暂停。之后可以到迅雷点「全部开始」继续。")
+            alert.addButton(withTitle: L("一起暂停并收回"))
+            alert.addButton(withTitle: L("取消"))
             NSApp.activate(ignoringOtherApps: true)
             guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
         }

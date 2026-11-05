@@ -47,6 +47,8 @@ final class SleepGuard {
     }
 }
 
+private enum SettingsTab { case general, download, locations, acceleration, browser, ai }
+
 struct SettingsView: View {
     @ObservedObject var store: DownloadStore
     @AppStorage(Prefs.maxRunningKey) private var maxRunning = 5
@@ -67,10 +69,38 @@ struct SettingsView: View {
     @AppStorage(ClipboardWatcher.enabledKey) private var watchClipboard = true
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var tab = SettingsTab.general
+    @State private var language = AppLanguage.current
+    @State private var aiTool = AITool.claudeCode
+    @State private var aiCopied = false
     @State private var dirsVersion = 0   // 改了位置后刷新显示
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
+            Form {
+            Section {
+                Picker("语言", selection: $language) {
+                    ForEach(AppLanguage.allCases) { Text(verbatim: $0.label).tag($0) }
+                }
+                .onChange(of: language) { _, new in new.save(); AppLanguage.askToReopen() }
+            }
+            Section("系统") {
+                Toggle("下载时不让 Mac 进入睡眠", isOn: $preventSleep)
+                    .help("只阻止闲置睡眠；合上盖子或手动睡眠照常")
+                Toggle("下载完成时通知", isOn: $notify)
+                Toggle("下载完成时播放提示音", isOn: $doneSound)
+                Toggle("登录时自动打开闪电全能下载", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, on in
+                        do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
+                        catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
+                    }
+                UpdateToggle(checker: store.updates)
+            }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("通用", systemImage: "gearshape") }
+            .tag(SettingsTab.general)
+
             Form {
             Section("下载") {
                 Picker("同时下载", selection: $maxRunning) {
@@ -110,25 +140,25 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("下载", systemImage: "arrow.down.circle") }
+            .tag(SettingsTab.download)
 
             Form {            Section("保存位置") {
-                dirRow("磁力、种子", key: "dir.movie", current: Folders.movies)
-                dirRow("视频网站", key: "dir.video", current: Folders.videos)
-                dirRow("其他文件", key: "dir.other", current: Folders.others)
+                dirRow(L("磁力、种子"), key: "dir.movie", current: Folders.movies)
+                dirRow(L("视频网站"), key: "dir.video", current: Folders.videos)
+                dirRow(L("其他文件"), key: "dir.other", current: Folders.others)
             }
             .id(dirsVersion)
 
             }
             .formStyle(.grouped)
             .tabItem { Label("保存位置", systemImage: "folder") }
+            .tag(SettingsTab.locations)
 
-            ScrollView { BrowserSetupView(token: store.engineToken) }
-                .tabItem { Label("浏览器扩展", systemImage: "puzzlepiece.extension") }
 
             Form {
             if rescuedCount > 0 {
                 Section {
-                    LabeledContent("已换路救回", value: "\(rescuedCount) 条任务")
+                    LabeledContent("已换路救回", value: String(localized: "\(rescuedCount) 条任务"))
                 }
             }
             ThunderSettingsSection()
@@ -137,14 +167,14 @@ struct SettingsView: View {
                 Toggle("拉回后自动清理云端副本", isOn: $autoCleanCloud)
                 Text("PikPak 只作中转：取回本机并核对后彻底删除云端副本，不进回收站。云盘空间不够时，也会清理回收站里离线任务留下的文件。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub)
-                Button(store.cloudCleanupCount > 0 ? "清理已下载的云端副本（\(store.cloudCleanupCount)）" : "打开 PikPak 云盘管理空间") {
+                Button(store.cloudCleanupCount > 0 ? String(localized: "清理已下载的云端副本（\(store.cloudCleanupCount)）") : L("打开 PikPak 云盘管理空间")) {
                     store.manageCloudCopies()
                 }
                 if let u = pkState {
-                    LabeledContent(pkProblem ? "关联需检查" : "已关联") {
-                        HStack { Text(u).foregroundStyle(Theme.sub); Button("退出") { Task { await PikPak.shared.logout(); pkState = nil } } }
+                    LabeledContent(pkProblem ? L("关联需检查") : L("已关联")) {
+                        HStack { Text(L(u)).foregroundStyle(Theme.sub); Button("退出") { Task { await PikPak.shared.logout(); pkState = nil } } }
                     }
-                    Text(pkProblem ? "会话刷新失败，请检查网络或重新关联账号。" : "已保存账号关联，实际登录状态会在使用时验证。")
+                    Text(pkProblem ? L("会话刷新失败，请检查网络或重新关联账号。") : L("已保存账号关联，实际登录状态会在使用时验证。"))
                         .font(.system(size: 12)).foregroundStyle(Theme.sub)
                     HStack {
                         Button("在窗口里登录…") { openWindow(id: "pikpak-login"); NSApp.activate(ignoringOtherApps: true) }
@@ -156,7 +186,7 @@ struct SettingsView: View {
                         .help("BT 网络里几乎没人传的资源，交给 PikPak 服务器下好，再从云盘满速拉回")
                     Text("磁力、种子 1 分钟没速度，或 3 分钟几乎没速度时转交，每次用掉一次离线。").font(.system(size: 12)).foregroundStyle(Theme.sub)
                     LabeledContent("今天已用") {
-                        Text(offlinesToday.map { "\($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）" } ?? "读取中").foregroundStyle(Theme.sub)
+                        Text(offlinesToday.map { String(localized: "\($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）") } ?? L("读取中")).foregroundStyle(Theme.sub)
                     }
                     .task { offlinesToday = try? await PikPak.shared.offlinesUsedToday() }
                 } else {
@@ -175,36 +205,37 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("下载加速", systemImage: "bolt") }
+            .tag(SettingsTab.acceleration)
+
+            ScrollView { BrowserSetupView(token: store.engineToken) }
+                .tabItem { Label("浏览器扩展", systemImage: "puzzlepiece.extension") }
+                .tag(SettingsTab.browser)
 
             Form {
-            Section("系统") {
-                Toggle("下载时不让 Mac 进入睡眠", isOn: $preventSleep)
-                    .help("只阻止闲置睡眠；合上盖子或手动睡眠照常")
-                Toggle("下载完成时通知", isOn: $notify)
-                Toggle("下载完成时播放提示音", isOn: $doneSound)
-                Toggle("登录时自动打开闪电全能下载", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, on in
-                        do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
-                        catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
-                    }
-                UpdateToggle(checker: store.updates)
-            }
             Section("给 AI 工具用（MCP）") {
-                Text("让 Claude Code 等 AI 工具提交下载、查看进度、暂停和继续。只在本机运行，不能删除任务或文件。")
+                Text("让 AI 工具提交下载、查看进度、暂停和继续。只在本机运行，不能删除任务或文件。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button("复制 Claude Code 命令") { AppInfo.copy("claude mcp add shandian -- \"\(Self.mcpPath)\"") }
-                    Button("复制 MCP 配置") {
-                        AppInfo.copy("{\n  \"mcpServers\": {\n    \"shandian\": { \"command\": \"\(Self.mcpPath)\" }\n  }\n}")
-                    }
+                Picker("工具", selection: $aiTool) {
+                    ForEach(AITool.allCases) { Text(verbatim: $0.name).tag($0) }
+                }
+                .onChange(of: aiTool) { _, _ in aiCopied = false }
+                Text(verbatim: aiTool.hint)
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                if !aiTool.isCommand {
+                    Text("已有其他配置时，把 shandian 这一段并进去，不要整份覆盖。")
+                        .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                }
+                Button(aiCopied ? L("已复制") : aiTool.isCommand ? L("复制命令") : L("复制配置")) {
+                    AppInfo.copy(aiTool.snippet(path: Self.mcpPath)); aiCopied = true
                 }
             }
             }
             .formStyle(.grouped)
-            .tabItem { Label("通用", systemImage: "gearshape") }
+            .tabItem { Label("AI 工具", systemImage: "sparkles") }
+            .tag(SettingsTab.ai)
         }
         .onReceive(NotificationCenter.default.publisher(for: PikPak.loginChanged)) { _ in pkState = PikPak.loggedInUser; pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem") }
-        .onAppear { ThunderBridge.recheck() }
+        .onAppear { tab = .general; ThunderBridge.recheck() }   // 每次打开都从「通用」开始（11-05 用户定）
         .frame(width: 708, height: 640)   // 所有页同样大，切换时窗口不跳（11-05 用户定）；以内容最多的浏览器扩展页为准
         .tint(Theme.tint)
     }
@@ -225,7 +256,7 @@ struct SettingsView: View {
                 Button("更改…") {
                     let p = NSOpenPanel()
                     p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true
-                    p.directoryURL = current; p.prompt = "选择"
+                    p.directoryURL = current; p.prompt = L("选择")
                     if p.runModal() == .OK, let u = p.url { UserDefaults.standard.set(u.path, forKey: key); dirsVersion += 1 }
                 }
                 if UserDefaults.standard.string(forKey: key) != nil {

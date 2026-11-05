@@ -131,7 +131,7 @@ final class VideoSiteRunner: @unchecked Sendable {
     /// 启动下载；进度、标题、封面、成品路径通过 update 回调（在后台线程）
     func start(_ job: VideoJob, into dir: URL, headers: [String: String] = [:], update: @escaping @Sendable (VideoJob) -> Void) {
         guard let bin = YtDlp.path else {
-            var j = job; j.state = .failed; j.error = "视频下载组件不可用，请重新安装应用后重试"; update(j); return
+            var j = job; j.state = .failed; j.error = L("视频下载组件不可用，请重新安装应用后重试"); update(j); return
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let p = Process()
@@ -301,16 +301,16 @@ private final class JobState: @unchecked Sendable {
     }
 
     static func readableError(_ error: String?) -> String {
-        guard let error else { return "下载失败" }
+        guard let error else { return L("下载失败") }
         let lower = error.lowercased()
         if lower.contains("drm") || lower.contains("widevine") || lower.contains("fairplay") {
-            return "此视频受数字版权保护，无法下载"
+            return L("此视频受数字版权保护，无法下载")
         }
         if lower.contains("http error 403") || lower.contains("http error 401") {
-            return "视频资源拒绝访问，可能需要登录或链接已过期；请返回网页重新侦测"
+            return L("视频资源拒绝访问，可能需要登录或链接已过期；请返回网页重新侦测")
         }
         // yt-dlp 错误可能包含带签名的 URL；不要把它写入任务记录。
-        return error.replacingOccurrences(of: #"https?://[^\s]+"#, with: "[链接]", options: .regularExpression)
+        return error.replacingOccurrences(of: #"https?://[^\s]+"#, with: L("[链接]"), options: .regularExpression)
     }
 
     func finish(ok: Bool) -> VideoJob {
@@ -322,9 +322,9 @@ private final class JobState: @unchecked Sendable {
                 // 抖音、小红书没带登录信息时 yt-dlp 的报错看不懂，直接告诉怎么办
                 // 抖音只能由扩展从页面里取直链，yt-dlp 必然失败（要签名）：直接告诉怎么办
                 job.error = (URL(string: job.url)?.host ?? "").hasSuffix("douyin.com")
-                    ? "请在浏览器里打开这个抖音视频，点扩展里的「下载这个视频」"
+                    ? L("请在浏览器里打开这个抖音视频，点扩展里的「下载这个视频」")
                     : SiteCookies.site(of: job.url) != nil && SiteCookies.ytdlpArguments(for: job.url).isEmpty
-                    ? "需要在浏览器里登录后，右键「用闪电全能下载这个视频」" : Self.readableError(lastError)
+                    ? L("需要在浏览器里登录后，右键「用闪电全能下载这个视频」") : Self.readableError(lastError)
             }
             if let path = job.filePath, let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 {
                 job.total = size; if ok { job.downloaded = size }

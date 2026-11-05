@@ -36,11 +36,11 @@ enum LinkKind: Equatable {
 
     var label: String {
         switch self {
-        case .magnet: "磁力"
-        case .torrentFile: "种子文件"
+        case .magnet: L("磁力")
+        case .torrentFile: L("种子文件")
         case .ed2k: "ed2k"
-        case .videoSite: "视频网站"
-        case .http: "直链"
+        case .videoSite: L("视频网站")
+        case .http: L("直链")
         }
     }
 
@@ -93,7 +93,7 @@ enum Folders {
     private static func custom(_ key: String) -> URL? { UserDefaults.standard.string(forKey: key).map { URL(fileURLWithPath: $0) } }
     /// 界面上说的位置名：移动硬盘 › movies、下载、下载 › 某文件夹
     static func displayName(_ d: URL) -> String {
-        if d == downloads { return "下载" }
+        if d == downloads { return L("下载") }
         if d.deletingLastPathComponent() == downloads { return "下载 › " + d.lastPathComponent }
         let c = d.pathComponents
         if c.count > 3, c[1] == "Volumes" { return c[2] + " › " + d.lastPathComponent }  // 其他硬盘：盘名 › 文件夹
@@ -167,9 +167,9 @@ func remainingText(_ seconds: Double) -> String {
     // 极慢或无稳定速度时不显示荒谬的剩余时间，也避免浮点转整数溢出。
     guard seconds.isFinite, seconds > 0, seconds < 7 * 24 * 3600 else { return "" }
     let s = Int(seconds)
-    if s < 60 { return "剩余 \(s) 秒" }
-    if s < 3600 { return "剩余 \(s / 60) 分钟" }
-    return "剩余 \(s / 3600) 小时 \(s % 3600 / 60) 分"
+    if s < 60 { return String(localized: "剩余 \(s) 秒") }
+    if s < 3600 { return String(localized: "剩余 \(s / 60) 分钟") }
+    return String(localized: "剩余 \(s / 3600) 小时 \(s % 3600 / 60) 分")
 }
 
 /// 把发布名整理成人能读的片名：Conclave.2024.1080p.AMZN.WEBRip-GalaxyRG → Conclave 2024

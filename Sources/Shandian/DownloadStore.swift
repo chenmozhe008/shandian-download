@@ -51,7 +51,7 @@ enum Pane: Hashable {
     var title: String {
         switch self {
         case .active: "正在下载"
-        case .done: "已完成"
+        case .done: L("已完成")
         case .trash: "回收站"
         case .category(let c): c.rawValue
         }
@@ -84,7 +84,8 @@ final class DownloadStore: ObservableObject {
         }
     }
     static func noticeNeedsAttention(_ text: String) -> Bool {
-        ["失败", "无法", "出错", "不足", "过期", "没找到"].contains { text.contains($0) }
+        ["失败", "无法", "出错", "不足", "过期", "没找到", "failed", "can't", "couldn't", "error", "not enough", "expired", "not found"]
+            .contains { text.lowercased().contains($0) }
     }
     /// 提示右侧的按钮：重复链接时是「定位任务」，点了滚到那条任务并选中。
     /// 记着它属于哪条提示（forText），提示换了就不再显示，免得点在旧任务上
@@ -275,7 +276,7 @@ final class DownloadStore: ObservableObject {
         saveRemoved()
     }
     func redownload(_ r: RemovedRecord) {
-        guard !r.link.isEmpty else { notice = "这条记录没有保存链接，无法重新下载"; return }
+        guard !r.link.isEmpty else { notice = L("这条记录没有保存链接，无法重新下载"); return }
         if LinkKind.isWeChatChannelShare(r.link) { request([r.link]); return }
         removedRecords.removeAll { $0.id == r.id }; saveRemoved()
         request([r.link])
@@ -315,7 +316,7 @@ final class DownloadStore: ObservableObject {
             guard !alive.isEmpty else { return }
             Task {
                 for item in alive { try? await host.client.resume(item.id) }
-                notice = "到下载时段了，已继续 \(alive.count) 条任务"
+                notice = String(localized: "到下载时段了，已继续 \(alive.count) 条任务")
                 await poll()
             }
             return
@@ -326,7 +327,8 @@ final class DownloadStore: ObservableObject {
         saveSchedule()
         Task {
             for item in targets { try? await host.client.pause(item.id) }
-            notice = "现在不在下载时段，已暂停 \(targets.count) 条任务，\(String(format: "%02d:00", Prefs.scheduleFrom)) 自动继续"
+            let from = String(format: "%02d:00", Prefs.scheduleFrom)
+            notice = String(localized: "现在不在下载时段，已暂停 \(targets.count) 条任务，\(from) 自动继续")
             await poll()
         }
     }
@@ -340,8 +342,8 @@ final class DownloadStore: ObservableObject {
             case .paused: "已暂停"
             case .waiting: "排队"
             case .resolving: "解析中"
-            case .failed: "失败"
-            case .done: "已完成"
+            case .failed: L("失败")
+            case .done: L("已完成")
             }
             status[name, default: 0] += 1
         }
@@ -368,11 +370,11 @@ final class DownloadStore: ObservableObject {
     /// 下不动时的出路：讲清两条路，点一下就走。登录 PikPak 成功后自动把这条任务交过去
     func offerRescue(_ item: Item) {
         let alert = NSAlert()
-        alert.messageText = "这条任务下不动了"
-        alert.informativeText = "这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要能访问境外网站。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。"
-        alert.addButton(withTitle: "登录 PikPak")
-        alert.addButton(withTitle: ThunderBridge.installed ? "用迅雷下载" : "去安装迅雷")
-        alert.addButton(withTitle: "先不用")
+        alert.messageText = L("这条任务下不动了")
+        alert.informativeText = L("这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要能访问境外网站。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。")
+        alert.addButton(withTitle: L("登录 PikPak"))
+        alert.addButton(withTitle: ThunderBridge.installed ? L("用迅雷下载") : L("去安装迅雷"))
+        alert.addButton(withTitle: L("先不用"))
         NSApp.activate(ignoringOtherApps: true)
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -395,7 +397,7 @@ final class DownloadStore: ObservableObject {
     private func countRescue() -> String {
         let count = UserDefaults.standard.integer(forKey: Self.rescuedKey) + 1
         UserDefaults.standard.set(count, forKey: Self.rescuedKey)
-        return "这是换路救回的第 \(count) 条"
+        return String(localized: "这是换路救回的第 \(count) 条")
     }
 
     /// 自动转交试过的任务（按链接记）：云盘失败后任务恢复，再下不动就轮到迅雷，不会反复消耗云盘次数
@@ -479,7 +481,7 @@ final class DownloadStore: ObservableObject {
         host.suspend()
         host.kill()
         engineState = .starting
-        notice = "已为推出硬盘暂停下载，硬盘插回后接着下"
+        notice = L("已为推出硬盘暂停下载，硬盘插回后接着下")
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await startEngine()
@@ -614,14 +616,14 @@ final class DownloadStore: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "resumeOnLaunch")
             restorePending()
             for job in cloudJobs where job.taskID.isEmpty && job.pulling == nil {
-                cloudFailed(job.id, "云盘提交中断")
+                cloudFailed(job.id, L("云盘提交中断"))
             }
             if !cloudJobs.isEmpty { pollCloud() }
             engineSettled = true
         case .failed(let m):
             engineState = .failed(m)
             if !waitingForEngine.isEmpty {
-                notice = "下载内核启动失败，链接没有添加"
+                notice = L("下载内核启动失败，链接没有添加")
                 waitingForEngine.removeAll()
             }
         }
@@ -763,7 +765,7 @@ final class DownloadStore: ObservableObject {
             else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
             let i = all[k]
-            let isBT = i.origin == "磁力" || i.origin == "种子文件"
+            let isBT = i.origin == L("磁力") || i.origin == L("种子文件")
             // 只差最后一点的不算「冷门」：这时候交出去（迅雷 / 云盘）会把几 GB 重下一遍，得不偿失
             let nearlyDone = i.total > 0 && Double(i.downloaded) / Double(i.total) > 0.99
             let stuck = isBT && !i.checking && !nearlyDone && (i.isResolvingState || (i.status == .running && i.avgSpeed < 50 << 10))
@@ -785,7 +787,7 @@ final class DownloadStore: ObservableObject {
                     // 新用户还没有备用通道：卡住时主动告诉他，每条任务只说一次
                     rescuePrompted.insert(i.linkKey)
                     Task { @MainActor in
-                        let text = "「\(it.title)」下不动了，开通备用通道就能换条路接着下"
+                        let text = String(localized: "「\(it.title)」下不动了，开通备用通道就能换条路接着下")
                         self.noticeAction = NoticeAction(title: "开通", forText: text, run: { [weak self] in self?.offerRescue(it) })
                         self.notice = text
                     }
@@ -905,7 +907,7 @@ final class DownloadStore: ObservableObject {
     /// 粘贴、拖入、浏览器传来的都走这里；一段文字里有多个链接就逐个加
     func add(text: String) {
         let links = LinkKind.of(text) != nil ? [text.trimmingCharacters(in: .whitespacesAndNewlines)] : LinkKind.extract(from: text)
-        guard !links.isEmpty else { notice = "没有识别到可下载的链接"; return }
+        guard !links.isEmpty else { notice = L("没有识别到可下载的链接"); return }
         request(links)
         section = .active
     }
@@ -924,8 +926,8 @@ final class DownloadStore: ObservableObject {
         NewTaskPanels.shared.dismissAll()   // 确认框盖在窗口上，不收起就看不到列表
         showNewSheet = false
         focus(id)
-        let state = existing.isActive ? "正在下载" : "已经下载过"
-        let text = "「\(existing.title)」\(state)，没有重复下载"
+        let state = existing.isActive ? L("正在下载") : L("已经下载过")
+        let text = String(localized: "「\(existing.title)」\(state)，没有重复下载")
         // 先放按钮再放文字：notice 的存活时间看有没有按钮（带按钮停久一点）
         noticeAction = NoticeAction(title: "定位任务", forText: text, run: { [weak self] in self?.focus(id) })
         notice = text
@@ -958,12 +960,12 @@ final class DownloadStore: ObservableObject {
     private func deferUntilEngineReady(_ links: [String], forceVideo: Bool = false, then work: @escaping () -> Void) -> Bool {
         guard !forceVideo, links.contains(where: { LinkKind.of($0).map { $0 != .videoSite } ?? false }) else { return false }
         if case .failed = engineState {
-            notice = "下载内核启动失败，链接没有添加"
+            notice = L("下载内核启动失败，链接没有添加")
             return true
         }
         guard !engineSettled || !engineSeeded else { return false }
         waitingForEngine.append(work)
-        notice = "下载内核正在启动，就绪后自动添加链接"
+        notice = L("下载内核正在启动，就绪后自动添加链接")
         return true
     }
 
@@ -985,14 +987,14 @@ final class DownloadStore: ObservableObject {
         if deferUntilEngineReady(otherLinks, forceVideo: forceVideo, then: { [weak self] in
             self?.request(otherLinks, headers: headers, name: name, forceVideo: forceVideo)
         }) { return }
-        if weChatLinks.count > 1 { notice = "视频号链接请逐个通过浏览器扩展下载" }
+        if weChatLinks.count > 1 { notice = L("视频号链接请逐个通过浏览器扩展下载") }
         var fresh: [String] = []
         var dupes: [String] = []      // 已在列表里的任务（按出现顺序，用来定位）
         for l in otherLinks where LinkKind.of(l) != nil {
             seenClipboard.insert(l)
             if let existing = items.first(where: { $0.linkKey == Self.linkKey(l) }) {
                 // 之前失败的同一个链接再交过来：当作重试，不挡
-                if case .failed = existing.status { retry(existing); notice = "重新下载「\(existing.title)」"; continue }
+                if case .failed = existing.status { retry(existing); notice = String(localized: "重新下载「\(existing.title)」"); continue }
                 dupes.append(existing.id); continue
             }
             if !fresh.contains(l) { fresh.append(l) }
@@ -1004,7 +1006,7 @@ final class DownloadStore: ObservableObject {
         }
         // 有新有旧：新链接照常走确认框，旧的只在提示里说一句，别把人从这里拉走
         if !dupes.isEmpty {
-            notice = "\(dupes.count) 个链接已在列表里，已跳过"
+            notice = String(localized: "\(dupes.count) 个链接已在列表里，已跳过")
         }
         if NewTaskPanels.ask {
             NewTaskPanels.shared.present(links: fresh, headers: headers, name: name, store: self, forceVideo: forceVideo)
@@ -1042,7 +1044,7 @@ final class DownloadStore: ObservableObject {
             let job = VideoJob(url: link, title: link, site: VideoSiteRunner.siteName(link), options: VideoOptions.current)
             videoJobs.append(job); saveVideos(); rebuild()
             selectedID = job.id.uuidString
-            notice = "已添加：\(VideoSiteRunner.siteName(link)) 视频"
+            notice = String(localized: "已添加：\(L(VideoSiteRunner.siteName(link))) 视频")
             videoRunner.start(job, into: dir, headers: headers) { [weak self] updated in
                 Task { @MainActor in self?.updateVideo(updated) }
             }
@@ -1055,7 +1057,7 @@ final class DownloadStore: ObservableObject {
             // 先解析文件列表，只勾主视频和字幕；磁力要先从网络拿到种子信息
             let shown = givenTitle ?? Self.displayName(link)
             var placeholder = Item(id: "pending-" + UUID().uuidString, source: .pending, title: PrettyTitle.clean(shown), rawTitle: shown,
-                                   origin: kind == .magnet ? "磁力" : "种子文件", category: .movie, status: .resolving(Date()),
+                                   origin: kind == .magnet ? L("磁力") : L("种子文件"), category: .movie, status: .resolving(Date()),
                                    downloaded: carry?.downloaded ?? 0, total: max(carry?.total ?? 0, carry?.downloaded ?? 0),
                                    speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
             placeholder.link = originLink ?? (localTorrent ? "" : link)
@@ -1065,13 +1067,13 @@ final class DownloadStore: ObservableObject {
                                                           verifyExisting: verifyExisting, replacingThunderID: replacingThunderID)
             savePending()
             selectedID = placeholder.id
-            notice = "已添加：\(placeholder.title)"
+            notice = String(localized: "已添加：\(placeholder.title)")
             Task {
                 // 网页上的种子链接：内核会把它当普通文件下载，先取回种子再按本地种子交给内核
                 var url = url
                 if kind == .torrentFile, !localTorrent {
                     guard let data = await Self.fetchTorrent(link) else {
-                        notice = "无法获取种子文件"
+                        notice = L("无法获取种子文件")
                         dropPending(placeholder.id); rebuild(); return
                     }
                     url = "data:application/x-bittorrent;base64," + data.base64EncodedString()
@@ -1089,10 +1091,10 @@ final class DownloadStore: ObservableObject {
                     if let replacingThunderID, let previous = thunderJobs.first(where: { $0.id == replacingThunderID }) {
                         if let old = previous.sourceEngineID { try? await host.client.delete(old, withFiles: false) }
                         thunderJobs.removeAll { $0.id == replacingThunderID }; ThunderBridge.save(thunderJobs)
-                        notice = "正在取回迅雷素材，取完后自动继续下载"
+                        notice = L("正在取回迅雷素材，取完后自动继续下载")
                     }
                 } catch {
-                    notice = replacingThunderID == nil ? "添加失败：\(error.localizedDescription)" : "收回失败，迅雷任务仍保留：\(error.localizedDescription)"
+                    notice = replacingThunderID == nil ? String(localized: "添加失败：\(error.localizedDescription)") : String(localized: "收回失败，迅雷任务仍保留：\(error.localizedDescription)")
                 }
                 dropPending(placeholder.id)
                 await poll()
@@ -1102,8 +1104,8 @@ final class DownloadStore: ObservableObject {
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
                     selectedID = id
-                    notice = "已添加：\(name ?? Self.displayName(link))"
-                } catch { notice = "添加失败：\(error.localizedDescription)" }
+                    notice = String(localized: "已添加：\(name ?? Self.displayName(link))")
+                } catch { notice = String(localized: "添加失败：\(error.localizedDescription)") }
                 await poll()
             }
         }
@@ -1144,12 +1146,12 @@ final class DownloadStore: ObservableObject {
         defer { thunderWasRunning = running }
         guard !active.isEmpty, thunderWasRunning != running else { return }
         if !running {
-            let text = "迅雷没有打开，交给它的 \(active.count) 条任务不会继续下载"
+            let text = String(localized: "迅雷没有打开，交给它的 \(active.count) 条任务不会继续下载")
             noticeAction = NoticeAction(title: "打开迅雷", forText: text, run: { [weak self] in self?.openThunder() })
             notice = text
         } else if thunderWasRunning == false, thunderHeldAt == nil {
             Task {
-                if await ThunderBridge.resumeJobsAfterLaunch(active) { notice = "迅雷已打开，任务自动继续下载" }
+                if await ThunderBridge.resumeJobsAfterLaunch(active) { notice = L("迅雷已打开，任务自动继续下载") }
             }
         }
     }
@@ -1166,16 +1168,16 @@ final class DownloadStore: ObservableObject {
                 }
                 if thunderHeldAt != nil {
                     thunderHeldAt = nil
-                    notice = await ThunderBridge.setAllTasks(paused: false) ? "已全部继续，迅雷里之前暂停的任务也会一起开始" : "闪电的任务已继续；迅雷没能自动开始，请到迅雷点「全部开始」"
+                    notice = await ThunderBridge.setAllTasks(paused: false) ? L("已全部继续，迅雷里之前暂停的任务也会一起开始") : L("闪电的任务已继续；迅雷没能自动开始，请到迅雷点「全部开始」")
                 }
             } else {
                 try? await host.client.pauseAll()
                 if hasActiveThunderJob {
                     if await ThunderBridge.setAllTasks(paused: true) {
                         thunderHeldAt = Date()
-                        notice = "已全部暂停，包括迅雷里的任务"
+                        notice = L("已全部暂停，包括迅雷里的任务")
                     } else {
-                        let text = "闪电的任务已暂停；迅雷没能自动暂停，请到迅雷暂停，或在系统设置里允许「辅助功能」"
+                        let text = L("闪电的任务已暂停；迅雷没能自动暂停，请到迅雷暂停，或在系统设置里允许「辅助功能」")
                         noticeAction = NoticeAction(title: "打开迅雷", forText: text, run: { [weak self] in self?.openThunder() })
                         notice = text
                     }
@@ -1192,7 +1194,7 @@ final class DownloadStore: ObservableObject {
         switch item.status {
         case .failed:
             remove(item, moveFiles: true)
-            notice = "「\(item.title)」没下成，已交回浏览器下载"
+            notice = String(localized: "「\(item.title)」没下成，已交回浏览器下载")
             return "failed"
         case .done: return "done"
         case .running, .resolving: return "running"
@@ -1233,7 +1235,7 @@ final class DownloadStore: ObservableObject {
     /// 打开迅雷本体。交给迅雷的任务记在迅雷里，它被卸载或挪走后要给个明确说明，不能静默失败
     func openThunder() {
         guard let app = ThunderBridge.appURL else {
-            notice = "没找到迅雷。这条任务可以用「收回」改由闪电全能下载接着下，不用重下"
+            notice = L("没找到迅雷。这条任务可以用「收回」改由闪电全能下载接着下，不用重下")
             return
         }
         NSWorkspace.shared.open(app)
@@ -1247,13 +1249,13 @@ final class DownloadStore: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             ThunderBridge.openOfficialSite()
-            notice = "已打开迅雷官网；装好后再点「用迅雷下载」"
+            notice = L("已打开迅雷官网；装好后再点「用迅雷下载」")
         }
     }
 
     /// 云盘离线：BT 任务先暂停（云盘失败了还能接着 BT），交给 PikPak；云端下好后按直链拉回同一个位置
     func sendToCloud(_ item: Item, automatic: Bool = false) {
-        guard PikPak.loggedInUser != nil else { notice = "先在设置里登录 PikPak，才能用云盘离线"; return }
+        guard PikPak.loggedInUser != nil else { notice = L("先在设置里登录 PikPak，才能用云盘离线"); return }
         guard !item.link.isEmpty, !cloudJobs.contains(where: { $0.link == item.link && $0.cleanupReady != true }) else { return }
         let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
@@ -1274,14 +1276,14 @@ final class DownloadStore: ObservableObject {
         let cloudID = "cloud-" + UUID().uuidString
         let cloudDir = URL(fileURLWithPath: dir).appendingPathComponent("PikPak 下载").appendingPathComponent(cloudID).path
         do { try FileManager.default.createDirectory(atPath: cloudDir, withIntermediateDirectories: true) }
-        catch { notice = "无法创建云盘保存位置，原任务仍保留"; return }
+        catch { notice = L("无法创建云盘保存位置，原任务仍保留"); return }
         let job = CloudJob(id: cloudID, title: item.title, link: item.link, dir: cloudDir,
                            engineID: engineID, partial: thunderJob == nil ? base?.path : nil, total: item.total,
                            pendingRecord: pendingRecord, thunderJob: thunderJob, cleanupAccount: PikPak.loggedInUser)
         cloudJobs.append(job)
         guard saveCloud() else {
             cloudJobs.removeAll { $0.id == job.id }
-            notice = "无法保存云盘任务状态，原任务仍保留"
+            notice = L("无法保存云盘任务状态，原任务仍保留")
             return
         }
         if let thunderJob { thunderJobs.removeAll { $0.id == thunderJob.id }; ThunderBridge.save(thunderJobs) }
@@ -1295,9 +1297,9 @@ final class DownloadStore: ObservableObject {
                 if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) {
                     cloudJobs[k].taskID = t.id; cloudJobs[k].fileID = t.fileID; cloudJobs[k].progress = t.progress; saveCloud()
                 }
-                let used = (try? await PikPak.shared.offlinesUsedToday()).map { "，今天第 \($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）" } ?? ""
-                if automatic { notice = "「\(item.title)」下不动，已自动交给 PikPak\(used)" }
-                else { notice = thunderJob == nil ? "已交给 PikPak 云盘离线「\(item.title)」\(used)" : "已交给 PikPak\(used)；迅雷任务请在迅雷中暂停" }
+                let used = (try? await PikPak.shared.offlinesUsedToday()).map { String(localized: "，今天第 \($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）") } ?? ""
+                if automatic { notice = String(localized: "「\(item.title)」下不动，已自动交给 PikPak\(used)") }
+                else { notice = thunderJob == nil ? String(localized: "已交给 PikPak 云盘离线「\(item.title)」\(used)") : String(localized: "已交给 PikPak\(used)；迅雷任务请在迅雷中暂停") }
                 pollCloud()
             } catch { cloudFailed(job.id, error.localizedDescription) }
         }
@@ -1305,34 +1307,34 @@ final class DownloadStore: ObservableObject {
 
     private func cloudFailed(_ id: String, _ message: String) {
         guard let job = cloudJobs.first(where: { $0.id == id }) else { return }
-        let message = message.replacingOccurrences(of: "继续使用需开通会员", with: "请检查云盘容量或服务限制")
+        let message = message.replacingOccurrences(of: "继续使用需开通会员", with: L("请检查云盘容量或服务限制"))
         cloudJobs.removeAll { $0.id == id }; saveCloud()
         rebuild()
         if let e = job.engineID {
             Task {
-                do { try await host.client.resume(e); cloudFailureNotice("云盘离线失败：\(message)，已恢复原下载") }
-                catch { cloudFailureNotice("云盘离线失败：\(message)；原任务恢复失败，请手动继续") }
+                do { try await host.client.resume(e); cloudFailureNotice(String(localized: "云盘离线失败：\(message)，已恢复原下载")) }
+                catch { cloudFailureNotice(String(localized: "云盘离线失败：\(message)；原任务恢复失败，请手动继续")) }
                 await poll()
             }
         } else if let previous = job.thunderJob {
             if !thunderJobs.contains(where: { $0.id == previous.id }) { thunderJobs.append(previous); ThunderBridge.save(thunderJobs) }
-            rebuild(); cloudFailureNotice("云盘离线失败：\(message)，已恢复迅雷任务记录")
+            rebuild(); cloudFailureNotice(String(localized: "云盘离线失败：\(message)，已恢复迅雷任务记录"))
         } else if let r = job.pendingRecord {
             let carry = r.carryDownloaded.map { (downloaded: $0, total: r.carryTotal ?? $0) }
             start(link: r.link, headers: r.headers, name: r.name, dir: URL(fileURLWithPath: r.dir), selectFiles: r.selectFiles,
                   carry: carry, title: r.title, originLink: r.originLink, verifyExisting: r.verifyExisting ?? false,
                   replacingThunderID: r.replacingThunderID)
-            cloudFailureNotice("云盘离线失败：\(message)，已恢复原任务解析")
+            cloudFailureNotice(String(localized: "云盘离线失败：\(message)，已恢复原任务解析"))
         } else {
-            cloudFailureNotice("云盘离线失败：\(message)，请重新添加任务")
+            cloudFailureNotice(String(localized: "云盘离线失败：\(message)，请重新添加任务"))
         }
     }
 
     private func cloudFailureNotice(_ text: String) {
-        if text.contains("重新关联") {
+        if text.contains("重新关联") || text.lowercased().contains("relink") {
             noticeAction = NoticeAction(title: "重新关联", forText: text, run: { NotificationCenter.default.post(name: PikPak.relinkRequested, object: nil) })
         }
-        if text.contains("空间") || text.contains("容量") {
+        if ["空间", "容量", "space", "storage"].contains(where: { text.lowercased().contains($0) }) {
             noticeAction = NoticeAction(title: "管理云盘空间", forText: text, run: { [weak self] in self?.manageCloudCopies() })
         }
         notice = text
@@ -1341,20 +1343,20 @@ final class DownloadStore: ObservableObject {
     func manageCloudCopies() {
         guard let job = cloudJobs.first(where: { $0.cleanupReady == true }) else {
             NSWorkspace.shared.open(URL(string: "https://mypikpak.com/drive/")!)
-            notice = "已打开 PikPak 云盘；请检查容量和不需要的文件"
+            notice = L("已打开 PikPak 云盘；请检查容量和不需要的文件")
             return
         }
         guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser, files: job.localCopies) else {
-            notice = "无法确认关联账号或本地文件，请在 PikPak 网页中检查云端副本"
+            notice = L("无法确认关联账号或本地文件，请在 PikPak 网页中检查云端副本")
             NSWorkspace.shared.open(URL(string: "https://mypikpak.com/drive/")!)
             return
         }
         let alert = NSAlert()
-        alert.messageText = "清理云端副本？"
-        alert.informativeText = "\(job.title)\n\n本地文件已核对大小。云端副本会移入 PikPak 回收站，容量没有释放时会彻底删除；本地文件不会删除。"
+        alert.messageText = L("清理云端副本？")
+        alert.informativeText = String(localized: "\(job.title)\n\n本地文件已核对大小。云端副本会移入 PikPak 回收站，容量没有释放时会彻底删除；本地文件不会删除。")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "清理云端副本")
-        alert.addButton(withTitle: "稍后处理")
+        alert.addButton(withTitle: L("清理云端副本"))
+        alert.addButton(withTitle: L("稍后处理"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Task { await cleanCloudCopy(job) }
@@ -1384,7 +1386,7 @@ final class DownloadStore: ObservableObject {
                     Task { try? await host.client.delete(source, withFiles: false) }
                 }
             } catch {
-                notice = "「\(thunderJobs[k].title)」已下完，但没能移回保存目录：\(error.localizedDescription)"
+                notice = String(localized: "「\(thunderJobs[k].title)」已下完，但没能移回保存目录：\(error.localizedDescription)")
             }
             ThunderBridge.save(thunderJobs)
         }
@@ -1469,7 +1471,7 @@ final class DownloadStore: ObservableObject {
               let k = cloudJobs.firstIndex(where: { $0.id == job.id }) else { return false }
         cloudJobs[k].taskID = retried.id; cloudJobs[k].fileID = retried.fileID; cloudJobs[k].progress = retried.progress
         saveCloud()
-        notice = "已清理 PikPak 回收站，重新离线「\(job.title)」"
+        notice = String(localized: "已清理 PikPak 回收站，重新离线「\(job.title)」")
         return true
     }
 
@@ -1481,22 +1483,22 @@ final class DownloadStore: ObservableObject {
             notice = text
         }
         guard Self.cloudCleanupAllowed(account: job.cleanupAccount, currentAccount: PikPak.loggedInUser, files: files) else {
-            keep("「\(job.title)」的账号或本地文件已变化，云端副本已保留"); return
+            keep(String(localized: "「\(job.title)」的账号或本地文件已变化，云端副本已保留")); return
         }
         do {
             guard try await PikPak.shared.holds(job.fileID, sizes: files.map(\.size)) else {
-                keep("「\(job.title)」云端内容和本地文件对不上，云端副本已保留"); return
+                keep(String(localized: "「\(job.title)」云端内容和本地文件对不上，云端副本已保留")); return
             }
             let size = files.reduce(Int64(0)) { $0 + $1.size }
             let result = try await PikPak.shared.reclaim(job.fileID, size: size)
             cloudJobs.removeAll { $0.id == job.id }
             saveCloud()
             switch result {
-            case .freed(let bytes): notice = "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)。\(countRescue())"
-            case .unconfirmed: notice = "「\(job.title)」已下载到本机，已清理云端副本。\(countRescue())"
+            case .freed(let bytes): notice = String(localized: "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)。\(countRescue())")
+            case .unconfirmed: notice = String(localized: "「\(job.title)」已下载到本机，已清理云端副本。\(countRescue())")
             }
         } catch {
-            keep("「\(job.title)」已下载到本机，云端副本清理失败：\(error.localizedDescription)")
+            keep(String(localized: "「\(job.title)」已下载到本机，云端副本清理失败：\(error.localizedDescription)"))
         }
     }
 
@@ -1511,8 +1513,8 @@ final class DownloadStore: ObservableObject {
             try await Self.rollbackCloudPulls(job.pulling ?? [], existing: existing) { id in
                 try await self.host.client.delete(id, withFiles: false)
             }
-        } catch { notice = "云盘任务恢复暂未完成，请检查下载引擎连接"; return }
-        cloudFailed(job.id, unrecorded.isEmpty ? message : "\(message)；发现未记录的拉回任务，已保留并暂停进行中的任务，请检查任务列表")
+        } catch { notice = L("云盘任务恢复暂未完成，请检查下载引擎连接"); return }
+        cloudFailed(job.id, unrecorded.isEmpty ? message : String(localized: "\(message)；发现未记录的拉回任务，已保留并暂停进行中的任务，请检查任务列表"))
     }
 
     /// 每 5 秒查一次云端进度；下好后取直链交给内核，删掉原来的 BT 任务和它下的那一点
@@ -1523,7 +1525,7 @@ final class DownloadStore: ObservableObject {
             defer { cloudPolling = false }
             while cloudJobs.contains(where: { $0.cleanupReady != true }) {
                 for job in cloudJobs where job.preparingPulls == true {
-                    await recoverCloudPreparation(job, message: "云盘拉回任务创建中断")
+                    await recoverCloudPreparation(job, message: L("云盘拉回任务创建中断"))
                 }
                 // 拉回完成的：核对本地文件后清理云端副本、结束这个云盘任务
                 for job in cloudJobs where job.pulling != nil && job.preparingPulls != true && job.cleanupReady != true {
@@ -1539,7 +1541,7 @@ final class DownloadStore: ObservableObject {
                             .filter { Self.cloudCopyCanBeRemoved(file: $0.file, expectedSize: $0.total) }
                         guard items.count == ids.count else {
                             cloudJobs.removeAll { $0.id == job.id }; saveCloud()
-                            notice = "「\(job.title)」本地文件和云端大小不一致，云端文件已保留"
+                            notice = String(localized: "「\(job.title)」本地文件和云端大小不一致，云端文件已保留")
                             continue
                         }
                         // 先移回保存目录、清半截文件，云端清理核对的是移动后的路径
@@ -1556,14 +1558,14 @@ final class DownloadStore: ObservableObject {
                                 if Prefs.autoCleanCloud {
                                     await cleanCloudCopy(cloudJobs[index])
                                 } else {
-                                    let text = "「\(job.title)」已下载到本机，可清理云端副本"
+                                    let text = String(localized: "「\(job.title)」已下载到本机，可清理云端副本")
                                     noticeAction = NoticeAction(title: "清理云端副本", forText: text, run: { [weak self] in self?.manageCloudCopies() })
                                     notice = text
                                 }
                             } else {
                                 cloudJobs[index].cleanupReady = nil
                                 cloudJobs[index].cleanupFiles = nil
-                                notice = "无法保存云端清理记录，云端文件已保留"
+                                notice = L("无法保存云端清理记录，云端文件已保留")
                             }
                         } else {
                             cloudJobs.removeAll { $0.id == job.id }; saveCloud()
@@ -1574,7 +1576,7 @@ final class DownloadStore: ObservableObject {
                     guard let t = try? await PikPak.shared.status(job.taskID, fileID: job.fileID) else { continue }
                     if t.phase == "PHASE_TYPE_ERROR" {
                         if t.message?.contains("空间") == true, job.spaceRetried != true, await retryAfterEmptyingTrash(job) { continue }
-                        cloudFailed(job.id, t.message ?? "云端下载出错")
+                        cloudFailed(job.id, t.message ?? L("云端下载出错"))
                         continue
                     }
                     if let k = cloudJobs.firstIndex(where: { $0.id == job.id }) { cloudJobs[k].progress = t.progress }
@@ -1582,7 +1584,7 @@ final class DownloadStore: ObservableObject {
                     do {
                         let selection = try await PikPak.shared.files(of: t.fileID.isEmpty ? job.fileID : t.fileID)
                         let files = selection.files
-                        guard !files.isEmpty else { cloudFailed(job.id, "云端没有可下载的文件"); continue }
+                        guard !files.isEmpty else { cloudFailed(job.id, L("云端没有可下载的文件")); continue }
                         let currentDir = URL(fileURLWithPath: job.dir)
                         let pullDir = currentDir.lastPathComponent == job.id ? currentDir : currentDir.appendingPathComponent("PikPak 下载").appendingPathComponent(job.id)
                         try FileManager.default.createDirectory(at: pullDir, withIntermediateDirectories: true)
@@ -1595,19 +1597,19 @@ final class DownloadStore: ObservableObject {
                         guard saveCloud() else {
                             cloudJobs[initial].pulling = nil
                             cloudJobs[initial].preparingPulls = nil
-                            cloudFailed(job.id, "无法保存云盘任务状态")
+                            cloudFailed(job.id, L("无法保存云盘任务状态"))
                             continue
                         }
                         let created = try await Self.createCloudPulls(files, create: { f in
                             let id = try await self.host.client.create(url: f.url, directory: pullDir.path, name: f.name)
                             guard let index = self.cloudJobs.firstIndex(where: { $0.id == job.id }) else {
                                 try? await self.host.client.delete(id, withFiles: false)
-                                throw EngineError.server("云盘任务已移除")
+                                throw EngineError.server(L("云盘任务已移除"))
                             }
                             self.cloudJobs[index].pulling?.append(id)
                             guard self.saveCloud() else {
                                 try? await self.host.client.delete(id, withFiles: false)
-                                throw EngineError.server("无法保存云盘任务状态")
+                                throw EngineError.server(L("无法保存云盘任务状态"))
                             }
                             return id
                         }, rollback: { id in
@@ -1621,12 +1623,12 @@ final class DownloadStore: ObservableObject {
                         cloudJobs[k].preparingPulls = false
                         guard saveCloud() else {
                             cloudJobs[k].preparingPulls = true
-                            await recoverCloudPreparation(cloudJobs[k], message: "无法保存云盘任务状态")
+                            await recoverCloudPreparation(cloudJobs[k], message: L("无法保存云盘任务状态"))
                             continue
                         }
                         if let e = job.engineID { try? await host.client.delete(e, withFiles: false) }
                         if let index = files.indices.max(by: { files[$0].size < files[$1].size }) { selectedID = created[index] }
-                        notice = "「\(job.title)」云端已下好，正在取回本机，取完自动清理云端"
+                        notice = String(localized: "「\(job.title)」云端已下好，正在取回本机，取完自动清理云端")
                         await poll()
                     } catch {
                         if let current = cloudJobs.first(where: { $0.id == job.id }), current.preparingPulls == true {
@@ -1646,10 +1648,10 @@ final class DownloadStore: ObservableObject {
     /// 换成一条「迅雷」任务，进度从迅雷写的文件里量。
     /// promptIfMissing：用户主动点的时候没装迅雷要说清楚并给官网；自动接管时静默留在本地下，别弹窗打断下载
     func handToThunder(_ item: Item, promptIfMissing: Bool = true) {
-        guard !item.link.isEmpty else { notice = "这条任务没留下链接，交不了"; return }
+        guard !item.link.isEmpty else { notice = L("这条任务没留下链接，交不了"); return }
         guard ThunderBridge.installed else {
             if promptIfMissing { promptInstallThunder() }
-            else { notice = "没找到迅雷，「\(item.title)」继续由闪电全能下载下（设置里可关掉「自动交给迅雷」）" }
+            else { notice = String(localized: "没找到迅雷，「\(item.title)」继续由闪电全能下载下（设置里可关掉「自动交给迅雷」）") }
             return
         }
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
@@ -1671,15 +1673,15 @@ final class DownloadStore: ObservableObject {
         var useExisting = false
         if existingFolder != nil {
             guard promptIfMissing else {
-                notice = "发现迅雷已有下载文件，请手动选择是否关联迅雷任务"
+                notice = L("发现迅雷已有下载文件，请手动选择是否关联迅雷任务")
                 return
             }
             let alert = NSAlert()
-            alert.messageText = "发现迅雷已有下载文件"
-            alert.informativeText = "如果迅雷里仍有这条任务，可关联已有文件，再到迅雷中继续下载；如果任务已从迅雷移除，可以重新提交。"
-            alert.addButton(withTitle: "关联已有任务")
-            alert.addButton(withTitle: "重新提交")
-            alert.addButton(withTitle: "取消")
+            alert.messageText = L("发现迅雷已有下载文件")
+            alert.informativeText = L("如果迅雷里仍有这条任务，可关联已有文件，再到迅雷中继续下载；如果任务已从迅雷移除，可以重新提交。")
+            alert.addButton(withTitle: L("关联已有任务"))
+            alert.addButton(withTitle: L("重新提交"))
+            alert.addButton(withTitle: L("取消"))
             NSApp.activate(ignoringOtherApps: true)
             let answer = alert.runModal()
             guard answer == .alertFirstButtonReturn || answer == .alertSecondButtonReturn else { return }
@@ -1692,7 +1694,7 @@ final class DownloadStore: ObservableObject {
                 if !useExisting { try FileManager.default.createDirectory(atPath: safeDir, withIntermediateDirectories: true) }
                 if let sourceID { try await host.client.pause(sourceID) }
             } catch {
-                notice = "无法交给迅雷：\(error.localizedDescription)，原任务仍保留"
+                notice = String(localized: "无法交给迅雷：\(error.localizedDescription)，原任务仍保留")
                 return
             }
             let job = ThunderJob(id: jobID, title: item.title, link: item.link, dir: useExisting ? dir : safeDir,
@@ -1702,13 +1704,13 @@ final class DownloadStore: ObservableObject {
             if pendingRecord != nil { dropPending(item.id) }
             selectedID = job.id; rebuild()
             if useExisting {
-                notice = "已关联迅雷下载文件；请在迅雷中确认任务并继续下载"
+                notice = L("已关联迅雷下载文件；请在迅雷中确认任务并继续下载")
                 openThunder()
                 return
             }
             ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] clicked in
-                self?.notice = clicked ? "已交给迅雷下载「\(item.title)」，原任务已保留"
-                                       : "请在迅雷中确认下载；原任务和文件仍保留"
+                self?.notice = clicked ? String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
+                                       : L("请在迅雷中确认下载；原任务和文件仍保留")
             }
         }
     }
@@ -1719,7 +1721,7 @@ final class DownloadStore: ObservableObject {
     /// 建个暂停的任务等用户去停，用户看到的是「暂停 + 进度 0」，像从头重下（11-01 用户反馈）
     func reclaimFromThunder(_ item: Item) {
         guard case .thunder(let id) = item.source, let job = thunderJobs.first(where: { $0.id == id }) else { return }
-        notice = "正在确认迅雷已经停下…"
+        notice = L("正在确认迅雷已经停下…")
         Task {
             // 先尽量把迅雷的任务文件夹找到，否则判不了它停没停
             var probe = job
@@ -1750,7 +1752,7 @@ final class DownloadStore: ObservableObject {
                     }?.path
             }
             let link = torrent ?? job.link
-            guard !link.isEmpty else { notice = "这条任务没留下链接，收不回来"; return }
+            guard !link.isEmpty else { notice = L("这条任务没留下链接，收不回来"); return }
             // 迅雷记的已下量先填上，解析和校验期间列表里就显示真实进度，不会跳回 0；
             // 原始磁力一起带过去，收回后右键里的「交给云盘离线」「用迅雷下载」还在
             let origin = job.link.isEmpty ? nil : job.link
@@ -1772,7 +1774,7 @@ final class DownloadStore: ObservableObject {
             start(link: link, dir: downloadDir,
                   carry: (job.checked ?? 0, job.dlSize ?? job.total), title: item.title,
                   originLink: origin, verifyExisting: true, replacingThunderID: id)
-            notice = "正在取回迅雷素材「\(item.title)」，取完后自动继续下载"
+            notice = String(localized: "正在取回迅雷素材「\(item.title)」，取完后自动继续下载")
         }
     }
 
@@ -1780,11 +1782,11 @@ final class DownloadStore: ObservableObject {
     func reverify(_ item: Item) {
         guard case .engine(let id) = item.source else { return }
         guard !item.checking else { return }
-        guard relocated[item.id] == nil else { notice = "这条已下完并整理到保存目录，不需要重新校验"; return }
-        notice = "正在重新校验「\(item.title)」已下的数据…"
+        guard relocated[item.id] == nil else { notice = L("这条已下完并整理到保存目录，不需要重新校验"); return }
+        notice = String(localized: "正在重新校验「\(item.title)」已下的数据…")
         Task {
             do { try await host.client.verifyExisting(id: id) }
-            catch { notice = "校验请求没成功：\(error.localizedDescription)" }
+            catch { notice = String(localized: "校验请求没成功：\(error.localizedDescription)") }
             await poll()
         }
     }
@@ -1792,7 +1794,7 @@ final class DownloadStore: ObservableObject {
     /// 迅雷任务边下边播：迅雷大体按顺序写文件，直接用播放器打开正在写的文件
     func playThunderFile(_ item: Item) {
         guard let f = item.file else { return }
-        guard let player = Self.streamPlayer else { notice = "边下边播需要 IINA 或 VLC 播放器"; return }
+        guard let player = Self.streamPlayer else { notice = L("边下边播需要 IINA 或 VLC 播放器"); return }
         NSWorkspace.shared.open([f], withApplicationAt: player, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
     }
 
@@ -1803,16 +1805,16 @@ final class DownloadStore: ObservableObject {
                 do {
                     try await host.client.resume(engineID)
                     thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
-                    notice = "已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务"
+                    notice = L("已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务")
                     await poll()
-                } catch { notice = "恢复原下载失败：\(error.localizedDescription)，任务仍保留" }
+                } catch { notice = String(localized: "恢复原下载失败：\(error.localizedDescription)，任务仍保留") }
             }
         } else if let record = job.sourcePending {
             thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs); rebuild()
             start(link: record.link, headers: record.headers, name: record.name,
                   dir: URL(fileURLWithPath: record.dir), selectFiles: record.selectFiles, originLink: record.originLink)
-            notice = "已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务"
-        } else { notice = "没有可恢复的原任务，请使用收回功能" }
+            notice = L("已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务")
+        } else { notice = L("没有可恢复的原任务，请使用收回功能") }
     }
 
     func forgetThunder(_ id: String) {
@@ -1835,14 +1837,14 @@ final class DownloadStore: ObservableObject {
     func playWhileDownloading(_ item: Item) {
         guard case .engine(let id) = item.source, let f = item.file else { return }
         guard !buffering.contains(item.id) else { return }   // 连点不重复开
-        guard let player = Self.streamPlayer else { notice = "边下边播需要 IINA 或 VLC 播放器"; return }
+        guard let player = Self.streamPlayer else { notice = L("边下边播需要 IINA 或 VLC 播放器"); return }
         buffering.insert(item.id)
         bufferProgress[item.id] = 0
         selectedID = item.id
         Task {
             defer { buffering.remove(item.id); bufferProgress[item.id] = nil }
             if item.status == .paused { try? await host.client.resume(id) }
-            do { try await host.client.stream(id) } catch { notice = "这个任务暂不支持边下边播"; return }
+            do { try await host.client.stream(id) } catch { notice = L("这个任务暂不支持边下边播"); return }
             guard let url = host.client.playURL(id: id, fileName: f.lastPathComponent) else { return }
             NSWorkspace.shared.open([url], withApplicationAt: player, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
             try? await Task.sleep(nanoseconds: 2_000_000_000)   // 按钮上的「正在打开」留一会儿
@@ -1911,14 +1913,14 @@ final class DownloadStore: ObservableObject {
 
     /// 通知上带「打开」「在访达中显示」两个按钮（AppDelegate 里处理点击）
     static func registerNotificationActions() {
-        let open = UNNotificationAction(identifier: "open", title: "打开", options: [])
-        let reveal = UNNotificationAction(identifier: "reveal", title: "在访达中显示", options: [])
+        let open = UNNotificationAction(identifier: "open", title: L("打开"), options: [])
+        let reveal = UNNotificationAction(identifier: "reveal", title: L("在访达中显示"), options: [])
         UNUserNotificationCenter.current().setNotificationCategories(
             [UNNotificationCategory(identifier: doneCategory, actions: [open, reveal], intentIdentifiers: [])])
     }
 
     private func didFinish(_ item: Item) {
-        if case .thunder = item.source { notice = "「\(item.title)」迅雷已下完。\(countRescue())" }
+        if case .thunder = item.source { notice = String(localized: "「\(item.title)」迅雷已下完。\(countRescue())") }
         if let f = item.location ?? item.file { Self.markQuarantine(f, source: item.link) }
         if Prefs.doneSound { Self.playDoneSound() }
         guard Prefs.notify else { return }
@@ -1926,7 +1928,7 @@ final class DownloadStore: ObservableObject {
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
             let c = UNMutableNotificationContent()
-            c.title = "下载完成"
+            c.title = L("下载完成")
             c.body = item.title
             c.sound = nil   // 提示音由 App 自己放（不受通知权限影响），这里再响就重了
             c.categoryIdentifier = Self.doneCategory
@@ -1947,7 +1949,7 @@ final class DownloadStore: ObservableObject {
     /// 跟浏览器一样给下载的文件打上「来自互联网」标记（com.apple.quarantine），下来的 App / 安装包打开时照常经过系统安全检查。
     /// 文件夹（BT）里逐个标，.app 只标包本身
     static func markQuarantine(_ url: URL, source: String) {
-        var props: [String: Any] = [kLSQuarantineAgentNameKey as String: "闪电全能下载",
+        var props: [String: Any] = [kLSQuarantineAgentNameKey as String: L("闪电全能下载"),
                                     kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String]
         if source.lowercased().hasPrefix("http"), let u = URL(string: source) { props[kLSQuarantineDataURLKey as String] = u }
         func mark(_ f: URL) {
@@ -1978,7 +1980,7 @@ final class DownloadStore: ObservableObject {
         if let index = videoJobs.firstIndex(where: { $0.url == share && $0.state == .failed }) {
             videoJobs.remove(at: index)
         }
-        var job = VideoJob(url: share, title: title.isEmpty ? "微信视频号" : title, site: "微信视频号")
+        var job = VideoJob(url: share, title: title.isEmpty ? L("微信视频号") : title, site: L("微信视频号"))
         job.stage = .preparing
         videoJobs.append(job); saveVideos(); rebuild(); selectedID = job.id.uuidString
         let initial = job
@@ -1991,7 +1993,7 @@ final class DownloadStore: ObservableObject {
                 result.downloaded = result.total
             } catch {
                 result.state = .failed
-                result.error = (error as? WeChatChannels.Failure)?.localizedDescription ?? "视频下载失败，请在浏览器扩展重新解析后重试"
+                result.error = (error as? WeChatChannels.Failure)?.localizedDescription ?? L("视频下载失败，请在浏览器扩展重新解析后重试")
             }
             self?.weChatTasks.removeValue(forKey: initial.id)
             self?.updateVideo(result)
@@ -2009,7 +2011,7 @@ final class DownloadStore: ObservableObject {
         guard let data = try? Data(contentsOf: videosFile),
               let list = try? JSONDecoder().decode([VideoJob].self, from: data) else { return }
         // 上次没下完的进程已经不在了，标成失败让用户重试
-        videoJobs = list.map { var j = $0; if j.state == .running { j.state = .failed; j.error = "上次未完成"; j.speed = 0 }; return j }
+        videoJobs = list.map { var j = $0; if j.state == .running { j.state = .failed; j.error = L("上次未完成"); j.speed = 0 }; return j }
     }
 
     private func saveVideos() {
@@ -2021,7 +2023,7 @@ final class DownloadStore: ObservableObject {
         case .video(let id):
             // 原地重新开始；先删再 add 会被去重挡掉，任务直接消失
             guard let i = videoJobs.firstIndex(where: { $0.id == id }) else { return }
-            if LinkKind.isWeChatChannelShare(videoJobs[i].url) { notice = "请在已登录的腾讯元宝页面，通过浏览器扩展重新解析此链接。"; return }
+            if LinkKind.isWeChatChannelShare(videoJobs[i].url) { notice = L("请在已登录的腾讯元宝页面，通过浏览器扩展重新解析此链接。"); return }
             videoJobs[i].state = .running; videoJobs[i].error = nil
             videoJobs[i].downloaded = 0; videoJobs[i].total = 0; videoJobs[i].speed = 0
             saveVideos(); rebuild()
@@ -2120,9 +2122,9 @@ final class DownloadStore: ObservableObject {
         let status: Item.Status = switch j.state {
         case .running: .running
         case .done: .done
-        case .failed: .failed(j.error ?? "下载失败")
+        case .failed: .failed(j.error ?? L("下载失败"))
         }
-        return Item(id: j.id.uuidString, source: .video(j.id), title: j.title != j.url ? j.title : j.state == .running ? "正在读取视频信息" : displayName(j.url), rawTitle: j.title,
+        return Item(id: j.id.uuidString, source: .video(j.id), title: j.title != j.url ? j.title : j.state == .running ? L("正在读取视频信息") : displayName(j.url), rawTitle: j.title,
                     origin: j.site, category: .video, status: status, downloaded: j.downloaded, total: j.total, speed: j.speed,
                     file: j.filePath.map { URL(fileURLWithPath: $0) }, createdAt: j.createdAt, thumbRemote: j.thumbnailURL,
                     linkKey: linkKey(j.url), videoStage: j.state == .running ? (j.stage ?? .preparing) : nil)

@@ -80,7 +80,7 @@ private struct ClipboardPopup: View {
         HStack(alignment: .top, spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 4) {
-                Text(LinkKind.isWeChatChannelShare(first) ? "检测到视频号链接" : links.count > 1 ? "检测到 \(links.count) 个下载链接" : "检测到下载链接")
+                Text(LinkKind.isWeChatChannelShare(first) ? L("检测到视频号链接") : links.count > 1 ? String(localized: "检测到 \(links.count) 个下载链接") : L("检测到下载链接"))
                     .font(.system(size: 15, weight: .semibold))
                 Text(PrettyTitle.clean(DownloadStore.displayName(first)))
                     .font(.system(size: 14)).lineLimit(1).truncationMode(.middle)
@@ -94,7 +94,7 @@ private struct ClipboardPopup: View {
                 HStack(spacing: 8) {
                     // 浮窗不是活动窗口，系统按钮会变灰；自己画琥珀色，始终醒目
                     Button(action: onDownload) {
-                        Text(LinkKind.isWeChatChannelShare(first) ? "查看方法" : links.count > 1 ? "全部下载" : "下载").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text(LinkKind.isWeChatChannelShare(first) ? L("查看方法") : links.count > 1 ? L("全部下载") : L("下载")).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                             .frame(minWidth: 72).padding(.horizontal, 12).frame(height: 30)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.tint))
                     }

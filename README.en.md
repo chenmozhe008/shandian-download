@@ -134,6 +134,22 @@ Right-click a supported file link and choose **发送到闪电 / Send to Shandia
 
 Once installed, the window shows **已连接** (Connected).
 
+## For AI Tools (MCP)
+
+The app includes an MCP server, so AI tools can add downloads, check progress, pause and resume. It runs only on your Mac and can't delete tasks or files. Go to Settings → AI Tools, choose a tool and copy its command or config:
+
+| Tool | How to connect |
+|---|---|
+| Claude Code, Codex, Gemini CLI | Run the copied command in Terminal |
+| Claude Desktop | Settings → Developer → Edit Config, then paste |
+| Cursor | Paste into `~/.cursor/mcp.json` |
+| Trae | Settings → MCP → Add Manually |
+| Windsurf | Open the config file from Cascade's MCP menu |
+| VS Code | Run `MCP: Open User Configuration` from the Command Palette |
+| Other MCP tools | Use the generic `mcpServers` config |
+
+The ChatGPT desktop app currently accepts only remote HTTPS addresses, so it can't reach a local server. Codex works with the same account.
+
 ## License
 
 [GPL-3.0](LICENSE). Download only content you have the right to obtain, and follow each site's terms of service and applicable law. Films shown in the screenshots are public-domain or open-source works; the interface data is for demonstration.

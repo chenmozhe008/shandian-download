@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.53"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.57"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -68,7 +68,12 @@ ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"
 test -x "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
 # 打过补丁的内核（script/build_engine.sh 编出来的）；App 启动时发现和本机装的不一样就换上
 cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"
-mkdir -p "$APP/Contents/Resources/zh-Hans.lproj"  # 声明中文，系统菜单（文件、编辑、窗口）才显示中文
+cp -R "$ROOT/Resources/en.lproj" "$APP/Contents/Resources/en.lproj"
+# 中文表由英文表的键生成（键 = 值）：中文包要是空的，系统会退回开发语言英文，界面就中英混排
+ZH_LPROJ="$APP/Contents/Resources/zh-Hans.lproj"; mkdir -p "$ZH_LPROJ"
+sed -E 's/^("([^"\\]|\\.)*")[[:space:]]*=.*;$/\1 = \1;/' "$ROOT/Resources/en.lproj/Localizable.strings" > "$ZH_LPROJ/Localizable.strings"
+plutil -lint -s "$ZH_LPROJ/Localizable.strings"
+printf '"CFBundleName" = "%s";\n"CFBundleDisplayName" = "%s";\n' "$APP_NAME" "$APP_NAME" > "$ZH_LPROJ/InfoPlist.strings"
 # 强调色（琥珀）：侧栏选中行、按钮等系统控件跟随它；SwiftPM 不编译 xcassets，这里用 actool 单独编
 # actool 必须写一份 partial Info.plist，但下面的 Info.plist 是手写的、用不到它：写到系统临时目录，用完删掉
 ASSETS_PLIST="$(mktemp -t shandian-assets).plist"
@@ -80,8 +85,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
-  <key>CFBundleLocalizations</key><array><string>zh-Hans</string></array>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
   <key>CFBundleExecutable</key><string>$EXECUTABLE_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>$APP_NAME</string>

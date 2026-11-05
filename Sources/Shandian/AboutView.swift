@@ -11,7 +11,7 @@ enum AppInfo {
     /// 卡片里显示的仓库地址，不用把整条 URL 塞进提示里
     static let repoLabel = "github.com/chenmozhe008/shandian-download"
 
-    static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "开发版" }
+    static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? L("开发版") }
     static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-" }
 
     /// 本地自己改过、还没提交的构建：打包时 build_app.sh 看到工作区不干净就写这个键，
@@ -66,7 +66,7 @@ struct AboutView: View {
         VStack(spacing: 0) {
             Header()
             Picker("", selection: $state.tab) {
-                ForEach(AboutTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(AboutTab.allCases, id: \.self) { Text(L($0.rawValue)).tag($0) }
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 270).padding(.vertical, 16)
             ScrollView {
@@ -93,7 +93,7 @@ private struct Header: View {
                 Text("闪电全能下载").font(.system(size: 26, weight: .bold))
                 Text("磁力、种子、网盘与视频网站，一个窗口下载").font(.system(size: 14, weight: .medium))
                 HStack(spacing: 12) {
-                    Text(AppInfo.versionLabel + "　作者 \(AppInfo.author)")
+                    Text(AppInfo.versionLabel + String(localized: "　作者 \(AppInfo.author)"))
                         .font(.system(size: 12)).opacity(0.75).monospacedDigit()
                     Button { NSWorkspace.shared.open(AppInfo.repository) } label: {
                         HStack(spacing: 6) { GitHubMark(size: 13); Text("GitHub") }
@@ -188,26 +188,26 @@ private struct OpenSourceCard: View {
 
 private struct IntroPage: View {
     private let points: [(String, String, String)] = [
-        ("globe", "海外资源可连接", "下载经本机代理连接，可访问海外的 Tracker 和下载服务器。"),
-        ("bolt.fill", "磁力更快找到来源", "启动时更新公共 Tracker 列表，使用固定监听端口，连接更多来源。"),
-        ("film.stack", "只下载需要的文件", "种子只选正片和字幕，跳过样片、海报；同一影片多种格式只下一个。"),
-        ("play.rectangle.fill", "视频网站最高画质", "默认最高分辨率，优先 H.264，可直接导入剪辑软件；可选字幕和仅音频。"),
-        ("photo.on.rectangle", "影片一目了然", "自动整理影片名称，显示影片画面或视频封面。"),
-        ("checkmark.seal.fill", "无广告", "下载核心为开源项目 Gopeed 和 yt-dlp；部分网站需要登录。"),
+        ("globe", L("海外资源可连接"), L("下载经本机代理连接，可访问海外的 Tracker 和下载服务器。")),
+        ("bolt.fill", L("磁力更快找到来源"), L("启动时更新公共 Tracker 列表，使用固定监听端口，连接更多来源。")),
+        ("film.stack", L("只下载需要的文件"), L("种子只选正片和字幕，跳过样片、海报；同一影片多种格式只下一个。")),
+        ("play.rectangle.fill", L("视频网站最高画质"), L("默认最高分辨率，优先 H.264，可直接导入剪辑软件；可选字幕和仅音频。")),
+        ("photo.on.rectangle", L("影片一目了然"), L("自动整理影片名称，显示影片画面或视频封面。")),
+        ("checkmark.seal.fill", L("无广告"), L("下载核心为开源项目 Gopeed 和 yt-dlp；部分网站需要登录。")),
     ]
-    private let sources = ["磁力", "种子", "ed2k", "HTTP 直链", "网盘直链", "YouTube", "X", "B 站", "微博", "小红书", "新片场", "抖音", "豆瓣预告", "微信视频号"]
+    private let sources = [L("磁力"), L("种子"), "ed2k", L("HTTP 直链"), L("网盘直链"), "YouTube", "X", L("B 站"), L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号")]
     private let notes: [(String, String)] = [
-        ("doc.on.clipboard", "复制链接后在窗口中按 ⌘V 即可下载，也可拖入链接或种子文件；装好浏览器扩展后，网页上点下载会直接交给闪电全能下载。"),
-        ("externaldrive", "磁力、种子和其他下载默认存到「下载」，可在设置中选择保存位置。"),
-        ("play.tv", "下载中的电影可「边下边播」：先下片头，用 IINA 或 VLC 打开。"),
-        ("cloud", "网盘下载需先在浏览器中获取直链，速度受网盘自身限速影响。"),
-        ("gauge.with.dots.needle.33percent", "下载速度取决于资源热度、来源数量和网络环境。"),
+        ("doc.on.clipboard", L("复制链接后在窗口中按 ⌘V 即可下载，也可拖入链接或种子文件；装好浏览器扩展后，网页上点下载会直接交给闪电全能下载。")),
+        ("externaldrive", L("磁力、种子和其他下载默认存到「下载」，可在设置中选择保存位置。")),
+        ("play.tv", L("下载中的电影可「边下边播」：先下片头，用 IINA 或 VLC 打开。")),
+        ("cloud", L("网盘下载需先在浏览器中获取直链，速度受网盘自身限速影响。")),
+        ("gauge.with.dots.needle.33percent", L("下载速度取决于资源热度、来源数量和网络环境。")),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionTitle("它是什么")
+                SectionTitle(L("它是什么"))
                 Text("闪电全能下载是一款 Mac 下载工具。磁力链接、种子文件、ed2k、HTTP 直链、网盘直链，以及 B 站、YouTube 等视频网站的内容，都在同一个窗口下载。链接类型自动识别，文件按类型保存到不同位置；关闭窗口后下载继续，菜单栏显示当前速度。")
                     .font(.system(size: 13.5)).foregroundStyle(Theme.text).lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -217,7 +217,7 @@ private struct IntroPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("核心优势")
+                SectionTitle(L("核心优势"))
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(points, id: \.1) { p in
                         Card {
@@ -234,13 +234,13 @@ private struct IntroPage: View {
                 }
             }
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("支持的来源")
+                SectionTitle(L("支持的来源"))
                 FlowChips(items: sources)
                 Text("小红书、新片场、抖音：在浏览器里打开视频页，点扩展里的「下载这个视频」。视频号：粘贴分享链接后按提示操作，需要登录腾讯元宝。")
                     .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
             }
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle("使用说明")
+                SectionTitle(L("使用说明"))
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(notes, id: \.1) { n in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -303,16 +303,16 @@ private struct ChangelogPage: View {
             guard (response as? HTTPURLResponse)?.statusCode == 200, let rows = ReleaseHistory.online(data) else { throw URLError(.badServerResponse) }
             online = rows
             UserDefaults.standard.set(data, forKey: cacheKey)
-            message = rows.isEmpty ? "GitHub 暂无正式发布记录，下面显示本机记录。" : nil
+            message = rows.isEmpty ? L("GitHub 暂无正式发布记录，下面显示本机记录。") : nil
         } catch {
-            message = "暂时连不上 GitHub，下面显示本机记录。"
+            message = L("暂时连不上 GitHub，下面显示本机记录。")
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Button(loading ? "正在获取…" : "刷新发布记录") { Task { await loadHistory() } }.disabled(loading)
+                Button(loading ? L("正在获取…") : L("刷新发布记录")) { Task { await loadHistory() } }.disabled(loading)
                 Spacer()
                 Link("GitHub 发布页", destination: URL(string: "https://github.com/chenmozhe008/shandian-download/releases")!)
             }
@@ -373,7 +373,7 @@ private struct FeedbackPage: View {
                             .controlSize(.large)
                             .help("排查问题用。只含版本、设置和运行状态，路径、片名、链接和令牌都已去掉")
                         Button { AppInfo.copy(AppInfo.feedbackEmail); copied = AppInfo.feedbackEmail } label: {
-                            Label(copied == AppInfo.feedbackEmail ? "已复制邮箱" : AppInfo.feedbackEmail,
+                            Label(copied == AppInfo.feedbackEmail ? L("已复制邮箱") : AppInfo.feedbackEmail,
                                   systemImage: copied == AppInfo.feedbackEmail ? "checkmark" : "doc.on.doc")
                         }
                         .controlSize(.large)
@@ -383,14 +383,14 @@ private struct FeedbackPage: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("反馈时请尽量包括").font(.system(size: 14, weight: .semibold))
-                Bullet(text: "出现问题的链接，或链接类型（磁力、视频网站等）")
-                Bullet(text: "任务行显示的状态或失败原因")
-                Bullet(text: "版本信息（「发反馈邮件」会自动附上，也可在下方复制）")
+                Bullet(text: L("出现问题的链接，或链接类型（磁力、视频网站等）"))
+                Bullet(text: L("任务行显示的状态或失败原因"))
+                Bullet(text: L("版本信息（「发反馈邮件」会自动附上，也可在下方复制）"))
             }
             HStack {
                 Text(AppInfo.diagnostics).font(.system(size: 12)).foregroundStyle(Theme.sub).textSelection(.enabled)
                 Spacer()
-                Button(copied == AppInfo.diagnostics ? "已复制" : "复制") { AppInfo.copy(AppInfo.diagnostics); copied = AppInfo.diagnostics }
+                Button(copied == AppInfo.diagnostics ? L("已复制") : L("复制")) { AppInfo.copy(AppInfo.diagnostics); copied = AppInfo.diagnostics }
                     .controlSize(.small)
             }
         }

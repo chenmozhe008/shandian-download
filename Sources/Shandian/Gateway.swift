@@ -161,7 +161,7 @@ final class Gateway: @unchecked Sendable {
             let client = String(key.dropFirst("credentials_".count).split(separator: "@").first ?? "")
             var device = o["device"] as? String ?? ""
             device = device.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-            let name = (c["username"] as? String) ?? (c["email"] as? String) ?? "PikPak 账号"
+            let name = (c["username"] as? String) ?? (c["email"] as? String) ?? L("PikPak 账号")
             do {
                 try await PikPak.shared.adoptWebSession(clientID: client.isEmpty ? PikPak.web.clientID : client, deviceID: device,
                                                         accessToken: at, refreshToken: rt, userID: c["sub"] as? String ?? "", name: name)
@@ -180,7 +180,7 @@ final class Gateway: @unchecked Sendable {
             guard let share = obj["share"] as? String, share.utf8.count <= 8192, LinkKind.isWeChatChannelShare(share),
                   let playable = obj["playable"] as? String, playable.utf8.count <= 16384,
                   let url = URL(string: playable), WeChatChannels.trusted(url, exact: "channels.weixin.qq.com") else { return (400, json(["ok": false])) }
-            let title = String((obj["title"] as? String ?? "微信视频号").prefix(100))
+            let title = String((obj["title"] as? String ?? L("微信视频号")).prefix(100))
             await MainActor.run { store?.startWeChat(share: share, playable: playable, title: title); store?.section = .active }
             return (200, json(["ok": true]))
         }

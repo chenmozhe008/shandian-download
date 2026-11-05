@@ -7,13 +7,13 @@ enum WeChatChannels {
         case feedHTTP(Int)
         var errorDescription: String? {
             switch self {
-            case .invalid: return "视频号解析结果无效，请重新解析"
-            case .unavailable: return "视频号播放地址已失效，请重新解析"
-            case .feedHTTP(let code): return "获取视频信息失败（HTTP \(code)），请稍后重新解析"
-            case .feedData: return "未获取到视频信息，请重新解析"
-            case .videoHost: return "视频地址不在腾讯域名内，已停止下载"
-            case .download: return "视频下载失败，请重新解析后重试"
-            case .format: return "视频格式无法识别，未保存文件"
+            case .invalid: return L("视频号解析结果无效，请重新解析")
+            case .unavailable: return L("视频号播放地址已失效，请重新解析")
+            case .feedHTTP(let code): return String(localized: "获取视频信息失败（HTTP \(code)），请稍后重新解析")
+            case .feedData: return L("未获取到视频信息，请重新解析")
+            case .videoHost: return L("视频地址不在腾讯域名内，已停止下载")
+            case .download: return L("视频下载失败，请重新解析后重试")
+            case .format: return L("视频格式无法识别，未保存文件")
             }
         }
     }
@@ -62,7 +62,7 @@ enum WeChatChannels {
         try Task.checkCancellation()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let safe = String(title.prefix(60)).components(separatedBy: CharacterSet(charactersIn: "/:\\").union(.newlines)).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = safe.isEmpty ? "微信视频号" : safe
+        let base = safe.isEmpty ? L("微信视频号") : safe
         var destination = directory.appendingPathComponent(base + ".mp4")
         var suffix = 2
         while FileManager.default.fileExists(atPath: destination.path) { destination = directory.appendingPathComponent("\(base) (\(suffix)).mp4"); suffix += 1 }

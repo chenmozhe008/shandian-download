@@ -5,10 +5,10 @@ import AppKit
 enum WeChatGuide {
     static func present(share: String) {
         let alert = NSAlert()
-        alert.messageText = "下载微信视频号"
-        alert.informativeText = "1. 打开并登录腾讯元宝。\n2. 点击浏览器工具栏里的「闪电全能下载」扩展，选择「下载视频号」。\n3. 粘贴分享链接，点击「解析并下载视频号」。\n\n点击下方按钮会复制链接并打开元宝。链接只在你点击解析后交给腾讯元宝。"
-        alert.addButton(withTitle: "复制链接并打开元宝")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("下载微信视频号")
+        alert.informativeText = L("1. 打开并登录腾讯元宝。\n2. 点击浏览器工具栏里的「闪电全能下载」扩展，选择「下载视频号」。\n3. 粘贴分享链接，点击「解析并下载视频号」。\n\n点击下方按钮会复制链接并打开元宝。链接只在你点击解析后交给腾讯元宝。")
+        alert.addButton(withTitle: L("复制链接并打开元宝"))
+        alert.addButton(withTitle: L("取消"))
         NSApp.activate(ignoringOtherApps: true)
         let finish: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .alertFirstButtonReturn else { return }

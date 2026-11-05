@@ -86,7 +86,7 @@ actor PikPak {
     enum PikPakError: LocalizedError {
         case server(String), notLoggedIn
         var errorDescription: String? {
-            switch self { case .server(let m): m; case .notLoggedIn: "还没有登录 PikPak" }
+            switch self { case .server(let m): m; case .notLoggedIn: L("还没有登录 PikPak") }
         }
     }
 
@@ -105,7 +105,7 @@ actor PikPak {
                                                       "username": username, "password": password, "captcha_token": captcha],
                                device: device, auth: false)
         guard let at = r["access_token"] as? String, let rt = r["refresh_token"] as? String else {
-            throw PikPakError.server(Self.message(r) ?? "登录失败")
+            throw PikPakError.server(Self.message(r) ?? L("登录失败"))
         }
         session = Session(username: username, deviceID: device, accessToken: at, refreshToken: rt, userID: r["sub"] as? String ?? "",
                           clientID: Self.android.clientID)
@@ -152,7 +152,7 @@ actor PikPak {
                 DispatchQueue.main.async { NotificationCenter.default.post(name: Self.loginChanged, object: nil) }
             }
             // 令牌只能用一次：从浏览器关联时浏览器也拿着同一个，页面开着就可能先刷新掉（11-04 实测 invalid_grant）
-            throw PikPakError.server("PikPak 登录已失效，请重新关联")
+            throw PikPakError.server(L("PikPak 登录已失效，请重新关联"))
         }
         guard session?.refreshToken == s.refreshToken else { return }
         UserDefaults.standard.removeObject(forKey: "pikpakSessionProblem")
@@ -168,7 +168,7 @@ actor PikPak {
     func offline(_ link: String) async throws -> Task {
         let r = try await api("POST", "\(apiHost)/drive/v1/files",
                               body: ["kind": "drive#file", "upload_type": "UPLOAD_TYPE_URL", "url": ["url": link], "folder_type": "DOWNLOAD"])
-        guard let t = r["task"] as? [String: Any] else { throw PikPakError.server(Self.message(r) ?? "云盘没有接受这个任务") }
+        guard let t = r["task"] as? [String: Any] else { throw PikPakError.server(Self.message(r) ?? L("云盘没有接受这个任务")) }
         return Self.task(t)
     }
 
@@ -188,7 +188,7 @@ actor PikPak {
         for candidate in [response["web_content_link"] as? String, media] {
             if let candidate, !candidate.isEmpty { return candidate }
         }
-        throw PikPakError.server("云端文件缺少下载地址，已保留云端文件，请稍后重试")
+        throw PikPakError.server(L("云端文件缺少下载地址，已保留云端文件，请稍后重试"))
     }
 
     /// 下好的文件和下载地址：文件夹就展开（只要视频和字幕，同电影里「只下正片」的规则）
@@ -240,7 +240,7 @@ actor PikPak {
         let r = try await api("GET", "\(apiHost)/drive/v1/about", body: nil)
         let q = r["quota"] as? [String: Any]
         guard let limit = Int64(q?["limit"] as? String ?? ""), let used = Int64(q?["usage"] as? String ?? "") else {
-            throw PikPakError.server("无法读取云盘容量")
+            throw PikPakError.server(L("无法读取云盘容量"))
         }
         return Quota(limit: limit, used: used, inTrash: Int64(q?["usage_in_trash"] as? String ?? "") ?? 0)
     }
@@ -359,16 +359,16 @@ actor PikPak {
 
     nonisolated static func folderEntries(_ response: [String: Any]) throws -> [FolderEntry] {
         guard let files = response["files"] as? [[String: Any]] else {
-            throw PikPakError.server("无法确认云盘文件列表，请稍后重试；云端文件已保留")
+            throw PikPakError.server(L("无法确认云盘文件列表，请稍后重试；云端文件已保留"))
         }
         if files.count >= 500 || !(response["next_page_token"] as? String ?? "").isEmpty {
-            throw PikPakError.server("云盘目录文件过多，暂无法确认完整列表；云端文件已保留")
+            throw PikPakError.server(L("云盘目录文件过多，暂无法确认完整列表；云端文件已保留"))
         }
         return try files.map { file in
             guard let id = file["id"] as? String, !id.isEmpty,
                   let name = file["name"] as? String, !name.isEmpty,
                   let kind = file["kind"] as? String, kind == "drive#file" || kind == "drive#folder" else {
-                throw PikPakError.server("云盘文件信息不完整，请稍后重试；云端文件已保留")
+                throw PikPakError.server(L("云盘文件信息不完整，请稍后重试；云端文件已保留"))
             }
             return FolderEntry(id: id, name: name, isFolder: kind == "drive#folder", size: Int64(file["size"] as? String ?? "") ?? 0)
         }
@@ -425,7 +425,7 @@ actor PikPak {
                 signRefreshed = true
                 return try await captchaInit(action: action, meta: nil, device: device)
             }
-            throw PikPakError.server(Self.message(r) ?? "PikPak 要求人机验证，请先在 PikPak 官网或 App 里登录一次再试")
+            throw PikPakError.server(Self.message(r) ?? L("PikPak 要求人机验证，请先在 PikPak 官网或 App 里登录一次再试"))
         }
         signRefreshed = false
         return t
@@ -449,10 +449,10 @@ actor PikPak {
         let (data, response) = try await Self.withConnectionRetry { try await URLSession(configuration: cfg).data(for: request) }
         if data.isEmpty, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) { return [:] }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw PikPakError.server("PikPak 返回无法识别的结果，请稍后重试")
+            throw PikPakError.server(L("PikPak 返回无法识别的结果，请稍后重试"))
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode), json["error"] == nil {
-            throw PikPakError.server(Self.message(json) ?? "PikPak 请求失败（HTTP \(http.statusCode)）")
+            throw PikPakError.server(Self.message(json) ?? String(localized: "PikPak 请求失败（HTTP \(http.statusCode)）"))
         }
         return json
     }

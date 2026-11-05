@@ -47,17 +47,17 @@ enum BrowserExtension {
 struct BrowserSetupView: View {
     private enum Cell { case yes, no, note(String), text(String) }
     private static let abilities: [(String, Cell, Cell)] = [
-        ("右键下载压缩包、安装包、文档", .yes, .yes),
-        ("网页上点下载，自动交给软件", .yes, .no),
-        ("右键下载磁力、电驴链接", .yes, .no),
-        ("抖音、小红书、视频号等视频", .yes, .no),
-        ("需要登录才能下的文件", .yes, .note("可能失败")),
+        (L("右键下载压缩包、安装包、文档"), .yes, .yes),
+        (L("网页上点下载，自动交给软件"), .yes, .no),
+        (L("右键下载磁力、电驴链接"), .yes, .no),
+        (L("抖音、小红书、视频号等视频"), .yes, .no),
+        (L("需要登录才能下的文件"), .yes, .note(L("可能失败"))),
     ]
     private static let setup: [(String, Cell, Cell)] = [
-        ("需要的权限", .text("较多，要读取网页和登录状态"), .text("很少，看不到网页内容")),
-        ("以后更新", .text("在扩展页点「重新加载」"), .text("自动更新")),
-        ("怎么装", .text("点下面的按钮，打开「开发者模式」（Chrome 在右上角，Edge 在左侧栏），再把弹出的文件夹拖进页面"),
-                  .text("点下面的按钮到商店页，再点页面上的添加")),
+        (L("需要的权限"), .text(L("较多，要读取网页和登录状态")), .text(L("很少，看不到网页内容"))),
+        (L("以后更新"), .text(L("在扩展页点「重新加载」")), .text(L("自动更新"))),
+        (L("怎么装"), .text(L("点下面的按钮，打开「开发者模式」（Chrome 在右上角，Edge 在左侧栏），再把弹出的文件夹拖进页面")),
+                  .text(L("点下面的按钮到商店页，再点页面上的添加"))),
     ]
     private static let labelWidth: CGFloat = 200, columnWidth: CGFloat = 196, gap: CGFloat = 12, tablePadding: CGFloat = 16
     let token: String
@@ -76,9 +76,9 @@ struct BrowserSetupView: View {
             }
             VStack(spacing: 0) {
                 tableRow(alignment: .top) { Color.clear.frame(height: 1) } full: {
-                    columnTitle("完整版", hint: "功能齐全", recommended: true)
+                    columnTitle(L("完整版"), hint: L("功能齐全"), recommended: true)
                 } store: {
-                    columnTitle("商店版", hint: "安装简单", recommended: false)
+                    columnTitle(L("商店版"), hint: L("安装简单"), recommended: false)
                 }
                 .padding(.bottom, 12)
                 ForEach(Self.abilities, id: \.0) { contentRow($0) }
@@ -110,9 +110,9 @@ struct BrowserSetupView: View {
                         Button("LinkSwift 脚本") { NSWorkspace.shared.open(URL(string: "https://greasyfork.org/scripts/583582-linkswift")!) }
                     }
                     .controlSize(.small)
-                    Text(verbatim: "LinkSwift 设置 → Aria2 RPC：地址 http://127.0.0.1，端口 \(Gateway.port)，路径 /jsonrpc，密钥填下面的 Token。")
+                    Text(verbatim: String(localized: "LinkSwift 设置 → Aria2 RPC：地址 http://127.0.0.1，端口 \(String(Gateway.port))，路径 /jsonrpc，密钥填下面的 Token。"))
                         .font(.system(size: 12.5)).foregroundStyle(Theme.text.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
-                    field("密钥 / Token", token)
+                    field(L("密钥 / Token"), token)
                 }
                 .padding(.top, 8)
             } label: {
@@ -137,7 +137,7 @@ struct BrowserSetupView: View {
 
     private func contentRow(_ row: (String, Cell, Cell)) -> some View {
         tableRow {
-            Text(row.0).font(.system(size: 13))
+            Text(L(row.0)).font(.system(size: 13))
         } full: {
             cell(row.1)
         } store: {
@@ -153,7 +153,7 @@ struct BrowserSetupView: View {
     private func columnTitle(_ title: String, hint: String, recommended: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(title).font(.system(size: 15, weight: .bold))
+                Text(L(title)).font(.system(size: 15, weight: .bold))
                 if recommended {
                     Text("推荐").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -161,7 +161,7 @@ struct BrowserSetupView: View {
                 }
             }
             .frame(height: 20)
-            Text(hint).font(.system(size: 12)).foregroundStyle(Theme.sub)
+            Text(L(hint)).font(.system(size: 12)).foregroundStyle(Theme.sub)
         }
     }
 
@@ -169,8 +169,8 @@ struct BrowserSetupView: View {
         switch value {
         case .yes: Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.tint)
         case .no: Text("不支持").font(.system(size: 12.5)).foregroundStyle(Theme.sub)
-        case .note(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
-        case .text(let text): Text(text).font(.system(size: 12.5)).foregroundStyle(Theme.text.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+        case .note(let text): Text(L(text)).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+        case .text(let text): Text(L(text)).font(.system(size: 12.5)).foregroundStyle(Theme.text.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -179,9 +179,9 @@ struct BrowserSetupView: View {
     /// 完整版每 10 分钟连一次 App，近 20 分钟连过才算已连接；商店版只在发送链接时连接，所以只能说「用过」
     private func status(_ browser: String, store: Bool) -> (text: String, connected: Bool) {
         let at = seen["\(browser).\(store ? "store" : "full")"]
-        if store { return at == nil ? ("", false) : ("已用过", true) }
+        if store { return at == nil ? ("", false) : (L("已用过"), true) }
         guard let at, Date().timeIntervalSince(at) < 1200 else { return ("", false) }
-        return ("已连接", true)
+        return (L("已连接"), true)
     }
 
     private func browserRow(_ name: String, bundle: String, page: String, store: String) -> some View {
@@ -193,17 +193,17 @@ struct BrowserSetupView: View {
                 } else {
                     Image(systemName: "globe").font(.system(size: 18)).foregroundStyle(Theme.sub).frame(width: 24, height: 24)
                 }
-                Text(app == nil ? "\(name)（未安装）" : name).font(.system(size: 13.5, weight: .semibold))
+                Text(app == nil ? String(localized: "\(name)（未安装）") : name).font(.system(size: 13.5, weight: .semibold))
             }
             .frame(width: Self.labelWidth, alignment: .leading)
-            installCell(status(name, store: false), title: "手动安装", prominent: true, enabled: app != nil) {
+            installCell(status(name, store: false), title: L("手动安装"), prominent: true, enabled: app != nil) {
                 guard let app else { return }
                 BrowserExtension.install()
                 NSWorkspace.shared.activateFileViewerSelecting([BrowserExtension.folder])
                 openPage(page, app: app.deletingPathExtension().lastPathComponent)
             }
             .frame(width: Self.columnWidth, alignment: .leading)
-            installCell(status(name, store: true), title: "去商店添加", prominent: false, enabled: app != nil) {
+            installCell(status(name, store: true), title: L("去商店添加"), prominent: false, enabled: app != nil) {
                 guard let app else { return }
                 NSWorkspace.shared.open([URL(string: store)!], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             }
@@ -215,12 +215,12 @@ struct BrowserSetupView: View {
     private func installCell(_ status: (text: String, connected: Bool), title: String, prominent: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             if prominent {
-                Button(title, action: action).buttonStyle(.borderedProminent).disabled(!enabled)
+                Button(L(title), action: action).buttonStyle(.borderedProminent).disabled(!enabled)
             } else {
-                Button(title, action: action).buttonStyle(.bordered).disabled(!enabled)
+                Button(L(title), action: action).buttonStyle(.bordered).disabled(!enabled)
             }
             if status.connected {
-                Label(status.text, systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.sub).fixedSize()
+                Label(L(status.text), systemImage: "checkmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(Theme.sub).fixedSize()
             }
         }
     }
@@ -230,7 +230,7 @@ struct BrowserSetupView: View {
             Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.sub).frame(width: 84, alignment: .leading)
             Text(String(repeating: "•", count: 16)).font(.system(size: 12.5, design: .monospaced)).lineLimit(1)
             Spacer()
-            Button(copied == value ? "已复制" : "复制") { AppInfo.copy(value); copied = value }.controlSize(.small)
+            Button(copied == value ? L("已复制") : L("复制")) { AppInfo.copy(value); copied = value }.controlSize(.small)
         }
         .padding(.horizontal, 12).frame(height: 36)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.faint))
