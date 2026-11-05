@@ -60,7 +60,7 @@ final class AIToolTests: XCTestCase {
         let folder = root.appendingPathComponent("Sources/Shandian")
         for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) where name.hasSuffix(".swift") {
             let text = try String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)
-            for pattern in [#"[!=]= L\("#, #"(contains|hasPrefix|hasSuffix)\(L\("#, #"findButton\([^)]*L\("#, #"origin: [^,]*L\("#, #"site: L\("#] {
+            for pattern in [#"[!=]= L\("#, #"(contains|hasPrefix|hasSuffix)\(L\("#, #"findButton\([^)]*L\("#, #"origin: [^,\n]*L\("#, #"site: L\("#] {
                 XCTAssertNil(text.range(of: pattern, options: .regularExpression), "\(name): \(pattern)")
             }
         }

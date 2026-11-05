@@ -152,7 +152,7 @@ final class UpdateChecker: ObservableObject {
             } else {
                 let alert = NSAlert()
                 alert.messageText = release == nil ? L("无法检查更新") : L("闪电全能下载已是最新版本")
-                alert.informativeText = release == nil ? L("连不上 GitHub：检查更新需要科学上网（连接境外网络），请检查网络后重试。") : String(localized: "当前版本 \(AppInfo.version)。")
+                alert.informativeText = release == nil ? L("连不上 GitHub：检查更新需要科学上网，请检查网络设置。") : String(localized: "当前版本 \(AppInfo.version)。")
                 alert.runModal()
             }
         }
@@ -178,7 +178,7 @@ final class UpdateChecker: ObservableObject {
     private func showRetryCheckAlert() {
         let alert = NSAlert()
         alert.messageText = L("暂时无法获取更新信息")
-        alert.informativeText = L("连不上 GitHub：检查更新需要科学上网（连接境外网络），请检查网络后重试。")
+        alert.informativeText = L("连不上 GitHub：检查更新需要科学上网，请检查网络设置。")
         alert.addButton(withTitle: L("重试"))
         alert.addButton(withTitle: L("取消"))
         if alert.runModal() == .alertFirstButtonReturn { checkFromMenu() }
@@ -223,7 +223,7 @@ final class UpdateChecker: ObservableObject {
                 phase = .idle
                 let alert = NSAlert()
                 alert.messageText = L("未能完成更新")
-                let hint = wasDownloading ? L("更新包放在 GitHub 上，需要科学上网（连接境外网络）。请检查网络后重试，或前往下载页面手动下载。") : L("更新文件无法使用，请重新下载后重试。")
+                let hint = wasDownloading ? L("更新包放在 GitHub 上，需要科学上网。请检查网络设置，或前往下载页面手动下载。") : L("更新文件无法使用，请重新下载后重试。")
                 alert.informativeText = "\(error.localizedDescription)\n\n\(hint)"
                 alert.addButton(withTitle: L("重试"))
                 alert.addButton(withTitle: L("取消"))

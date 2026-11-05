@@ -333,7 +333,7 @@ private final class JobState: @unchecked Sendable {
                     : SiteCookies.site(of: job.url) != nil && SiteCookies.ytdlpArguments(for: job.url).isEmpty
                     ? L("需要在浏览器里登录后，右键「用闪电全能下载这个视频」")
                     : YtDlp.isConnectionError(lastError) && LocalProxy.isOverseas(job.url)
-                    ? L("连不上这个网站：需要科学上网（连接境外网络），请检查网络后重试") : Self.readableError(lastError)
+                    ? L("连不上这个网站：需要科学上网，请检查网络设置") : Self.readableError(lastError)
             }
             if let path = job.filePath, let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 {
                 job.total = size; if ok { job.downloaded = size }

@@ -371,7 +371,7 @@ final class DownloadStore: ObservableObject {
     func offerRescue(_ item: Item) {
         let alert = NSAlert()
         alert.messageText = L("这条任务下不动了")
-        alert.informativeText = L("这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要能访问境外网站。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。")
+        alert.informativeText = L("这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要科学上网。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。")
         alert.addButton(withTitle: L("登录 PikPak"))
         alert.addButton(withTitle: ThunderBridge.installed ? L("用迅雷下载") : L("去安装迅雷"))
         alert.addButton(withTitle: L("先不用"))

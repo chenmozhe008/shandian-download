@@ -89,7 +89,7 @@ actor PikPak {
             switch self {
             case .server(let m): m
             case .notLoggedIn: L("还没有登录 PikPak")
-            case .unreachable: L("连不上 PikPak：需要科学上网（连接境外网络），请检查网络后重试")
+            case .unreachable: L("连不上 PikPak：需要科学上网，请检查网络设置")
             }
         }
     }

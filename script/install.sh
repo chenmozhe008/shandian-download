@@ -21,7 +21,7 @@ MAJOR=$(sw_vers -productVersion | cut -d. -f1)
 
 say "1/4 查找最新版本（${CHIP_NAME}）"
 RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest") || {
-  echo "连不上 GitHub：安装需要科学上网（连接境外网络），请检查网络后重试，或到 https://github.com/$REPO/releases 手动下载" >&2; exit 1;
+  echo "连不上 GitHub：安装需要科学上网，请检查网络设置，或到 https://github.com/$REPO/releases 手动下载" >&2; exit 1;
 }
 URLS=$(printf '%s\n' "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*Shandian-[^"]*\.zip"' | sed 's/.*"\(https[^"]*\)"/\1/' || true)
 URL=$(echo "$URLS" | grep -E -- "-${CHIP}\\.zip$" | head -1 || true)
@@ -58,7 +58,7 @@ STAGE=""
 cleanup() { rm -rf "$TMP"; [[ -z "$STAGE" ]] || rm -rf "$STAGE"; }
 trap cleanup EXIT
 curl -fL --progress-bar -o "$TMP/app.zip" "$URL" || {
-  echo "下载安装包失败：GitHub 需要科学上网（连接境外网络），请检查网络后重试" >&2; exit 1;
+  echo "下载安装包失败：GitHub 需要科学上网，请检查网络设置" >&2; exit 1;
 }
 if [[ -n "$DIGEST" ]]; then
   EXPECTED=$(printf '%s' "${DIGEST#sha256:}" | tr '[:upper:]' '[:lower:]')
