@@ -1,5 +1,17 @@
 # What's New
 
+## 0.19.7 · 2026-11-05
+
+- Fixed tasks taken back from Thunder staying on “Check Thunder” and never being retrieved.
+- Fixed “Failed to get torrent file” when handing a task back to Thunder: the folder now returns to where Thunder expects it, and its original task continues.
+- If Thunder says the task already exists, the hand-off is undone, Shandian keeps downloading, and it explains that the old task must be permanently deleted in Thunder, including from its trash.
+- Stuck tasks now go to Thunder automatically when PikPak isn't linked or can't be reached. This is on by default and can be turned off in Settings.
+- A task that is paused in Thunder after hand-off now starts automatically. Other paused tasks in Thunder start too.
+- Clear messages when PikPak, GitHub or a site can't be reached and a VPN or proxy may be needed.
+- Guidance when Accessibility permission is missing, plus a permission status in Settings.
+- Notices moved to the bottom of the window so they no longer cover the download speed. The list no longer flickers during Take Back.
+- Release builds now use a fixed signature, so Accessibility permission survives future updates. Updating from an older version requires allowing it once more.
+
 ## 0.19.0 · 2026-11-05
 
 - When a task is stuck, Shandian explains the PikPak and Thunder routes. After you sign in to PikPak, the task moves over automatically, and a local counter shows how many tasks were rescued.

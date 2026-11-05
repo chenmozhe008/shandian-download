@@ -525,7 +525,7 @@
 "我已暂停，继续收回" = "I've Paused It, Take Back";
 "再等等" = "Wait";
 "需要允许「辅助功能」才能控制迅雷" = "Accessibility Permission Is Needed to Control Thunder";
-"在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。也可以先在迅雷里手动暂停这条任务。" = "Allow Shandian in System Settings, then Take Back can pause Thunder automatically. You can also pause the task in Thunder yourself.";
+"在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。如果开关已经打开，请先关掉再重新打开。也可以先在迅雷里手动暂停这条任务。" = "Allow Shandian in System Settings, then Take Back can pause Thunder automatically. If it's already on, turn it off and on again. You can also pause the task in Thunder yourself.";
 "迅雷里还有 %lld 条任务在下载" = "Thunder Has %lld Other Active Tasks";
 "收回这条需要先暂停迅雷，其他任务也会一起暂停。之后可以到迅雷点「全部开始」继续。" = "Taking this back pauses Thunder, including its other tasks. Click Start All in Thunder afterwards to continue them.";
 "一起暂停并收回" = "Pause All and Take Back";
@@ -624,3 +624,9 @@
 "没能收回：找不到迅雷留下的种子文件，任务仍保留" = "Couldn't take back: Thunder's torrent file wasn't found. The task was kept";
 "下不动时自动交给迅雷（没关联云盘或云盘连不上时）" = "Hand Stuck Tasks to Thunder (When Cloud Isn't Linked or Reachable)";
 "已交回迅雷接着下「%@」" = "Handed “%@” back to Thunder to continue";
+"打开系统设置" = "Open System Settings";
+"请到迅雷点「立即下载」。在系统设置里允许「辅助功能」后，闪电就能自动完成这一步；开关已打开仍不行时，请关掉再重新打开" = "Click Download Now in Thunder. Allow Accessibility in System Settings so Shandian can do this for you. If it's already on, turn it off and on again";
+"辅助功能授权" = "Accessibility Permission";
+"已允许" = "Allowed";
+"去允许" = "Allow";
+"闪电靠这项系统授权操作迅雷：点立即下载、开始和暂停任务" = "Shandian uses this permission to control Thunder: Download Now, start and pause";

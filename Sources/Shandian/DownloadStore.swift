@@ -748,6 +748,7 @@ final class DownloadStore: ObservableObject {
         if pulling { return "PikPak 中转 · 取回本机" }
         guard item.fromThunder else { return nil }
         if item.checking { return "迅雷中转 · 取回素材" }
+        guard item.downloaded > 0 else { return nil }   // 迅雷还没下到东西，别写「已取回」
         return item.status == .running ? "迅雷素材已取回 · 继续下载" : "迅雷素材已取回"
     }
 
@@ -1770,6 +1771,10 @@ final class DownloadStore: ObservableObject {
                     self.notice = String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
                     self.startThunderIfPaused(jobID)
                 case .unconfirmed: self.notice = L("请在迅雷中确认下载；原任务和文件仍保留")
+                case .needsAccessibility:
+                    let text = L("请到迅雷点「立即下载」。在系统设置里允许「辅助功能」后，闪电就能自动完成这一步；开关已打开仍不行时，请关掉再重新打开")
+                    self.noticeAction = NoticeAction(title: "打开系统设置", forText: text, run: { ThunderBridge.openAccessibilitySettings() })
+                    self.notice = text
                 case .alreadyExists: self.thunderRefusedDuplicate(jobID: jobID, safeDir: safeDir, title: item.title, manual: promptIfMissing)
                 }
             }
@@ -1839,6 +1844,7 @@ final class DownloadStore: ObservableObject {
                 if state == .cancelled { return }
                 NSApp.activate(ignoringOtherApps: true)
                 let answer = ThunderBridge.reclaimAlert(state).runModal()
+                if answer == .alertThirdButtonReturn { ThunderBridge.openAccessibilitySettings(); return }
                 // 在写：只能等用户去暂停；找不到文件夹：默认再等等，用户坚持才往下走
                 if state == .writing || answer != .alertFirstButtonReturn { return }
             }

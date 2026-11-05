@@ -110,10 +110,17 @@ enum ThunderBridge {
 
     /// 用迅雷打开链接（保存位置预设好），再替用户点迅雷新建任务窗口里的「立即下载」
     /// alreadyExists：迅雷认为任务已存在，拒绝新建。收回后旧任务还留在迅雷，回收站里的也算（11-05 迅雷日志确认）
-    enum SubmitResult { case submitted, unconfirmed, alreadyExists }
+    enum SubmitResult { case submitted, unconfirmed, alreadyExists, needsAccessibility }
 
     /// 迅雷自己的事件日志（11-05 实测）：建任务写 `taskevent/createtask` 带 result，判重写窗口名。
     /// 判重窗口的辅助功能标题读不到，要以日志为准；只读，不碰任务
+    nonisolated static var accessibilityAllowed: Bool { AXIsProcessTrusted() }
+
+    /// 打开系统设置的「辅助功能」页。自动点迅雷全靠这项授权，别人装上后也要先允许一次
+    static func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
+    }
+
     private static var eventLog: URL {
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd"; f.locale = Locale(identifier: "en_US_POSIX")
         return FileManager.default.homeDirectoryForCurrentUser
@@ -142,7 +149,7 @@ enum ThunderBridge {
         Task {
             // 第一次会请求「辅助功能」权限；没给就只能让用户自己在迅雷里点
             guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) else {
-                onResult(.unconfirmed); return
+                onResult(.needsAccessibility); return
             }
             for _ in 0..<40 {
                 if let result = logResult(after: logStart) { onResult(result); return }
@@ -264,9 +271,10 @@ enum ThunderBridge {
             alert.addButton(withTitle: L("再等等"))
         case .needsAccessibility:
             alert.messageText = L("需要允许「辅助功能」才能控制迅雷")
-            alert.informativeText = L("在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。也可以先在迅雷里手动暂停这条任务。")
+            alert.informativeText = L("在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。如果开关已经打开，请先关掉再重新打开。也可以先在迅雷里手动暂停这条任务。")
             alert.addButton(withTitle: L("我已暂停，继续收回"))
             alert.addButton(withTitle: L("再等等"))
+            alert.addButton(withTitle: L("打开系统设置"))
         case .idle, .cancelled:
             break
         }
@@ -307,7 +315,13 @@ enum ThunderBridge {
         return children + children.flatMap { descendants($0, depth: depth + 1) }
     }
 
-    /// 迅雷「正在下载」页的任务行：每行第一段文字是状态，第二段是任务名（11-04 实测 5.80）
+    /// 任务名紧挨「(共N个文件)」前面。暂停的行是「已暂停、任务名」，在下的行是「速度、剩余时间、任务名」（11-05 实测）
+    nonisolated static func taskRow(texts: [String]) -> TaskRow? {
+        guard texts.count >= 2, let name = texts.last else { return nil }
+        return TaskRow(status: texts[0], name: name)
+    }
+
+    /// 迅雷「正在下载」页的任务行（11-04 实测 5.80）
     static func taskRows() -> [TaskRow] {
         guard let window = mainWindow() else { return [] }
         return descendants(window).compactMap { element -> TaskRow? in
@@ -315,13 +329,13 @@ enum ThunderBridge {
             var value: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
                   let children = value as? [AXUIElement],
-                  children.contains(where: { attr($0, kAXTitleAttribute)?.contains("个文件") == true }) else { return nil }
-            let texts = children.filter { attr($0, kAXRoleAttribute) == kAXStaticTextRole }.compactMap { element -> String? in
+                  let files = children.firstIndex(where: { attr($0, kAXTitleAttribute)?.contains("个文件") == true }) else { return nil }
+            let texts = children[..<files].filter { attr($0, kAXRoleAttribute) == kAXStaticTextRole }.compactMap { element -> String? in
                 var text: CFTypeRef?
                 guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &text) == .success else { return nil }
                 return text as? String
             }
-            return texts.count >= 2 ? TaskRow(status: texts[0], name: texts[1]) : nil
+            return taskRow(texts: texts)
         }
     }
 

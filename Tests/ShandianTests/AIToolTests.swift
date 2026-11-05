@@ -79,6 +79,14 @@ final class AIToolTests: XCTestCase {
         XCTAssertNoThrow(try HandoffFiles.moveBackForThunder(original, to: original))
     }
 
+    func testThunderRowReadsNameFromRunningAndPausedRows() {
+        XCTAssertEqual(ThunderBridge.taskRow(texts: ["已暂停", "影片"])?.name, "影片")
+        let running = ThunderBridge.taskRow(texts: ["1.2MB/s", "  剩余10分33秒", "影片"])
+        XCTAssertEqual(running?.name, "影片")
+        XCTAssertEqual(running?.status, "1.2MB/s")
+        XCTAssertNil(ThunderBridge.taskRow(texts: ["只有一段"]))
+    }
+
     func testChatGPTCopiesThePathAsIs() {
         XCTAssertEqual(AITool.chatGPT.snippet(path: path), path)
     }

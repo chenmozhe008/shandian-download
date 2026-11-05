@@ -283,12 +283,19 @@ private struct UpdateToggle: View {
 struct ThunderSettingsSection: View {
     @AppStorage(Prefs.autoThunderKey) private var autoThunder = true
     @State private var installed = ThunderBridge.installed
+    @State private var accessibility = ThunderBridge.accessibilityAllowed
 
     var body: some View {
         Section("迅雷（可选）") {
             if installed {
                 Toggle("下不动时自动交给迅雷（没关联云盘或云盘连不上时）", isOn: $autoThunder)
                     .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里")
+                LabeledContent("辅助功能授权") {
+                    if accessibility { Text("已允许").foregroundStyle(Theme.sub) }
+                    else { Button("去允许") { ThunderBridge.openAccessibilitySettings() } }
+                }
+                .help("闪电靠这项系统授权操作迅雷：点立即下载、开始和暂停任务")
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in accessibility = ThunderBridge.accessibilityAllowed }
                 Text("已检测到本机的迅雷。单个任务也可以在右键菜单里选「用迅雷下载」。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
             } else {

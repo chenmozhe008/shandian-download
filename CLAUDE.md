@@ -33,6 +33,7 @@
 - `127.0.0.1:9999` 内核 REST；`127.0.0.1:6800` App 内置网关（`Gateway.swift`）：`/jsonrpc` 兼容 Aria2 RPC（LinkSwift 推网盘直链），`/api/v1/*` 代理 Gopeed 浏览器扩展（新建任务改走 App 的添加流程：存哪、只选正片、片名整理），密钥都是内核 token
 - `shandian://add?url=<编码后的链接>`（可多个 url）：脚本 / skill 交链接给 App，`open -g` 不抢焦点。**测试别再用 System Events 模拟 ⌘V**（窗口没抢到焦点时按键会落到用户正在用的程序里，10-27 踩过）
 - 收回会把文件夹搬回保存目录，迅雷旧任务因此找不到种子，一点开始就报「获取种子文件失败」且不可恢复。原位置记在 `thunder-folders.json`，再交给迅雷时先搬回去再让旧任务继续（`taskExists`）
+- 迅雷**没有单条开始/暂停的办法**（11-05 用两条测试任务实测）：程序选中行后按右键菜单无效，菜单只认鼠标右键点中的行；只能用「全部开始/全部暂停」。除非愿意移动用户鼠标，否则别再试
 - 迅雷拒绝重复任务：收回后旧任务还留在迅雷，同一 hash 再交会弹「下载任务已存在」（回收站里的也算，须永久删除）；App 检测到就撤销转交、原任务继续，并提示用户去迅雷删（11-05 据迅雷日志 `.events/record_*.log`）
 - 迅雷通道（`ThunderBridge.swift`，自动转交 11-05 起默认开）：下不动时云盘之后的第二选择；云盘没关联或刚连不上就直接走迅雷，靠辅助功能点按钮、读迅雷的进度文件；收回时按迅雷的「全部暂停」并确认不再写入。**不逆向迅雷协议、不碰会员**（用户多次要求 rev 迅雷，已拒绝：等于白用别人的商业服务）
 - 云盘离线（`PikPak.swift`）：接口照开源 PikPakAPI。**不在 App 里输密码**（用户 10-28 定），用网页窗口打开官方登录页取令牌，只存 `pikpak.json`（600）；取回后彻底删除云端副本（回收站也占容量）；已关联时下不动自动转交（1 分钟没速度或 3 分钟几乎没速度）。转交优先云盘、其次迅雷。签名常量会随 PikPak 改版变，细节见 `docs/internals.md`
@@ -106,7 +107,7 @@
 ## 仓库
 
 GitHub **公开**库 `chenmozhe008/shandian-download`（10-28 建，10-29 用户同意公开，分支 master，GPL-3.0——内核基于 Gopeed GPL-3.0，只能用 GPL）。推送仍按全局红线先问用户
-- 发布：**M 芯片和 Intel 分开出包**（10-29 用户定：通用包内核翻倍，且用户习惯按芯片选）。`script/build_engine.sh` 一次编出 `gopeed-shandian-arm64` / `-amd64`；`ARCH=arm64|x86_64 script/build_app.sh package` 按芯片打包（本机以外的芯片在 `dist/<芯片>/`）。`output/release/<版本>/<芯片>/` 里拷 App（`ditto`，Release 说明写在 `output/release/<版本>/notes.md`；旧版本目录发版后移到废纸篓），**`codesign --force --deep --sign -` 改 ad-hoc 签名再打包**（本机用的 Apple Development 证书带用户邮箱，不能外发），`ditto -c -k --keepParent` 打 zip，`gh release create v<版本>`。**附件名 `Shandian-<版本>-AppleSilicon.zip` / `Shandian-<版本>-Intel.zip`**（英文，中文名会被 GitHub 改成 default.zip；以后 Windows 照此加 `-Windows-x64`）。v0.16.0 首个公开版，v0.17.0 起分芯片
+- 发布：**M 芯片和 Intel 分开出包**（10-29 用户定：通用包内核翻倍，且用户习惯按芯片选）。`script/build_engine.sh` 一次编出 `gopeed-shandian-arm64` / `-amd64`；`ARCH=arm64|x86_64 script/build_app.sh package` 按芯片打包（本机以外的芯片在 `dist/<芯片>/`）。`output/release/<版本>/<芯片>/` 里拷 App（`ditto`，Release 说明写在 `output/release/<版本>/notes.md`；旧版本目录发版后移到废纸篓），**`script/release_sign.sh <App>` 改用发布专用的自签名证书再打包**（本机 Apple Development 证书带用户邮箱不能外发；ad-hoc 每次更新都会让辅助功能授权失效。私钥在 `~/Library/Application Support/ShandianRelease/`，不进仓库，丢了可重建但用户要再授权一次），`ditto -c -k --keepParent` 打 zip，`gh release create v<版本>`。**附件名 `Shandian-<版本>-AppleSilicon.zip` / `Shandian-<版本>-Intel.zip`**（英文，中文名会被 GitHub 改成 default.zip；以后 Windows 照此加 `-Windows-x64`）。v0.16.0 首个公开版，v0.17.0 起分芯片
 - **install.sh 按附件名后缀 `-AppleSilicon.zip` / `-Intel.zip` 选包**（芯片用 `hw.optional.arm64` 判断，Rosetta 终端下 `uname -m` 不准）：发版改附件名要同步改脚本，否则一行命令安装失效
 - Intel 版是尽力支持：发版前用 Rosetta 跑 Intel 内核实测（另开端口 9998、BT 6882，下一个公开文件 + Sintel 磁力）。本机升到 macOS 27 后没有 Rosetta，就只能编译不能实测，届时跟用户商量是否停掉 Intel 版
 - 公开页面别放下载记录截图（有片名）；README 的安装步骤要和 App 里「浏览器扩展」窗口的按钮文字一致；对外数字用测速记录里的区间（磁力起速 5–18 秒），别挑最有利的单值，不带竞品对比
