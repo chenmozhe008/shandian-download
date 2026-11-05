@@ -282,6 +282,44 @@ final class DownloadStore: ObservableObject {
     }
     func deleteRecord(_ r: RemovedRecord) { removedRecords.removeAll { $0.id == r.id }; saveRemoved() }
     func clearRecords() { removedRecords.removeAll(); saveRemoved() }
+    private var rescuePrompted = Set<String>()
+    private var rescueWaitingKey: String?
+    /// 云盘通道现在能用：已关联且登录没失效
+    var hasCloudRoute: Bool { PikPak.loggedInUser != nil && !PikPak.sessionInvalid }
+
+    /// 下不动时的出路：讲清两条路，点一下就走。登录 PikPak 成功后自动把这条任务交过去
+    func offerRescue(_ item: Item) {
+        let alert = NSAlert()
+        alert.messageText = "这条任务下不动了"
+        alert.informativeText = "这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要能访问境外网站。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。"
+        alert.addButton(withTitle: "登录 PikPak")
+        alert.addButton(withTitle: ThunderBridge.installed ? "用迅雷下载" : "去安装迅雷")
+        alert.addButton(withTitle: "先不用")
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            rescueWaitingKey = item.linkKey
+            NotificationCenter.default.post(name: PikPak.relinkRequested, object: nil)
+        case .alertSecondButtonReturn:
+            if ThunderBridge.installed { handToThunder(item) } else { ThunderBridge.openOfficialSite() }
+        default: break
+        }
+    }
+
+    private func finishRescueAfterLogin() {
+        guard let key = rescueWaitingKey, hasCloudRoute else { return }
+        rescueWaitingKey = nil
+        if let item = items.first(where: { $0.linkKey == key && $0.isActive }) { sendToCloud(item) }
+    }
+
+    /// 换路下完的累计次数，只存在本机。告诉用户它救回了多少，也是将来说这个卖点的真实依据
+    static let rescuedKey = "rescuedCount"
+    private func countRescue() -> String {
+        let count = UserDefaults.standard.integer(forKey: Self.rescuedKey) + 1
+        UserDefaults.standard.set(count, forKey: Self.rescuedKey)
+        return "这是换路救回的第 \(count) 条"
+    }
+
     /// 自动转交试过的任务（按链接记）：云盘失败后任务恢复，再下不动就轮到迅雷，不会反复消耗云盘次数
     private var cloudTried = Set<String>()
     private var thunderTried = Set<String>()
@@ -412,6 +450,9 @@ final class DownloadStore: ObservableObject {
         loadVideos()
         watchVolumes()
         Task { await boot() }
+        NotificationCenter.default.addObserver(forName: PikPak.loginChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.finishRescueAfterLogin() }
+        }
         watcher = ClipboardWatcher(store: self)
         gateway = Gateway(store: self); gateway?.start()
         Task.detached { await YtDlp.ensureFresh() }
@@ -658,6 +699,14 @@ final class DownloadStore: ObservableObject {
                 } else if Prefs.autoThunder, ThunderBridge.installed, !thunderTried.contains(i.linkKey) {
                     thunderTried.insert(i.linkKey)
                     Task { @MainActor in self.handToThunder(it, promptIfMissing: false) }
+                } else if !hasCloudRoute, !rescuePrompted.contains(i.linkKey) {
+                    // 新用户还没有备用通道：卡住时主动告诉他，每条任务只说一次
+                    rescuePrompted.insert(i.linkKey)
+                    Task { @MainActor in
+                        let text = "「\(it.title)」下不动了，开通备用通道就能换条路接着下"
+                        self.noticeAction = NoticeAction(title: "开通", forText: text, run: { [weak self] in self?.offerRescue(it) })
+                        self.notice = text
+                    }
                 }
             }
             if !all[k].isActive, let f = all[k].location ?? all[k].file { all[k].fileGone = Self.isGone(f) }
@@ -1361,8 +1410,8 @@ final class DownloadStore: ObservableObject {
             cloudJobs.removeAll { $0.id == job.id }
             saveCloud()
             switch result {
-            case .freed(let bytes): notice = "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)"
-            case .unconfirmed: notice = "「\(job.title)」已下载到本机，已清理云端副本，容量稍后更新"
+            case .freed(let bytes): notice = "「\(job.title)」已下载到本机，已清理云端副本，释放 \(bytes.bytesText)。\(countRescue())"
+            case .unconfirmed: notice = "「\(job.title)」已下载到本机，已清理云端副本。\(countRescue())"
             }
         } catch {
             keep("「\(job.title)」已下载到本机，云端副本清理失败：\(error.localizedDescription)")
@@ -1787,6 +1836,7 @@ final class DownloadStore: ObservableObject {
     }
 
     private func didFinish(_ item: Item) {
+        if case .thunder = item.source { notice = "「\(item.title)」迅雷已下完。\(countRescue())" }
         if let f = item.location ?? item.file { Self.markQuarantine(f, source: item.link) }
         if Prefs.doneSound { Self.playDoneSound() }
         guard Prefs.notify else { return }

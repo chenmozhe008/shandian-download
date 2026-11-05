@@ -557,11 +557,13 @@ struct TaskRow: View {
                     .frame(height: 17)
                 } else if item.slow, !item.link.isEmpty {
                     // BT 里几乎没人传：给个直接的出路（云盘离线；没登录就去设置）
-                    Button { store.sendToCloud(item) } label: {
-                        Text("太慢？云盘离线").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
+                    Button {
+                        if store.hasCloudRoute { store.sendToCloud(item) } else { store.offerRescue(item) }
+                    } label: {
+                        Text(store.hasCloudRoute ? "太慢？云盘离线" : "下不动？换条路").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
                     }
                     .buttonStyle(.plain)
-                    .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再从云盘满速拉回")
+                    .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再取回本机")
                     .frame(height: 17)
                 } else {
                     // 第二行固定占位：文字有时为空，高度变了第一行会上下跳

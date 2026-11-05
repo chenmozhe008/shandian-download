@@ -4,12 +4,12 @@
 
 # Shandian Download Manager
 
-**A native macOS download manager**
+**Stuck at 0%? It switches to another route and finishes the download.**
 
-Manage magnet links, torrents, ed2k, HTTP downloads and cloud-drive links,<br>
-plus videos from YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels and more — in one window
+A free, open-source, native macOS download manager. When BitTorrent stalls, it hands the task to cloud offline download or a local Thunder client,<br>
+then moves the file back to your folder and cleans up the cloud copy
 
-Browser extension · Stream while downloading · Resume after restart · Cloud offline download
+Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
 [简体中文](README.md) | English
 
@@ -18,7 +18,11 @@ Browser extension · Stream while downloading · Resume after restart · Cloud o
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
 
-<img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
+<img src="docs/images/demo-rescue.gif" alt="A stalled task is handed to cloud offline download, then saved locally" width="800">
+
+<sub>Animation is sped up and uses sample data. Real speed depends on the source and your network.</sub>
+
+<!-- screenshot --><img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
 
 </div>
 

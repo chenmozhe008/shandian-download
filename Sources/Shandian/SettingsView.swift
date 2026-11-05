@@ -53,6 +53,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.autoCloudKey) private var autoCloud = true
     @State private var offlinesToday: Int?
     @AppStorage(Prefs.autoCleanCloudKey) private var autoCleanCloud = true
+    @AppStorage(DownloadStore.rescuedKey) private var rescuedCount = 0
     @State private var pkState = PikPak.loggedInUser
     @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
     @Environment(\.openWindow) private var openWindow
@@ -102,6 +103,11 @@ struct SettingsView: View {
                 .tabItem { Label("浏览器扩展", systemImage: "puzzlepiece.extension") }
 
             Form {
+            if rescuedCount > 0 {
+                Section {
+                    LabeledContent("已换路救回", value: "\(rescuedCount) 条任务")
+                }
+            }
             ThunderSettingsSection()
 
             Section("云盘离线（PikPak）") {

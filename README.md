@@ -1,15 +1,16 @@
+<!-- 搜索关键词：Mac 下载工具, macOS 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, mac download manager, magnet downloader, torrent client for mac, ed2k client mac, yt-dlp gui, native macos downloader -->
 <div align="center">
 
 <img src="docs/images/icon.png" width="128" alt="闪电全能下载图标">
 
 # 闪电全能下载 · Shandian Download Manager
 
-**原生 macOS 下载工具**
+**任务卡在 0%？它自动换一条路，把文件下完。**
 
-在一个窗口中管理磁力链接、种子、ed2k、HTTP 直链、网盘直链，<br>
-以及 YouTube、哔哩哔哩、抖音、小红书、微信视频号等平台的视频下载
+免费开源的原生 macOS 下载工具。BT 下不动时，自动交给云盘离线或本机迅雷接着下，<br>
+下完回到原来的保存位置，云端副本自动清理
 
-浏览器扩展一键接管 · 边下边播 · 断点续传 · 云盘离线加速
+磁力 · 种子 · ed2k · 直链 · 网盘 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
 简体中文 | [English](README.en.md)
 
@@ -18,7 +19,9 @@
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
 
-<img src="docs/images/screenshot-downloading.png" alt="闪电全能下载：正在下载" width="900">
+<img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="800">
+
+<sub>演示动画已加速，数据为示意；实际速度取决于资源和网络</sub>
 
 </div>
 
