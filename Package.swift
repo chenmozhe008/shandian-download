@@ -8,6 +8,7 @@ let package = Package(
     targets: [
         .target(name: "Isaac64", path: "Sources/Isaac64", publicHeadersPath: "include"),
         .executableTarget(name: "Shandian", dependencies: ["Isaac64"], path: "Sources/Shandian"),
+        .executableTarget(name: "ShandianMCP", path: "Sources/ShandianMCP"),
         .testTarget(name: "ShandianTests", dependencies: ["Shandian"], path: "Tests/ShandianTests")
     ]
 )

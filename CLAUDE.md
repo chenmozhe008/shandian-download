@@ -61,6 +61,7 @@
 ## 脚本
 
 - `script/engine.sh start|stop|status|configure`：启停内核；`configure` 写下载设置（每次内核重装/任务库重建后跑一次）
+- `Sources/ShandianMCP`：给 AI 工具用的 MCP（stdio），打包到 `Contents/MacOS/shandian-mcp`，工具有 add_download / list_downloads / pause_download / resume_download；只连本机，**不提供删除**
 - `script/dl.sh "<链接或本地.torrent>"`：统一入口，自动分流
 - `script/build_app.sh [run|package]`：编译打包成 `dist/闪电全能下载.app`（会带上已编好的内核）。**不带参数＝run：会杀掉并重开用户正在用的 App**（用户日常用 `/Applications` 里的安装版，装开发版走 `--install-dev`，见 `AGENTS.md`）；只想编译验证用 `package`
 - `script/build_engine.sh`：下 Go、拉 Gopeed v1.9.3、打补丁、编译内核

@@ -15,6 +15,10 @@ enum Prefs {
     static var autoCloud: Bool { UserDefaults.standard.object(forKey: autoCloudKey) as? Bool ?? true }   // 11-04 用户定：下不动就自动转，提示里写清用了几次
     static let autoCleanCloudKey = "autoCleanCloud"
     static var autoCleanCloud: Bool { UserDefaults.standard.object(forKey: autoCleanCloudKey) as? Bool ?? true }   // 免费空间小，拉回后默认清理才能循环用
+    static let scheduleOnKey = "scheduleOn", scheduleFromKey = "scheduleFrom", scheduleToKey = "scheduleTo"
+    static var scheduleOn: Bool { UserDefaults.standard.bool(forKey: scheduleOnKey) }
+    static var scheduleFrom: Int { UserDefaults.standard.object(forKey: scheduleFromKey) as? Int ?? 1 }
+    static var scheduleTo: Int { UserDefaults.standard.object(forKey: scheduleToKey) as? Int ?? 8 }
     static var downloadLimit: Int { UserDefaults.standard.integer(forKey: downloadLimitKey) }
 
     static var maxRunning: Int { let v = UserDefaults.standard.integer(forKey: maxRunningKey); return v > 0 ? v : 5 }
@@ -53,6 +57,9 @@ struct SettingsView: View {
     @AppStorage(Prefs.autoCloudKey) private var autoCloud = true
     @State private var offlinesToday: Int?
     @AppStorage(Prefs.autoCleanCloudKey) private var autoCleanCloud = true
+    @AppStorage(Prefs.scheduleOnKey) private var scheduleOn = false
+    @AppStorage(Prefs.scheduleFromKey) private var scheduleFrom = 1
+    @AppStorage(Prefs.scheduleToKey) private var scheduleTo = 8
     @AppStorage(DownloadStore.rescuedKey) private var rescuedCount = 0
     @State private var pkState = PikPak.loggedInUser
     @State private var pkProblem = UserDefaults.standard.bool(forKey: "pikpakSessionProblem")
@@ -84,6 +91,22 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("定时下载") {
+                Toggle("只在指定时段下载", isOn: $scheduleOn)
+                    .onChange(of: scheduleOn) { store.applyDownloadSchedule() }
+                if scheduleOn {
+                    Picker("开始时间", selection: $scheduleFrom) {
+                        ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) }
+                    }
+                    .onChange(of: scheduleFrom) { store.applyDownloadSchedule() }
+                    Picker("结束时间", selection: $scheduleTo) {
+                        ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) }
+                    }
+                    .onChange(of: scheduleTo) { store.applyDownloadSchedule() }
+                }
+                Text("时段外自动暂停，到点自动继续；时段外手动继续的任务不会被再次暂停。闪电全能下载需要开着。迅雷和视频网站的任务不受影响。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            }
             }
             .formStyle(.grouped)
             .tabItem { Label("下载", systemImage: "arrow.down.circle") }
@@ -166,6 +189,16 @@ struct SettingsView: View {
                     }
                 UpdateToggle(checker: store.updates)
             }
+            Section("给 AI 工具用（MCP）") {
+                Text("让 Claude Code 等 AI 工具提交下载、查看进度、暂停和继续。只在本机运行，不能删除任务或文件。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("复制 Claude Code 命令") { AppInfo.copy("claude mcp add shandian -- \"\(Self.mcpPath)\"") }
+                    Button("复制 MCP 配置") {
+                        AppInfo.copy("{\n  \"mcpServers\": {\n    \"shandian\": { \"command\": \"\(Self.mcpPath)\" }\n  }\n}")
+                    }
+                }
+            }
             }
             .formStyle(.grouped)
             .tabItem { Label("通用", systemImage: "gearshape") }
@@ -175,6 +208,8 @@ struct SettingsView: View {
         .frame(width: 708, height: 640)   // 所有页同样大，切换时窗口不跳（11-05 用户定）；以内容最多的浏览器扩展页为准
         .tint(Theme.tint)
     }
+
+    private static var mcpPath: String { Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/shandian-mcp").path }
 
     private func linkPikPakFromBrowser() {
         let url = URL(string: "https://mypikpak.com/drive/#shandian-link")!

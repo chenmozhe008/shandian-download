@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.52"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.53"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -107,6 +107,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   </array>
 </dict></plist>
 PLIST
+# 给 AI 工具用的 MCP 服务，先于 App 本身签名
+cp "$(dirname "$BIN")/ShandianMCP" "$APP/Contents/MacOS/shandian-mcp"
+codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID.mcp" --timestamp=none "$APP/Contents/MacOS/shandian-mcp"
 codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID" --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 echo "打包完成：$APP"

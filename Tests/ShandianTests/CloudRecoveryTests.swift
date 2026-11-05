@@ -123,6 +123,15 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertEqual(DownloadStore.handoffLabel(item, pulling: true), "PikPak 中转 · 取回本机")
     }
 
+    func testScheduleWindowHandlesOvernight() {
+        XCTAssertTrue(DownloadStore.insideSchedule(hour: 2, from: 1, to: 8))
+        XCTAssertFalse(DownloadStore.insideSchedule(hour: 8, from: 1, to: 8))
+        XCTAssertTrue(DownloadStore.insideSchedule(hour: 23, from: 22, to: 6))
+        XCTAssertTrue(DownloadStore.insideSchedule(hour: 3, from: 22, to: 6))
+        XCTAssertFalse(DownloadStore.insideSchedule(hour: 12, from: 22, to: 6))
+        XCTAssertTrue(DownloadStore.insideSchedule(hour: 12, from: 5, to: 5))
+    }
+
     func testCloudBaseOnlyMatchesHandoffFolders() {
         XCTAssertEqual(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/PikPak 下载/cloud-1"))?.path, "/m")
         XCTAssertNil(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/movie")))

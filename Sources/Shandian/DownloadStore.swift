@@ -287,6 +287,50 @@ final class DownloadStore: ObservableObject {
     /// 云盘通道现在能用：已关联且登录没失效
     var hasCloudRoute: Bool { PikPak.loggedInUser != nil && !PikPak.sessionInvalid }
 
+    // MARK: 定时下载
+
+    nonisolated static func insideSchedule(hour: Int, from: Int, to: Int) -> Bool {
+        if from == to { return true }
+        return from < to ? (hour >= from && hour < to) : (hour >= from || hour < to)
+    }
+
+    private static let scheduleHeldKey = "scheduleHeldIDs", scheduleSeenKey = "scheduleSeenIDs"
+    private var scheduleHeld = Set(UserDefaults.standard.stringArray(forKey: DownloadStore.scheduleHeldKey) ?? [])
+    /// 这轮时段外已经处理过的任务：用户手动继续的不再暂停
+    private var scheduleSeen = Set(UserDefaults.standard.stringArray(forKey: DownloadStore.scheduleSeenKey) ?? [])
+
+    private func saveSchedule() {
+        UserDefaults.standard.set(Array(scheduleHeld), forKey: Self.scheduleHeldKey)
+        UserDefaults.standard.set(Array(scheduleSeen), forKey: Self.scheduleSeenKey)
+    }
+
+    func applyDownloadSchedule() {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let inside = !Prefs.scheduleOn || Self.insideSchedule(hour: hour, from: Prefs.scheduleFrom, to: Prefs.scheduleTo)
+        if inside {
+            let held = scheduleHeld
+            guard !held.isEmpty || !scheduleSeen.isEmpty else { return }
+            scheduleHeld = []; scheduleSeen = []; saveSchedule()
+            let alive = engineItems.filter { held.contains($0.id) && $0.status == .paused }
+            guard !alive.isEmpty else { return }
+            Task {
+                for item in alive { try? await host.client.resume(item.id) }
+                notice = "到下载时段了，已继续 \(alive.count) 条任务"
+                await poll()
+            }
+            return
+        }
+        let targets = engineItems.filter { ($0.status == .running || $0.status == .waiting) && !scheduleSeen.contains($0.id) && !protectedEngineIDs.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        for item in targets { scheduleSeen.insert(item.id); scheduleHeld.insert(item.id) }
+        saveSchedule()
+        Task {
+            for item in targets { try? await host.client.pause(item.id) }
+            notice = "现在不在下载时段，已暂停 \(targets.count) 条任务，\(String(format: "%02d:00", Prefs.scheduleFrom)) 自动继续"
+            await poll()
+        }
+    }
+
     /// 诊断信息：只有版本、设置和计数，不写任务名
     func exportDiagnostics() {
         var status: [String: Int] = [:]
@@ -669,6 +713,7 @@ final class DownloadStore: ObservableObject {
         }
         moveFinishedThunderJobsHome()
         followThunderLaunchState()
+        applyDownloadSchedule()
         rebuild()
         if firstLoad { engineSeeded = true }
         if engineSeeded, !migratedOldCloudFolders {
