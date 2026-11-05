@@ -78,7 +78,15 @@
 
 ### 方式一：命令行安装（推荐）
 
-打开「终端」，粘贴以下命令并回车：
+已安装 [Homebrew](https://brew.sh) 时：
+
+```bash
+brew install --cask chenmozhe008/shandian/shandian
+```
+
+下载视频平台内容还需要 `brew install ffmpeg`。
+
+没有 Homebrew 时，打开「终端」，粘贴以下命令并回车：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash

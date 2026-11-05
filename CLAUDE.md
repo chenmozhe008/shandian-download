@@ -64,6 +64,7 @@
 - `script/dl.sh "<链接或本地.torrent>"`：统一入口，自动分流
 - `script/build_app.sh [run|package]`：编译打包成 `dist/闪电全能下载.app`（会带上已编好的内核）。**不带参数＝run：会杀掉并重开用户正在用的 App**（用户日常用 `/Applications` 里的安装版，装开发版走 `--install-dev`，见 `AGENTS.md`）；只想编译验证用 `package`
 - `script/build_engine.sh`：下 Go、拉 Gopeed v1.9.3、打补丁、编译内核
+- Homebrew：`chenmozhe008/homebrew-shandian` 的 `Casks/shandian.rb`，**每次发版要改 version 和两个 sha256**。本机测试加 `HOMEBREW_NO_INSTALL_FROM_API=1`（本机 Homebrew 不认 macOS 27）
 - `script/install.sh`：给别人用的一键安装（README 里 `curl … | bash`）：查 GitHub 最新 Release → 装进 /Applications → 去 quarantine → 有 brew 就装 ffmpeg。`SHANDIAN_DEST=<目录> SHANDIAN_TEST=1` 在临时目录测，不碰用户正在用的 App
 
 ## 下载设置（`configure` 写入，改值先改这里的说明）

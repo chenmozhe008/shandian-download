@@ -369,6 +369,9 @@ private struct FeedbackPage: View {
                         .buttonStyle(.borderedProminent).controlSize(.large)
                         Button { AppInfo.sendFeedback() } label: { Label("发反馈邮件", systemImage: "envelope.fill") }
                             .controlSize(.large)
+                        Button { NotificationCenter.default.post(name: Diagnostics.exportRequested, object: nil) } label: { Label("导出诊断信息", systemImage: "doc.text") }
+                            .controlSize(.large)
+                            .help("排查问题用。只含版本、设置和运行状态，路径、片名、链接和令牌都已去掉")
                         Button { AppInfo.copy(AppInfo.feedbackEmail); copied = AppInfo.feedbackEmail } label: {
                             Label(copied == AppInfo.feedbackEmail ? "已复制邮箱" : AppInfo.feedbackEmail,
                                   systemImage: copied == AppInfo.feedbackEmail ? "checkmark" : "doc.on.doc")

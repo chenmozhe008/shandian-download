@@ -20,6 +20,7 @@ struct ShandianApp: App {
             CommandGroup(replacing: .appInfo) {
                 AboutMenuButton()
                 Button("检查更新…") { store.updates.checkFromMenu() }
+                Button("导出诊断信息…") { store.exportDiagnostics() }
             }
             CommandGroup(replacing: .newItem) {
                 Button("新建下载…") { store.showNewSheet = true }.keyboardShortcut("n", modifiers: .command)

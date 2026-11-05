@@ -287,6 +287,40 @@ final class DownloadStore: ObservableObject {
     /// 云盘通道现在能用：已关联且登录没失效
     var hasCloudRoute: Bool { PikPak.loggedInUser != nil && !PikPak.sessionInvalid }
 
+    /// 诊断信息：只有版本、设置和计数，不写任务名
+    func exportDiagnostics() {
+        var status: [String: Int] = [:]
+        for item in items {
+            let name: String = switch item.status {
+            case .running: "下载中"
+            case .paused: "已暂停"
+            case .waiting: "排队"
+            case .resolving: "解析中"
+            case .failed: "失败"
+            case .done: "已完成"
+            }
+            status[name, default: 0] += 1
+        }
+        let disk = (try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage) ?? 0
+        let seen = (UserDefaults.standard.dictionary(forKey: BrowserExtension.seenKey) as? [String: Date] ?? [:]).keys.sorted().joined(separator: "、")
+        let log = (try? String(contentsOf: EngineConfig.supportDir.appendingPathComponent("engine.log"), encoding: .utf8)) ?? ""
+        let report = """
+        \(AppInfo.diagnostics)
+        芯片：\(UpdateChecker.isAppleSilicon ? "Apple 芯片" : "Intel")
+        系统盘可用：\(Int64(disk).bytesText)
+        内核状态：\(engineState)
+        任务：\(status.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: "，"))
+        迅雷：已安装 \(ThunderBridge.installed)，运行中 \(ThunderBridge.isRunning)，任务 \(thunderJobs.filter { !$0.done }.count) 条未完成
+        PikPak：已关联 \(PikPak.loggedInUser != nil)，登录失效 \(PikPak.sessionInvalid)，云盘任务 \(cloudJobs.count) 条
+        自动转交：云盘 \(Prefs.autoCloud)，迅雷 \(Prefs.autoThunder)；已换路救回 \(UserDefaults.standard.integer(forKey: Self.rescuedKey)) 条
+        浏览器扩展连接记录：\(seen.isEmpty ? "无" : seen)
+
+        ---- 内核日志（最后 300 行，已去掉路径、链接和令牌）----
+        \(Diagnostics.sanitize(Diagnostics.lastLines(log, count: 300), secrets: [engineToken]))
+        """
+        Diagnostics.save(report: report)
+    }
+
     /// 下不动时的出路：讲清两条路，点一下就走。登录 PikPak 成功后自动把这条任务交过去
     func offerRescue(_ item: Item) {
         let alert = NSAlert()
@@ -452,6 +486,9 @@ final class DownloadStore: ObservableObject {
         Task { await boot() }
         NotificationCenter.default.addObserver(forName: PikPak.loginChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.finishRescueAfterLogin() }
+        }
+        NotificationCenter.default.addObserver(forName: Diagnostics.exportRequested, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.exportDiagnostics() }
         }
         watcher = ClipboardWatcher(store: self)
         gateway = Gateway(store: self); gateway?.start()

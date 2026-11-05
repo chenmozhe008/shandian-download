@@ -81,7 +81,15 @@ Regular video sites use the highest available quality, preferring H.264 and AAC.
 
 ### Option 1: one-line install (recommended)
 
-Open Terminal, paste the command below and press Return:
+With [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask chenmozhe008/shandian/shandian
+```
+
+Video platforms also need `brew install ffmpeg`.
+
+Without Homebrew, open Terminal, paste the command below and press Return:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
