@@ -20,7 +20,7 @@
   - **参数带了 `--print` 必须同时带 `--progress`**，否则不出进度（用户：一直 0 突然下好）
   - 固定 `--concurrent-fragments 4`、`-S res,vcodec:h264,acodec:aac`（不设会挑 AV1）；别设 `--http-chunk-size`。依据见 `docs/internals.md`
 - **网盘**：浏览器里的 LinkSwift 油猴脚本拿直链 → 交给内核。**只装 Greasy Fork 上 hmjz100 的版本**；GitHub `Mario82del/LinkSwift` 发安装包，疑似冒名，别碰
-- 多语言（11-05）：`Resources/en.lproj/Localizable.strings`，键是中文原文；`Text("字面量")` 自动取表，String 变量显示时包 `L()`，带插值的用 `String(localized:)`。**`L()` 的结果只能显示，判断逻辑（如 `origin == "磁力"`）必须用中文原值**。中文表由 `build_app.sh` 从英文表的键生成，缺了系统会退回英文；设置里可选语言（`AppLanguage`，写 AppleLanguages，重开生效），**界面不许中英混排**：新增文字必须进翻译表；靠文字判断的地方（`noticeNeedsAttention`、`cloudFailureNotice`）两种语言都要认
+- 多语言（11-05）：`Resources/en.lproj/Localizable.strings`，键是中文原文；`Text("字面量")` 自动取表，String 变量显示时包 `L()`，带插值的用 `String(localized:)`。**`L()` 的结果只能显示，判断逻辑（如 `origin == "磁力"`）必须用中文原值**。中文表由 `build_app.sh` 从英文表的键生成，缺了系统会退回英文；设置里可选语言（`AppLanguage`，写 AppleLanguages，重开生效），**界面不许中英混排**：新增文字必须进翻译表；靠文字判断的地方（`noticeNeedsAttention`、`cloudFailureNotice`）两种语言都要认；**origin、迅雷按钮名等内部值绝不许包 `L()`**（`AIToolTests` 有守卫）。扩展文字在 `browser-extension/i18n.js`，跟随浏览器语言；kind 等内部值保持中文，显示时才翻
 - 设置页顺序（11-05 用户定）：通用（默认打开，语言在最上）→ 下载 → 保存位置 → 下载加速 → 浏览器扩展 → AI 工具
 - 客户端界面（P2）：原生 SwiftUI，`NavigationSplitView` 系统侧栏 + 系统工具栏/搜索框（10-27 用户嫌手搓侧栏和红绿灯对不齐，别再手工画侧栏）；侧栏顶部 App 图标+名字，技术约定沿用小清（`Coding Project/mac-cleanup-manager/CLAUDE.md`）：本机 SwiftUI 宏编译不过，状态放 `ObservableObject @Published`；文案像专业 Mac 软件
   - 重复投同一个链接（已在下载 / 已下过）：**切到列表、滚到那条任务并高亮**，顶部提示带「定位任务」按钮停 15 秒；只弹一条小字、人还留在新建界面上是不行的（11-01 用户反馈）。实现集中在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
@@ -49,6 +49,7 @@
 
 - 版本号在 `script/build_app.sh` 的 `APP_VERSION`，构建号取 git 提交数。修问题升第三位，加功能升第二位
 - 每次给本机安装新的开发构建，都要在上次已安装版本基础上递增版本号，并在 `CHANGELOG.md` 新建一节，只记录本次相对上次新增或修复的内容；安装前对照上次版本核实。历史补记须注明当时实际显示的版本，不得冒充当时已安装的新版本号。
+- 英文更新说明在 `CHANGELOG.en.md`，发版时写；GitHub 发布说明同时有 `## 更新内容` 和 `## What's New` 两节，英文界面不显示没有英文说明的旧版本
 - 每次升版本在 `CHANGELOG.md` 顶部加一节；打包时拷进 App，「关于闪电全能下载 → 更新记录」直接读它，别另写一份。写法按正式更新说明（短句、陈述事实，不写口语）
 - **没发布的版本标「开发版」**：标题写成 `## x.y.z · 日期（开发版）`，界面显示开发版标记。**发版时把上个正式版之后的开发版小节汇总成正式版这一节（写用户能看懂的改动，去掉中间过程），并删掉这些开发版小节**，GitHub 发布说明用同一份；有开发版小节时正式打包会被拦下（11-04 用户定）。`build_app.sh` 默认打开发包；正式包须显式指定 `SHANDIAN_RELEASE_BUILD=1`，并确保工作区干净、版本标签指向当前提交。是否发布仍以 GitHub Release 为准。改动太少不单独发版，先留在本机开发版，攒够一批再发（11-04 用户定）。
 - 「关于 → 介绍」的优势卡在 `AboutView.swift` 的 `IntroPage`，只写实测过的数据（下面「测速记录」），竞品只写查证过的事实

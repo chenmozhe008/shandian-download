@@ -14,6 +14,9 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 当前界面实际用的语言。按翻译表判断，没有英文表时（比如测试）算中文
+    nonisolated static var isEnglish: Bool { L("下载") != "下载" }
+
     private static let key = "AppleLanguages"
     private var codes: [String]? {
         switch self {

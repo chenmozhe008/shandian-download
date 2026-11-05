@@ -487,7 +487,6 @@
 "内核程序缺失" = "The engine program is missing";
 "内核没有响应" = "The engine isn't responding";
 "电影" = "Movies";
-"剩余 " = "Remaining ";
 "添加于 " = "Added ";
 "存到 " = "Save to ";
 "等 %lld 个链接" = "and %lld more links";
@@ -608,3 +607,6 @@
 "其他工具" = "Other Tools";
 "现在不在下载时段，已暂停 %lld 条任务，%@ 自动继续" = "Outside the download window. Paused %lld tasks; they resume at %@";
 "工具" = "Tool";
+"复制路径" = "Copy Path";
+"桌面版：设置 → MCP servers → Add server，类型选 STDIO，命令粘贴这个路径，保存后重启。" = "Desktop app: Settings → MCP servers → Add server. Choose STDIO, paste this path as the command, save, then restart.";
+"闪电全能下载需要授权才能安装新版本。" = "Shandian needs your approval to install the new version.";

@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.18.57"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.19.0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -61,7 +61,7 @@ printf '%s  %s\n' "$YTDLP_SHA256" "$YTDLP_ZIP" | shasum -a 256 -c >/dev/null
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
-cp "$ROOT/CHANGELOG.md" "$APP/Contents/Resources/CHANGELOG.md"  # 「关于 → 更新记录」直接读它
+cp "$ROOT/CHANGELOG.md" "$ROOT/CHANGELOG.en.md" "$APP/Contents/Resources/"  # 「关于 → 更新记录」直接读它，英文界面读 .en
 cp "$ROOT/Resources/done.wav" "$APP/Contents/Resources/done.wav"  # 下载完成提示音（script/make_done_sound.py 生成）
 cp -R "$ROOT/browser-extension" "$APP/Contents/Resources/BrowserExtension"  # 启动时拷到 Application Support（浏览器认固定路径）
 ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"

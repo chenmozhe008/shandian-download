@@ -69,7 +69,10 @@ Regular video sites use the highest available quality, preferring H.264 and AAC.
 - **Settings**: separate save locations for torrents, video platforms and other files; adjustable concurrent tasks and a global speed limit
 - **Trash**: removed tasks are kept in a list and can be downloaded again
 - **Notifications**: a system notification and a sound when a download completes
-- **One-click update**: when a new version is out, "发现更新" (update available) appears at the bottom of the sidebar; click it to download the build for your chip, verify and install it inside the app, which then reopens and resumes unfinished tasks
+- **Scheduled downloads**: download only during chosen hours, with automatic pause and resume
+- **Chinese and English**: choose Same as System, Simplified Chinese or English in Settings; the whole interface uses one language, and the browser extension follows the browser
+- **Diagnostics export**: export diagnostic information for feedback, without paths, titles, links or tokens
+- **One-click update**: when a new version is out, an update button appears at the bottom of the sidebar; click it to download the build for your chip, verify and install it inside the app, which then reopens and resumes unfinished tasks
 
 ## Requirements
 
@@ -141,14 +144,13 @@ The app includes an MCP server, so AI tools can add downloads, check progress, p
 | Tool | How to connect |
 |---|---|
 | Claude Code, Codex, Gemini CLI | Run the copied command in Terminal |
+| ChatGPT desktop app | Settings → MCP servers → Add server, choose STDIO, paste the copied path as the command |
 | Claude Desktop | Settings → Developer → Edit Config, then paste |
 | Cursor | Paste into `~/.cursor/mcp.json` |
 | Trae | Settings → MCP → Add Manually |
 | Windsurf | Open the config file from Cascade's MCP menu |
 | VS Code | Run `MCP: Open User Configuration` from the Command Palette |
 | Other MCP tools | Use the generic `mcpServers` config |
-
-The ChatGPT desktop app currently accepts only remote HTTPS addresses, so it can't reach a local server. Codex works with the same account.
 
 ## License
 

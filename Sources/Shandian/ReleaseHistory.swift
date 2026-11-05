@@ -21,7 +21,7 @@ enum ReleaseHistory {
             let version = parts[0].trimmingCharacters(in: .whitespaces)
             let date = parts.dropFirst().first?.replacingOccurrences(of: "（开发版）", with: "") ?? ""
             return HistoryEntry(version: version, date: date, notes: notes, page: nil,
-                                isDevelopment: title.contains(L("开发版")) || (version == currentVersion && isDevelopment))
+                                isDevelopment: title.contains("开发版") || (version == currentVersion && isDevelopment))
         }
     }
 
@@ -50,6 +50,8 @@ enum ReleaseHistory {
                                              notes: published.notes.isEmpty ? row.notes : published.notes, page: published.page, isDevelopment: false)
             } else { result.append(row) }
         }
+        // 英文界面不显示还没有英文说明的旧版本，免得中英混排（11-05 用户定）
+        if AppLanguage.isEnglish { result.removeAll { $0.notes.isEmpty || $0.notes.joined().range(of: "\\p{Han}", options: .regularExpression) != nil } }
         return result.sorted {
             if $0.version == $1.version { return $0.isDevelopment && !$1.isDevelopment }
             return UpdateChecker.isNewer($0.version, than: $1.version)

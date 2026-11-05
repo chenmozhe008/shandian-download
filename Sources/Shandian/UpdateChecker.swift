@@ -137,7 +137,7 @@ final class UpdateChecker: ObservableObject {
         var inSection = false
         var lines: [String] = []
         for line in body.components(separatedBy: .newlines) {
-            if line.hasPrefix("#") { inSection = line.contains("更新内容"); continue }
+            if line.hasPrefix("#") { inSection = line.contains(AppLanguage.isEnglish ? "What's New" : "更新内容"); continue }
             if inSection, line.hasPrefix("- ") { lines.append(String(line.dropFirst(2))) }
         }
         return lines
@@ -360,7 +360,7 @@ final class UpdateChecker: ObservableObject {
             .appendingPathComponent("闪电全能下载-旧版-\(AppInfo.version)-\(UUID().uuidString.prefix(8)).app")
         let escape = { (text: String) in text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
         let command = replaceCommand(target: target, app: app, backup: backup)
-        let source = "do shell script \"\(escape(command))\" with prompt \"闪电全能下载需要授权才能安装新版本。\" with administrator privileges"
+        let source = "do shell script \"\(escape(command))\" with prompt \"\(escape(L("闪电全能下载需要授权才能安装新版本。")))\" with administrator privileges"
         var failure: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&failure)
         guard let failure else { return }

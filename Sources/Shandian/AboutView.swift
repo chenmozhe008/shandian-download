@@ -20,8 +20,8 @@ enum AppInfo {
 
     /// 标题区的版本行，开发版在后面多一句提示
     static var versionLabel: String {
-        let base = "版本 \(version)（\(build)）"
-        return isDev ? "\(base) · 开发版" : base
+        let base = String(localized: "版本 \(version)（\(build)）")
+        return isDev ? "\(base) · \(L("开发版"))" : base
     }
 
     /// 附在反馈邮件里，便于复现
@@ -286,7 +286,7 @@ private struct ChangelogPage: View {
     private let cacheKey = "shandianReleaseHistory"
 
     private var releases: [HistoryEntry] {
-        let text = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
+        let text = Bundle.main.url(forResource: AppLanguage.isEnglish ? "CHANGELOG.en" : "CHANGELOG", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
         return ReleaseHistory.merge(local: ReleaseHistory.local(text, currentVersion: AppInfo.version, isDevelopment: AppInfo.isDev), online: online)
     }

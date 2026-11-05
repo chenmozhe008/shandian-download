@@ -66,6 +66,9 @@
 - **下载设置**：可分别设置磁力 / 种子、视频平台、其他文件的保存位置，以及同时下载数与全局限速
 - **回收站**：移除的任务保留记录，可随时重新下载
 - **完成提醒**：下载完成时发送系统通知并播放提示音
+- **定时下载**：可只在指定时段下载，时段外自动暂停，到点自动继续
+- **中英双语**：设置中可选跟随系统、简体中文或 English，整个界面只用一种语言；浏览器扩展跟随浏览器语言
+- **诊断导出**：反馈问题时可导出诊断信息，内容不含路径、片名、链接和令牌
 - **一键更新**：有新版本时侧栏「关于」右侧显示「立即升级」，点按后在应用内下载与本机芯片对应的安装包、校验并自动替换，完成后重新打开，未完成的任务自动继续
 
 ## 系统要求
@@ -155,14 +158,13 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 | 工具 | 接入方式 |
 |---|---|
 | Claude Code、Codex、Gemini CLI | 在终端运行复制的命令 |
+| ChatGPT 桌面版 | 设置 → MCP servers → Add server，类型选 STDIO，命令粘贴复制的路径 |
 | Claude Desktop | 设置 → 开发者 → 编辑配置，粘贴配置 |
 | Cursor | 粘贴到 `~/.cursor/mcp.json` |
 | Trae | 设置 → MCP → 手动添加 |
 | Windsurf | 在 Cascade 的 MCP 菜单打开配置文件 |
 | VS Code | 命令面板运行 `MCP: Open User Configuration` |
 | 其他支持 MCP 的工具 | 使用通用的 `mcpServers` 配置 |
-
-ChatGPT 桌面版目前只接受远程 HTTPS 地址，无法连接本机服务；同一账号可以改用 Codex。
 
 ## 云盘离线（可选）
 

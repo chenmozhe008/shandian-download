@@ -416,7 +416,7 @@ private struct SpeedHero: View {
                     let checking = store.activeItems.filter(\.checking).count - reclaiming
                     if reclaiming > 0 { Text("\(reclaiming) 项正在取回迅雷素材") }
                     if checking > 0 { Text("\(checking) 项正在校验已下载的部分") }
-                    let eta = remainingText(store.etaAll).replacingOccurrences(of: L("剩余 "), with: "").replacingOccurrences(of: " left", with: "")
+                    let eta = remainingText(store.etaAll).replacingOccurrences(of: "剩余 ", with: "").replacingOccurrences(of: " left", with: "")
                     if moving, !eta.isEmpty { Text("预计 \(eta)后全部完成") }
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).padding(.top, 4)
@@ -672,7 +672,7 @@ private extension Item {
     /// 下载中的 BT 电影可以边下边播
     var canStream: Bool {
         guard case .engine = source, isActive, !isFailed, category == .movie else { return false }
-        return origin == L("磁力") || origin == L("种子文件")
+        return origin == "磁力" || origin == "种子文件"
     }
 }
 
@@ -776,7 +776,7 @@ private struct ItemMenu: View {
                 if item.thunderHasOriginal { Button("不用迅雷，从闪电原来的进度接着下") { store.restoreOriginalFromThunder(item) } }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
-            if item.isActive, !item.link.isEmpty, item.origin == L("磁力") || item.origin == L("种子文件") {
+            if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
                 Button("交给云盘离线（PikPak）") { store.sendToCloud(item) }
                 Button(ThunderBridge.installed ? L("用迅雷下载") : L("用迅雷下载（需先安装迅雷）…")) { store.handToThunder(item) }
             }

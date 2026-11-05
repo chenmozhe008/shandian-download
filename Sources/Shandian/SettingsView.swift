@@ -221,11 +221,11 @@ struct SettingsView: View {
                 .onChange(of: aiTool) { _, _ in aiCopied = false }
                 Text(verbatim: aiTool.hint)
                     .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
-                if !aiTool.isCommand {
+                if !aiTool.isCommand && !aiTool.isPath {
                     Text("已有其他配置时，把 shandian 这一段并进去，不要整份覆盖。")
                         .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
                 }
-                Button(aiCopied ? L("已复制") : aiTool.isCommand ? L("复制命令") : L("复制配置")) {
+                Button(aiCopied ? L("已复制") : aiTool.isCommand ? L("复制命令") : aiTool.isPath ? L("复制路径") : L("复制配置")) {
                     AppInfo.copy(aiTool.snippet(path: Self.mcpPath)); aiCopied = true
                 }
             }

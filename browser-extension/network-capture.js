@@ -1,3 +1,4 @@
+var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values?.[key]));  // 测试环境没有 i18n.js
 // 可选的当前标签页网络资源发现。只保存媒体 URL 与类型到浏览器会话内存，不读取请求体、Cookie 或授权头。
 const captureKey = 'shandianActiveCapture';
 const captureTTL = 5 * 60 * 1000;
@@ -60,7 +61,7 @@ async function startNetworkCapture(tabId, pageURL, title) {
   if (!['http:', 'https:'].includes(url.protocol)) return false;
   // 来源页的查询参数可能包含私密数据；仅保留地址路径。
   url.username = ''; url.password = ''; url.search = ''; url.hash = '';
-  captureState = { tabId, pageURL: url.href, title: (title || '视频').slice(0, 100), expires: Date.now() + captureTTL, items: [] };
+  captureState = { tabId, pageURL: url.href, title: (title || T('视频')).slice(0, 100), expires: Date.now() + captureTTL, items: [] };
   await chrome.storage.session.set({ [captureKey]: captureState });
   attachCaptureListener();
   if (!captureListenerAttached) { await stopNetworkCapture(); return false; }

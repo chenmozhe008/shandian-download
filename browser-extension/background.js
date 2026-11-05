@@ -1,4 +1,5 @@
-importScripts("network-capture.js");
+var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values?.[key]));  // 测试环境没有 i18n.js
+importScripts("i18n.js", "network-capture.js");
 
 // 闪电全能下载浏览器扩展：把浏览器里的下载交给本机的闪电全能下载（127.0.0.1:6800）。
 // App 没开时什么都不拦，浏览器照常下载；App 只认本扩展的来源（manifest 里的 key 固定了扩展 ID），不需要填密钥。
@@ -24,9 +25,9 @@ async function enabled() {
 
 async function refreshBadge() {
   const on = await enabled();
-  await chrome.action.setBadgeText({ text: on ? "" : "关" });
+  await chrome.action.setBadgeText({ text: on ? "" : T("关") });
   await chrome.action.setBadgeBackgroundColor({ color: "#8E8E93" });
-  await chrome.action.setTitle({ title: on ? "闪电全能下载" : "闪电全能下载：接管下载已关闭" });
+  await chrome.action.setTitle({ title: on ? T("闪电全能下载") : T("闪电全能下载：接管下载已关闭") });
 }
 
 // 网盘、登录后才能下的文件要带上浏览器的 Cookie、来源页和 UA，内核才能以同样身份下载
@@ -429,10 +430,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.contextMenus.removeAll();   // 更新扩展时旧菜单还在，先清掉再建
-  chrome.contextMenus.create({ id: "shandian", title: "用闪电全能下载", contexts: ["link", "video", "audio"] });
+  chrome.contextMenus.create({ id: "shandian", title: T("用闪电全能下载"), contexts: ["link", "video", "audio"] });
   // 抖音、小红书页面上任何地方右键都有，不用找视频元素
   chrome.contextMenus.create({
-    id: "shandian-page", title: "用闪电全能下载这个视频", contexts: ["page", "frame", "image"],
+    id: "shandian-page", title: T("用闪电全能下载这个视频"), contexts: ["page", "frame", "image"],
     documentUrlPatterns: ["*://*.douyin.com/*", "*://*.xiaohongshu.com/*", "*://*.xinpianchang.com/*"],
   });
   refreshBadge();
@@ -473,10 +474,10 @@ async function linkPikPak(tabId) {
           try { if (value && JSON.parse(value).access_token === access) localStorage.removeItem(key); } catch (_) {}
         }, args: [s.key, s.c.access_token] }).catch(() => {});
       }
-      await chrome.scripting.executeScript({ target: { tabId }, func: (ok) => {
-        document.title = ok ? "已关联到闪电全能下载" : "关联失败";
-        alert(ok ? "PikPak 已关联到闪电全能下载，可以关掉这个页面了。" : "没能交给闪电全能下载，请确认闪电全能下载已打开。");
-      }, args: [ok] });
+      await chrome.scripting.executeScript({ target: { tabId }, func: (title, message) => {   // 这段在网页里跑，用不了 T，文字由参数带进去
+        document.title = title;
+        alert(message);
+      }, args: ok ? [T("已关联到闪电全能下载"), T("PikPak 已关联到闪电全能下载，可以关掉这个页面了。")] : [T("关联失败"), T("没能交给闪电全能下载，请确认闪电全能下载已打开。")] });
       return ok;
     }
     await new Promise((r) => setTimeout(r, 1000));

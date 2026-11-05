@@ -765,7 +765,7 @@ final class DownloadStore: ObservableObject {
             else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
             let i = all[k]
-            let isBT = i.origin == L("磁力") || i.origin == L("种子文件")
+            let isBT = i.origin == "磁力" || i.origin == "种子文件"
             // 只差最后一点的不算「冷门」：这时候交出去（迅雷 / 云盘）会把几 GB 重下一遍，得不偿失
             let nearlyDone = i.total > 0 && Double(i.downloaded) / Double(i.total) > 0.99
             let stuck = isBT && !i.checking && !nearlyDone && (i.isResolvingState || (i.status == .running && i.avgSpeed < 50 << 10))
@@ -1057,7 +1057,7 @@ final class DownloadStore: ObservableObject {
             // 先解析文件列表，只勾主视频和字幕；磁力要先从网络拿到种子信息
             let shown = givenTitle ?? Self.displayName(link)
             var placeholder = Item(id: "pending-" + UUID().uuidString, source: .pending, title: PrettyTitle.clean(shown), rawTitle: shown,
-                                   origin: kind == .magnet ? L("磁力") : L("种子文件"), category: .movie, status: .resolving(Date()),
+                                   origin: kind == .magnet ? "磁力" : "种子文件", category: .movie, status: .resolving(Date()),
                                    downloaded: carry?.downloaded ?? 0, total: max(carry?.total ?? 0, carry?.downloaded ?? 0),
                                    speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: key)
             placeholder.link = originLink ?? (localTorrent ? "" : link)
@@ -1980,7 +1980,7 @@ final class DownloadStore: ObservableObject {
         if let index = videoJobs.firstIndex(where: { $0.url == share && $0.state == .failed }) {
             videoJobs.remove(at: index)
         }
-        var job = VideoJob(url: share, title: title.isEmpty ? L("微信视频号") : title, site: L("微信视频号"))
+        var job = VideoJob(url: share, title: title.isEmpty ? L("微信视频号") : title, site: "微信视频号")
         job.stage = .preparing
         videoJobs.append(job); saveVideos(); rebuild(); selectedID = job.id.uuidString
         let initial = job

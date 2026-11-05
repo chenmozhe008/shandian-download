@@ -135,7 +135,7 @@ enum ThunderBridge {
         guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
               let wins = winsRef as? [AXUIElement] else { return false }
         for w in wins where (attr(w, kAXTitleAttribute) ?? "").hasPrefix("新建") {
-            if let b = findButton(w, title: L("立即下载"), depth: 0) {
+            if let b = findButton(w, title: "立即下载", depth: 0) {
                 return AXUIElementPerformAction(b, kAXPressAction as CFString) == .success
             }
         }
@@ -308,7 +308,7 @@ enum ThunderBridge {
     }
 
     private static func pressPauseAll() -> Bool {
-        guard let window = mainWindow(), let button = findButton(window, title: L("全部暂停"), depth: 0) else { return false }
+        guard let window = mainWindow(), let button = findButton(window, title: "全部暂停", depth: 0) else { return false }
         return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
     }
 
@@ -320,7 +320,7 @@ enum ThunderBridge {
         for _ in 0..<10 where mainWindow() == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
         let rows = taskRows()
         let paused = jobs.contains { job in
-            rows.contains { rowMatches($0, folderName: job.folder.map { URL(fileURLWithPath: $0).lastPathComponent }, name: job.name) && $0.status.contains(L("暂停")) }
+            rows.contains { rowMatches($0, folderName: job.folder.map { URL(fileURLWithPath: $0).lastPathComponent }, name: job.name) && $0.status.contains("暂停") }
         }
         guard paused else { return false }
         return await setAllTasks(paused: false)
