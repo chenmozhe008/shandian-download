@@ -312,6 +312,15 @@ enum ThunderBridge {
         return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
     }
 
+    /// 总暂停 / 总继续用。迅雷没开时没什么可停的，算成功
+    static func setAllTasks(paused: Bool) async -> Bool {
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first else { return true }
+        guard requestAccessibility() else { return false }
+        await showThunderWindow(running)
+        guard let window = mainWindow(), let button = findButton(window, title: paused ? "全部暂停" : "全部开始", depth: 0) else { return false }
+        return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    }
+
     /// 收回前让迅雷停下：迅雷只开放了「全部暂停」，单条按钮要鼠标悬停才有，所以别的任务在下时先问用户。
     /// 按完再看文件夹还写不写，不靠界面文字判断；做不到（没权限、窗口关了）就退回让用户手动暂停
     static func stopForReclaim(_ job: ThunderJob) async -> WriteState {

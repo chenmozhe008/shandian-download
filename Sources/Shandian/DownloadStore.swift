@@ -619,7 +619,10 @@ final class DownloadStore: ObservableObject {
         }
             + videos + thunderJobs.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
         all.sort { $0.createdAt > $1.createdAt }
+        // 总暂停后用户又在迅雷里点了开始：文件还在写就不再显示暂停
+        if let held = thunderHeldAt, Date().timeIntervalSince(held) > 15, thunderJobs.contains(where: { !$0.done && $0.speed > 0 }) { thunderHeldAt = nil }
         for k in all.indices {
+            if case .thunder = all[k].source, thunderHeldAt != nil, all[k].isActive { all[k].status = .paused; all[k].speed = 0 }
             if case .thunder = all[k].source { all[k].avgSpeed = all[k].speed }
             else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
@@ -988,13 +991,33 @@ final class DownloadStore: ObservableObject {
 
     var allPaused: Bool { !items.contains { $0.status == .running || $0.status == .waiting } }
 
+    /// 总暂停连迅雷一起停，界面上这些任务显示已暂停；只有这样停的，总继续才去开迅雷（11-05 用户：点了迅雷没反应也没提示）
+    private var thunderHeldAt: Date?
+    private var hasActiveThunderJob: Bool { thunderJobs.contains { !$0.done } }
+
     func toggleAll() {
         Task {
             if allPaused {
                 for item in engineItems where item.status == .paused && !protectedEngineIDs.contains(item.id) {
                     if case .engine(let id) = item.source { try? await host.client.resume(id) }
                 }
-            } else { try? await host.client.pauseAll() }
+                if thunderHeldAt != nil {
+                    thunderHeldAt = nil
+                    notice = await ThunderBridge.setAllTasks(paused: false) ? "已全部继续，迅雷里之前暂停的任务也会一起开始" : "闪电的任务已继续；迅雷没能自动开始，请到迅雷点「全部开始」"
+                }
+            } else {
+                try? await host.client.pauseAll()
+                if hasActiveThunderJob {
+                    if await ThunderBridge.setAllTasks(paused: true) {
+                        thunderHeldAt = Date()
+                        notice = "已全部暂停，包括迅雷里的任务"
+                    } else {
+                        let text = "闪电的任务已暂停；迅雷没能自动暂停，请到迅雷暂停，或在系统设置里允许「辅助功能」"
+                        noticeAction = NoticeAction(title: "打开迅雷", forText: text, run: { [weak self] in self?.openThunder() })
+                        notice = text
+                    }
+                }
+            }
             await poll()
         }
     }

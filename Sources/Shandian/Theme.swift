@@ -64,14 +64,73 @@ struct GitHubMark: View {
     }
 }
 
+/// 悬浮提示。全 App 只用这一种：系统同款的浅色小标签，出现在按钮下方。
+/// 不用系统 .help：列表每秒刷新，系统提示等不到出现就被打断（11-05 用户：悬停没反应）；
+/// 放在独立小窗里：不会盖住行内的状态文字，也不会被列表边缘裁掉
+@MainActor
+enum HoverTip {
+    private static var panel: NSPanel?
+    private static var pending: DispatchWorkItem?
+
+    static func show(_ text: String, below view: NSView?) {
+        hide()
+        let work = DispatchWorkItem { present(text, below: view) }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    static func hide() {
+        pending?.cancel(); pending = nil
+        panel?.orderOut(nil)
+    }
+
+    private static func present(_ text: String, below view: NSView?) {
+        guard let view, let window = view.window else { return }
+        let host = NSHostingView(rootView: Text(text).font(.system(size: 12)).foregroundStyle(.primary)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
+            .fixedSize())
+        let size = host.fittingSize
+        host.frame = NSRect(origin: .zero, size: size)
+        let tip = panel ?? {
+            let new = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+            new.isOpaque = false; new.backgroundColor = .clear; new.hasShadow = true
+            new.ignoresMouseEvents = true; new.level = .popUpMenu; new.isReleasedWhenClosed = false
+            panel = new
+            return new
+        }()
+        tip.contentView = host
+        let anchor = window.convertToScreen(view.convert(view.bounds, to: nil))
+        let screen = window.screen?.visibleFrame ?? anchor
+        var origin = CGPoint(x: anchor.midX - size.width / 2, y: anchor.minY - size.height - 5)
+        origin.x = min(max(origin.x, screen.minX + 6), screen.maxX - size.width - 6)
+        if origin.y < screen.minY { origin.y = anchor.maxY + 5 }
+        tip.setFrame(NSRect(origin: origin, size: size), display: true)
+        tip.orderFront(nil)
+    }
+}
+
+/// 记下按钮对应的 NSView，提示才知道显示在哪
+final class TipAnchorBox: ObservableObject { weak var view: NSView? }
+
+private struct TipAnchor: NSViewRepresentable {
+    let box: TipAnchorBox
+    func makeNSView(context: Context) -> NSView { let v = NSView(); box.view = v; return v }
+    func updateNSView(_ v: NSView, context: Context) { box.view = v }
+}
+
 /// 小圆形图标按钮（暂停、移除）
 struct CircleIconButton: View {
     let symbol: String
     let help: String
     let action: () -> Void
-    @StateObject private var hover = HoverBox()
+    @StateObject private var anchor = TipAnchorBox()
     var body: some View {
-        Button(action: action) {
+        Button {
+            HoverTip.hide()
+            action()
+        } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Theme.text.opacity(0.8))
@@ -80,17 +139,10 @@ struct CircleIconButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(help)
-        .onHover { hover.on = $0 }
-        // 不用系统 .help：列表每秒刷新，系统提示等不到出现就被打断（11-05 用户：悬停没反应）。
-        // 显示在按钮左边：不会被列表上下边缘裁掉，也不会被相邻的行盖住
-        .overlay(alignment: .trailing) {
-            Text(help).font(.system(size: 12, weight: .medium)).foregroundStyle(.white).fixedSize()
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.82)))
-                .offset(x: -42)
-                .opacity(hover.on ? 1 : 0)
-                .animation(.easeOut(duration: 0.12).delay(hover.on ? 0.25 : 0), value: hover.on)
-                .allowsHitTesting(false)
+        .background(TipAnchor(box: anchor))
+        .onHover { inside in
+            if inside { HoverTip.show(help, below: anchor.view) } else { HoverTip.hide() }
         }
+        .onDisappear { HoverTip.hide() }
     }
 }

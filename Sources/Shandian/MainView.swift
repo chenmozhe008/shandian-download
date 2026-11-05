@@ -266,7 +266,7 @@ private struct ToolbarItems: ToolbarContent {
             Button { store.toggleAll() } label: {
                 Label(store.allPaused ? "全部继续" : "全部暂停", systemImage: store.allPaused ? "play.fill" : "pause.fill")
             }
-            .help(store.allPaused ? "全部继续" : "全部暂停")
+            .help(store.allPaused ? "全部继续（包括迅雷里的任务）" : "全部暂停（包括迅雷里的任务）")
             .disabled(store.items.filter(\.isActive).isEmpty)
             Button { store.showNewSheet = true } label: {
                 Label("新建下载", systemImage: "plus").labelStyle(.titleAndIcon).font(.system(size: 13, weight: .semibold))
@@ -601,7 +601,6 @@ struct TaskRow: View {
         .onTapGesture(count: 2) { store.primaryAction(item) }
         .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.isThunder && item.isActive ? "双击在迅雷中查看" : item.isFailed ? "双击重试" : item.status == .paused ? "双击继续" : "双击暂停")
     }
 
     private var selected: Bool { store.selectedID == item.id }
