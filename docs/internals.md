@@ -23,6 +23,12 @@
 
 推出移动硬盘：DiskArbitration 推出审批回调里查内核是否开着那块盘上的文件（`EngineHost.holdsFiles`），开着就暂停 → 结束内核 → 批准 → 2 秒后重启，插回自动续。
 
+## 界面行为
+
+- 重复投同一个链接（已在下载 / 已下过）：切到列表、滚到那条任务并高亮，提示带「定位任务」按钮停 15 秒（11-01 用户反馈）。实现在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
+- 内核启动中（刚打开 App、推出硬盘后重启）收到的链接先排队，读到任务列表后再走查重和确认框（`deferUntilEngineReady`）；只有内核真的启动失败才提示没添加
+- 收回时列表只显示一行：有占位任务时藏迅雷行（`beingReclaimed`），新任务读到前藏起来（`reclaimedEngineIDs`）
+
 ## 视频网站（yt-dlp）
 
 - 用 App 自带的目录版（`Application Support/ShandianDownload/bin/yt-dlp_macos/`，官方 `yt-dlp_macos.zip`）：2026-10-29 实测单文件版每次启动解包 + 系统扫描白等 16 秒，目录版 0.3 秒。目录版不能 `-U`，每 7 天查 GitHub 最新 tag，不同就重下；brew 版只做兜底（2026-10-27 实测 brew 的 2025-04 版下 B 站 412）
@@ -70,7 +76,7 @@
 - 云端完成后读文件信息遇到网络错误（`URLError`）下一轮重试，不判失败；`send` 对请求发出前的连接错误（TLS 握手等）重试 3 次。11-04 实测这条代理偶发 TLS 错误，以前会丢任务、文件留在云盘占空间
 - 2026-10-28 实测：一部国内热门片 BT 为 0，PikPak 7.9 秒云端完成，拉回约 3 MB/s，自动删云端成功
 
-## 迅雷通道（`ThunderBridge.swift`，默认关）
+## 迅雷通道（`ThunderBridge.swift`，自动转交 11-05 起默认开）
 
 设迅雷 LastSavePath、用迅雷打开链接、辅助功能 API 点「立即下载」；文件夹按 `.<INFOHASH>.js` 认，也按「交过去之后新建、里面有 `.magent_*.torrent`」认。
 
@@ -91,6 +97,19 @@
 总暂停（`toggleAll`）：有未完成的迅雷任务时一起按迅雷的「全部暂停」，界面显示已暂停；总继续只在这样停过时按「全部开始」，迅雷里之前手动暂停的任务也会开始。用户自己在迅雷点开始、文件又在写时自动取消暂停显示。
 
 迅雷没开：任务行显示「迅雷没打开」+ 打开按钮，顶部提示一次；从没开到开的那一下，对应任务在迅雷里写着暂停就按「全部开始」（`followThunderLaunchState`）。
+
+收回后再交给迅雷（11-05 实测，用户反复遇到才查清）：
+- 收回会把文件夹搬回保存目录，迅雷的旧任务还留在列表里。迅雷按 infohash 判重：同一 hash 再交会弹「下载任务已存在」，回收站里的也算，要永久删除才放行；这时点开始旧任务，因为 `.magent_*.torrent` 被搬走，报「获取种子文件失败，无法继续下载」，且不可恢复。
+- 所以收回时把原位置记进 `thunder-folders.json`（按 infohash）；再交给迅雷时用 `taskExists` 查旧任务还在且没报错，就先搬回去再让它继续。旧任务已删或已报错才重新提交；被拒就撤销转交、原任务继续、提示去迅雷删（`thunderRefusedDuplicate`）。「不用迅雷，改回闪电」要先搬回保存目录。
+- 收回时种子路径要跟着文件夹变（`pathAfterMove`）：`LinkKind.of` 对不存在的路径返回 nil，`start` 会静默退出，表现是一直「请查看迅雷」（0.18.33 起的 bug，0.19.5 修）。
+
+判断任务建没建成读迅雷事件日志 `~/Library/Application Support/Thunder/.events/record_yyyyMMdd.log` 的 `taskevent/createtask`（result 为 success / fail），判重窗口再按窗口标题兜底：0.19.2 只读窗口标题，14:11 那次拒绝就没检测到。查迅雷问题先看这份日志。
+
+任务行文字：暂停的行是「已暂停、任务名」，在下的行是「速度、剩余时间、任务名」，任务名固定紧挨「(共N个文件)」（`taskRow`）。
+
+单条控制做不到（11-05 用两条测试任务实测）：列表的 AXShowMenu 能弹出「开始任务 / 暂停任务」，`AXSelectedChildren` 也能设，但菜单只认鼠标右键点中的行，按了没反应；单条按钮要悬停才出现。除非移动用户鼠标，否则只能「全部开始 / 全部暂停」，别再试。
+
+辅助功能授权（别人的电脑同样依赖）：没授权时 `SubmitResult.needsAccessibility` 给引导，设置页显示状态。发布包用 `script/release_sign.sh` 的固定自签名（DR 是 identifier + 证书 leaf），系统才认得是同一个 App；ad-hoc 每次更新 cdhash 都变，授权会失效。不需要系统信任证书，Gatekeeper 表现和 ad-hoc 一样。「更新后授权保留」等下一个版本才能实测。
 
 官方「迅雷下载 SDK」（open.xunlei.com，2026-11-05 查）：文档只有 HTTP P2SP 任务，没有磁力/BT；要求 API Key 不进客户端、由自己的服务器发 token；收费未公开。面向用 CDN 分发自家大文件的企业，解决不了 BT 下不动，暂不接。
 
