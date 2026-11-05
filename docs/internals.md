@@ -27,6 +27,7 @@
 
 - 重复投同一个链接（已在下载 / 已下过）：切到列表、滚到那条任务并高亮，提示带「定位任务」按钮停 15 秒（11-01 用户反馈）。实现在 `DownloadStore.reveal/focus`，列表用 `ScrollToTask` 滚，提示条见 `Banners`
 - 内核启动中（刚打开 App、推出硬盘后重启）收到的链接先排队，读到任务列表后再走查重和确认框（`deferUntilEngineReady`）；只有内核真的启动失败才提示没添加
+- 登录时自动打开（0.19.8 起）：`LoginLaunch` 写普通 LaunchAgent，不用 `SMAppService.mainApp`，它在发布签名下有被系统拒绝的风险；启动时接过旧设置，App 不在了任务自清
 - 收回时列表只显示一行：有占位任务时藏迅雷行（`beingReclaimed`），新任务读到前藏起来（`reclaimedEngineIDs`）
 
 ## 视频网站（yt-dlp）
