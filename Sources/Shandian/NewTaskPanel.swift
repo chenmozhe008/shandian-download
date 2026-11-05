@@ -14,19 +14,30 @@ final class NewTaskPanels {
     }
 
     private var panels: [NSPanel] = []
+    /// 每个框是为哪些链接开的：同一批链接再来时只把已有的框提到前面
+    /// （11-06 浏览器里别的扩展反复重试同一个下载，一次弹出几十个框）
+    private var panelLinks: [ObjectIdentifier: [String]] = [:]
 
     /// 收掉所有确认框：重复链接时要把用户带回列表看那条任务，框还浮在上面就挡住了
     func dismissAll() {
         for p in panels { p.orderOut(nil) }
         panels.removeAll()
+        panelLinks.removeAll()
     }
 
     func present(links: [String], headers: [String: String], name: String?, store: DownloadStore, forceVideo: Bool = false) {
+        if let open = panels.first(where: { $0.isVisible && panelLinks[ObjectIdentifier($0)] == links }) {
+            NSApp.activate(ignoringOtherApps: true)
+            open.makeKeyAndOrderFront(nil)
+            return
+        }
         let model = NewTaskModel(links: links, headers: headers, name: name, store: store, forceVideo: forceVideo)
         let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        panelLinks[ObjectIdentifier(panel)] = links
         model.close = { [weak self, weak panel] in
             panel?.orderOut(nil)
             self?.panels.removeAll { $0 === panel }
+            if let panel { self?.panelLinks[ObjectIdentifier(panel)] = nil }
         }
         let host = NSHostingView(rootView: NewTaskView(model: model))
         panel.contentView = host

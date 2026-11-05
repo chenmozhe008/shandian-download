@@ -300,6 +300,22 @@ function worthTakingOver(item) {
 // 失败后交回浏览器重下的链接：浏览器再建下载时不再拦
 const handedBack = new Set();
 
+// 只接用户在网页上点的下载。别的扩展在后台发起的（如新标签页扩展下壁纸）不接：
+// 接过去会取消它的下载，它一重试又被接，App 弹出几十个确认框（11-06 用户打开 Chrome 时遇到）。
+// 同一链接 2 分钟内只接一次，第二次交给浏览器自己下，任何来源都不会再循环。
+const recentTakeovers = new Map();
+const REPEAT_WINDOW = 2 * 60 * 1000;
+function isUserDownload(item, ownId) {
+  if (item.byExtensionId && item.byExtensionId !== ownId) return false;
+  return !/^(chrome|edge)-extension:/i.test(item.referrer || "");
+}
+function firstTakeover(url, now) {
+  for (const [key, time] of recentTakeovers) if (now - time > REPEAT_WINDOW) recentTakeovers.delete(key);
+  if (recentTakeovers.has(url)) return false;
+  recentTakeovers.set(url, now);
+  return true;
+}
+
 // 交给 App 后盯 5 分钟：App 那边失败了（会自己移除任务）就用浏览器重新下，不让这次下载丢掉
 async function watchHandOver(url) {
   for (let i = 0; i < 60; i++) {
@@ -324,7 +340,8 @@ async function watchHandOver(url) {
 chrome.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
   if (handedBack.delete(url) || handedBack.delete(item.url)) return;
-  if (!/^https?:/i.test(url) || !worthTakingOver(item) || !(await enabled())) return;
+  if (!/^https?:/i.test(url) || !worthTakingOver(item) || !isUserDownload(item, chrome.runtime.id) || !(await enabled())) return;
+  if (!firstTakeover(url, Date.now())) return;
   if (await sendToApp(url, item.referrer)) {
     // App 接下了才取消浏览器这边的，避免两边都没下
     try { await chrome.downloads.cancel(item.id); } catch (_) {}

@@ -37,7 +37,7 @@
 - 磁力默认打开方式已改为闪电全能下载（10-27 用户同意）；`.torrent` 文件关联未改
 - 浏览器扩展：**用自带的**（`browser-extension/`，MV3，Chrome / Edge 通用；10-28 用户说别绑篡改猴）。打包进 App、启动时拷到 `Application Support/ShandianDownload/BrowserExtension`（浏览器记路径，别指向 dist）。用户在扩展页开开发者模式、拖文件夹进去装一次——浏览器不允许第三方静默装扩展，Chrome 137+ 也不认 `--load-extension`
   - 扩展 ID 由 manifest 的 `key` 固定，网关 `/extension/*` 只认这个 Origin；**改 key 要同步改 `Gateway.extensionOrigin`**
-  - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接。完整规则见 `docs/internals.md`
+  - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接；**别的扩展发起的下载（`byExtensionId`、扩展页面来源）不接，同一链接 2 分钟内只接一次**（11-06：Chrome 新标签页扩展下壁纸被接管→取消→它重试→再接管，一次弹出几十个确认框；App 侧同一链接的确认框也只开一个）。完整规则见 `docs/internals.md`
   - 商店版是另一套：`browser-extension-store/`，只有右键发送文件直链；两版的区别和安装入口都在「浏览器扩展」窗口的对照表（`BrowserSetupView`），改功能时同步表格和 README；网关只精确放行 `Gateway.swift` 里列出的商店 ID，**不许放宽到任意扩展**。上架状态和后台操作方法见 `docs/CHROME_STORE_PREPARATION.md`
   - **抖音别改回包 fetch/XHR**（会和安全 SDK 防篡改死循环、页面卡死），只包 `JSON.parse` / `Response.prototype.json`；**所有视频入口都走 `downloadVideoInTab`**。抖音、小红书已实测，快手和抖音信息流未实测，视频号不接
 - 退出 App：`pauseAll` 后内核留着不关，下载中的任务记进 `resumeOnLaunch`，下次打开续上（补丁后内核重启也不用校验）
