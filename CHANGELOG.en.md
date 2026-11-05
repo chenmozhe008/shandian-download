@@ -1,5 +1,12 @@
 # What's New
 
+## 0.19.11 · 2026-11-06
+
+- Fixed a flood of “New Download” windows that could appear when opening the browser. The extension no longer takes over downloads that other extensions start in the background, takes over the same link only once within a short time, and the app no longer opens a second window for a link that is already waiting for confirmation.
+- Fixed “Open Shandian at Login” possibly failing to start in release builds. The login item is removed when the app is uninstalled.
+- The extension icon in the browser toolbar is larger, matching other extensions.
+- The browser extension has been updated. Click Reload for it once on the browser's extensions page.
+
 ## 0.19.7 · 2026-11-05
 
 - Fixed tasks taken back from Thunder staying on “Check Thunder” and never being retrieved.
