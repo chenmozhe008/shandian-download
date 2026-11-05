@@ -182,7 +182,6 @@ private struct DetailPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Banners(store: store)
             switch store.section {
             case .active: ActivePage(store: store)
             case .done: DonePage(store: store, items: store.doneItems, rowLayout: completedRowLayout).padding(.top, 8)
@@ -191,6 +190,8 @@ private struct DetailPane: View {
             }
         }
         .padding(.horizontal, 24).padding(.top, 8)
+        // 提示条浮在内容上，不占位：占位的话出现和消失都会把下面整块顶上顶下（11-05 用户反馈）
+        .overlay(alignment: .top) { Banners(store: store).padding(.horizontal, 24).padding(.top, 8) }
         .focusable().focusEffectDisabled()
         .onKeyPress(keys: [.upArrow, .downArrow, .space, .return, .delete, .deleteForward]) { press in
             store.handleKey(press.key) ? .handled : .ignored
@@ -305,7 +306,6 @@ private struct Banners: View {
                 }
             }
         }
-        .padding(.bottom, store.clipboardLinks == nil && store.notice == nil ? 0 : 10)
     }
 
     private func bar<A: View>(icon: String, text: String, tint: Color, @ViewBuilder actions: () -> A) -> some View {
@@ -320,8 +320,9 @@ private struct Banners: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 48)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.10)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.window))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
-        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+        .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
@@ -536,13 +537,14 @@ struct TaskRow: View {
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).lineLimit(1)
+                .frame(height: 18)
                 ProgressBar(value: item.cloudProgress.map { Double($0) / 100 } ?? item.progress, dim: item.status == .paused || item.isResolving || item.checking,
                             busy: item.videoStage == .preparing,
                             finishing: item.videoStage == .merging || item.videoStage == .converting)
                     .padding(.top, 7)
             }
             VStack(alignment: .trailing, spacing: 3) {
-                Text(primary).font(.system(size: 15, weight: .medium)).monospacedDigit()
+                Text(primary).font(.system(size: 15, weight: .medium)).monospacedDigit().frame(height: 20)
                 if item.slow, !item.link.isEmpty {
                     // BT 里几乎没人传：给个直接的出路（云盘离线；没登录就去设置）
                     Button { store.sendToCloud(item) } label: {
@@ -550,31 +552,33 @@ struct TaskRow: View {
                     }
                     .buttonStyle(.plain)
                     .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再从云盘满速拉回")
+                    .frame(height: 17)
                 } else {
-                    Text(secondary).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit().lineLimit(1)
+                    // 第二行固定占位：文字有时为空，高度变了第一行会上下跳
+                    Text(secondary).font(.system(size: 13)).foregroundStyle(Theme.sub).monospacedDigit().lineLimit(1).frame(height: 17)
                 }
             }
             .frame(width: 140, alignment: .trailing)
             HStack(spacing: 6) {
                 if item.canStream {
                     CircleIconButton(symbol: store.buffering.contains(item.id) ? "hourglass" : "play.tv",
-                                     help: store.buffering.contains(item.id) ? "正在缓冲片头" : "边下边播") { store.playWhileDownloading(item) }
+                                     help: store.buffering.contains(item.id) ? "正在缓冲片头" : "边下边播：一边下载一边观看") { store.playWhileDownloading(item) }
                 }
                 if case .thunder = item.source, item.isActive {
                     // 迅雷那边的任务：边下边播直接打开迅雷已写好的部分；暂停到迅雷里操作
-                    if item.file != nil { CircleIconButton(symbol: "play.tv", help: "边下边播") { store.playThunderFile(item) } }
-                    CircleIconButton(symbol: "arrow.uturn.backward", help: "收回到闪电全能下载（改由这里接着下）") { store.reclaimFromThunder(item) }
+                    if item.file != nil { CircleIconButton(symbol: "play.tv", help: "边下边播：一边下载一边观看") { store.playThunderFile(item) } }
+                    CircleIconButton(symbol: "arrow.uturn.backward", help: "收回到闪电：保留迅雷已下的部分，改由闪电接着下") { store.reclaimFromThunder(item) }
                     if ThunderBridge.installed {
-                        CircleIconButton(symbol: "arrow.up.forward.app", help: "在迅雷中查看（暂停、继续）") { store.openThunder() }
+                        CircleIconButton(symbol: "arrow.up.forward.app", help: "打开迅雷查看这条任务") { store.openThunder() }
                     }
                 }
                 if case .engine = item.source {
                     CircleIconButton(symbol: item.status == .paused || item.isFailed ? "play.fill" : "pause.fill",
-                                     help: item.status == .paused ? "继续" : "暂停") { store.togglePause(item) }
+                                     help: item.status == .paused ? "继续下载" : item.isFailed ? "重新开始" : "暂停下载") { store.togglePause(item) }
                 } else if item.isFailed {
                     CircleIconButton(symbol: "arrow.clockwise", help: "重试") { store.retry(item) }
                 }
-                CircleIconButton(symbol: "xmark", help: "移除") { store.removalTarget = item }
+                CircleIconButton(symbol: "xmark", help: "移除这条任务") { store.removalTarget = item }
             }
             .frame(width: 164, alignment: .trailing)
             .opacity(hover.on || selected ? 1 : 0)
@@ -756,8 +760,8 @@ private struct ItemMenu: View {
             }
             if item.isThunder {
                 if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
-                Button("收回到闪电继续下载") { store.reclaimFromThunder(item) }
-                if item.thunderHasOriginal { Button("恢复交给迅雷前的下载") { store.restoreOriginalFromThunder(item) } }
+                Button("收回到闪电（保留迅雷已下的部分）") { store.reclaimFromThunder(item) }
+                if item.thunderHasOriginal { Button("不用迅雷，从闪电原来的进度接着下") { store.restoreOriginalFromThunder(item) } }
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {

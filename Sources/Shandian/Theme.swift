@@ -69,6 +69,7 @@ struct CircleIconButton: View {
     let symbol: String
     let help: String
     let action: () -> Void
+    @StateObject private var hover = HoverBox()
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
@@ -78,6 +79,18 @@ struct CircleIconButton: View {
                 .background(Circle().fill(Color.primary.opacity(0.09)))  // Theme.faint 在暖色背景上太淡
         }
         .buttonStyle(.plain)
-        .help(help)
+        .accessibilityLabel(help)
+        .onHover { hover.on = $0 }
+        // 不用系统 .help：列表每秒刷新，系统提示等不到出现就被打断（11-05 用户：悬停没反应）。
+        // 显示在按钮左边：不会被列表上下边缘裁掉，也不会被相邻的行盖住
+        .overlay(alignment: .trailing) {
+            Text(help).font(.system(size: 12, weight: .medium)).foregroundStyle(.white).fixedSize()
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.82)))
+                .offset(x: -42)
+                .opacity(hover.on ? 1 : 0)
+                .animation(.easeOut(duration: 0.12).delay(hover.on ? 0.25 : 0), value: hover.on)
+                .allowsHitTesting(false)
+        }
     }
 }

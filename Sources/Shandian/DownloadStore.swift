@@ -1617,7 +1617,7 @@ final class DownloadStore: ObservableObject {
                 do {
                     try await host.client.resume(engineID)
                     thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs)
-                    notice = "已恢复交给迅雷前的下载；迅雷中的任务请自行暂停"
+                    notice = "已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务"
                     await poll()
                 } catch { notice = "恢复原下载失败：\(error.localizedDescription)，任务仍保留" }
             }
@@ -1625,7 +1625,7 @@ final class DownloadStore: ObservableObject {
             thunderJobs.removeAll { $0.id == id }; ThunderBridge.save(thunderJobs); rebuild()
             start(link: record.link, headers: record.headers, name: record.name,
                   dir: URL(fileURLWithPath: record.dir), selectFiles: record.selectFiles, originLink: record.originLink)
-            notice = "已恢复交给迅雷前的任务；迅雷中的任务请自行暂停"
+            notice = "已改回闪电原来的下载，迅雷已下的部分不会用上；请到迅雷暂停这条任务"
         } else { notice = "没有可恢复的原任务，请使用收回功能" }
     }
 
