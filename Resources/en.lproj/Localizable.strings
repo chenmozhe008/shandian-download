@@ -613,3 +613,4 @@
 "「%@」没交给迅雷：迅雷里已有同一个任务，继续由闪电下载" = "“%@” wasn't handed to Thunder because Thunder already has the same task. Shandian keeps downloading it";
 "迅雷里已有这条任务" = "Thunder Already Has This Task";
 "迅雷不允许重复添加同一个任务，放进回收站的也算。任务已继续由闪电下载。\n\n如果还想交给迅雷，请先到迅雷把这条任务彻底删除（回收站里也要删），再点一次「用迅雷下载」。" = "Thunder doesn't allow the same task twice, even if it's in Thunder's trash. Shandian is continuing the download.\n\nTo use Thunder anyway, permanently delete the task in Thunder (including from its trash), then click Download with Thunder again.";
+"迅雷里这条是暂停的，已让它开始；迅雷里其他暂停的任务也会一起开始" = "This task was paused in Thunder, so it was started. Other paused tasks in Thunder start too";

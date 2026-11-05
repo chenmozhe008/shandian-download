@@ -741,11 +741,15 @@ final class DownloadStore: ObservableObject {
         return item.status == .running ? "迅雷素材已取回 · 继续下载" : "迅雷素材已取回"
     }
 
+    private var reclaimedEngineIDs = Set<String>()
+
     private func rebuild() {
         let videos = videoJobs.map(Self.item(from:))
         let pulling = Set(cloudJobs.flatMap { $0.pulling ?? [] })
+        let beingReclaimed = Set(pendingRecords.values.compactMap(\.replacingThunderID))
         var all = pending + engineItems.filter { e in
-            !cloudJobs.contains { $0.engineID == e.id || $0.thunderJob?.sourceEngineID == e.id }
+            !reclaimedEngineIDs.contains(e.id)
+                && !cloudJobs.contains { $0.engineID == e.id || $0.thunderJob?.sourceEngineID == e.id }
                 && !thunderJobs.contains { $0.sourceEngineID == e.id }
                 && !(pulling.contains(e.id) && Self.isSubtitle(e))   // 字幕跟着片子走，一部片只显示一条
         }.map { e in
@@ -753,7 +757,7 @@ final class DownloadStore: ObservableObject {
             e.originLabel = Self.handoffLabel(e, pulling: pulling.contains(e.id))
             return e
         }
-            + videos + thunderJobs.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
+            + videos + thunderJobs.filter { !beingReclaimed.contains($0.id) }.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
         all.sort { $0.createdAt > $1.createdAt }
         // 总暂停后用户又在迅雷里点了开始：文件还在写就不再显示暂停
         if let held = thunderHeldAt, Date().timeIntervalSince(held) > 15, thunderJobs.contains(where: { !$0.done && $0.speed > 0 }) { thunderHeldAt = nil }
@@ -1086,13 +1090,20 @@ final class DownloadStore: ObservableObject {
                 guard pending.contains(where: { $0.id == placeholder.id }) else { return }  // 解析期间被移除了
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, selectFiles: select, verifyExisting: verifyExisting)
-                    if selectedID == placeholder.id { selectedID = id }
                     remember(id, originLink: originLink, carry: carry)
                     if let replacingThunderID, let previous = thunderJobs.first(where: { $0.id == replacingThunderID }) {
-                        if let old = previous.sourceEngineID { try? await host.client.delete(old, withFiles: false) }
+                        // 新任务读到之前先藏着，整个收回过程列表里始终只有一行，不闪（11-05 用户：多出两行又消失）
+                        reclaimedEngineIDs.insert(id)
+                        if let old = previous.sourceEngineID {
+                            try? await host.client.delete(old, withFiles: false)
+                            engineItems.removeAll { $0.id == old }
+                        }
                         thunderJobs.removeAll { $0.id == replacingThunderID }; ThunderBridge.save(thunderJobs)
                         notice = L("正在取回迅雷素材，取完后自动继续下载")
+                        await poll()
+                        reclaimedEngineIDs.remove(id)
                     }
+                    if selectedID == placeholder.id { selectedID = id }
                 } catch {
                     notice = replacingThunderID == nil ? String(localized: "添加失败：\(error.localizedDescription)") : String(localized: "收回失败，迅雷任务仍保留：\(error.localizedDescription)")
                 }
@@ -1707,14 +1718,32 @@ final class DownloadStore: ObservableObject {
             if useExisting {
                 notice = L("已关联迅雷下载文件；请在迅雷中确认任务并继续下载")
                 openThunder()
+                startThunderIfPaused(jobID)
                 return
             }
             ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] result in
                 guard let self else { return }
                 switch result {
-                case .submitted: self.notice = String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
+                case .submitted:
+                    self.notice = String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
+                    self.startThunderIfPaused(jobID)
                 case .unconfirmed: self.notice = L("请在迅雷中确认下载；原任务和文件仍保留")
                 case .alreadyExists: self.thunderRefusedDuplicate(jobID: jobID, safeDir: safeDir, title: item.title, manual: promptIfMissing)
+                }
+            }
+        }
+    }
+
+    /// 刚交出去时迅雷里这条停着就让它开始。只在交接后查一小会儿，之后用户在迅雷里暂停不跟他抢；
+    /// 迅雷没有单条开始的按钮（要悬停才出现），只能按「全部开始」，其他暂停的任务也会开始，所以提示里说清
+    private func startThunderIfPaused(_ jobID: String) {
+        Task {
+            for _ in 0..<5 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard thunderHeldAt == nil, let job = thunderJobs.first(where: { $0.id == jobID }), !job.done, job.speed == 0 else { return }
+                if await ThunderBridge.resumeJobsAfterLaunch([job]) {
+                    notice = L("迅雷里这条是暂停的，已让它开始；迅雷里其他暂停的任务也会一起开始")
+                    return
                 }
             }
         }
