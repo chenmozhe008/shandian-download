@@ -264,8 +264,12 @@ private struct ToolbarItems: ToolbarContent {
                 .help(completedRowLayout ? "切换为卡片排列" : "切换为逐行排列")
             }
             Button { store.toggleAll() } label: {
+                // 带文字：只有图标时看不出是总开关（11-05 用户反馈）
                 Label(store.allPaused ? "全部继续" : "全部暂停", systemImage: store.allPaused ? "play.fill" : "pause.fill")
+                    .labelStyle(.titleAndIcon).font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 4)
             }
+            .buttonStyle(.bordered)
             .help(store.allPaused ? "全部继续（包括迅雷里的任务）" : "全部暂停（包括迅雷里的任务）")
             .disabled(store.items.filter(\.isActive).isEmpty)
             Button { store.showNewSheet = true } label: {
@@ -532,7 +536,7 @@ struct TaskRow: View {
                     if case .thunder = item.source {
                         ThunderTag(active: item.isActive, downloaded: item.downloaded,
                                    createdAt: item.createdAt, located: item.thunderLocated)
-                    } else { Text(item.origin) }
+                    } else { Text(item.originLabel ?? item.origin) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }

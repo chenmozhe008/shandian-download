@@ -111,6 +111,18 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(DownloadStore.canAutoHand(progress: 0, sinceLaunch: 30))
     }
 
+    @MainActor func testHandoffLabelLeavesOriginForMenuLogic() {
+        var item = Item(id: "1", source: .engine("1"), title: "t", rawTitle: "t", origin: "种子文件", category: .movie, status: .running,
+                        downloaded: 1, total: 2, speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: "k", location: nil)
+        XCTAssertNil(DownloadStore.handoffLabel(item, pulling: false))
+        item.fromThunder = true
+        XCTAssertEqual(DownloadStore.handoffLabel(item, pulling: false), "迅雷素材已取回 · 继续下载")
+        XCTAssertEqual(item.origin, "种子文件")
+        item.status = .paused
+        XCTAssertEqual(DownloadStore.handoffLabel(item, pulling: false), "迅雷素材已取回")
+        XCTAssertEqual(DownloadStore.handoffLabel(item, pulling: true), "PikPak 中转 · 取回本机")
+    }
+
     func testCloudBaseOnlyMatchesHandoffFolders() {
         XCTAssertEqual(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/PikPak 下载/cloud-1"))?.path, "/m")
         XCTAssertNil(HandoffFiles.cloudBase(of: URL(fileURLWithPath: "/m/movie")))

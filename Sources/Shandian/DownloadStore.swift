@@ -13,7 +13,8 @@ struct Item: Identifiable, Equatable {
     var source: Source
     var title: String
     var rawTitle: String        // 原始发布名，悬停时显示
-    var origin: String          // 磁力 / 种子文件 / B 站 / 夸克网盘 / 域名
+    var origin: String          // 磁力 / 种子文件 / B 站 / 夸克网盘 / 域名。右键菜单、边下边播、自动转交都靠它判断类型，别拿来放显示文字
+    var originLabel: String?    // 界面上代替 origin 显示的文字（中转阶段）
     var category: Category
     var status: Status
     var downloaded: Int64
@@ -604,6 +605,15 @@ final class DownloadStore: ObservableObject {
         speedHistory.append(Double(totalSpeed)); speedHistory.removeFirst(speedHistory.count - 60)
     }
 
+    /// 中转阶段任务行上显示的文字。只改显示，origin 保持真实类型（11-05 改 origin 导致取回后右键菜单消失）
+    static func handoffLabel(_ item: Item, pulling: Bool) -> String? {
+        guard item.isActive else { return nil }
+        if pulling { return "PikPak 中转 · 取回本机" }
+        guard item.fromThunder else { return nil }
+        if item.checking { return "迅雷中转 · 取回素材" }
+        return item.status == .running ? "迅雷素材已取回 · 继续下载" : "迅雷素材已取回"
+    }
+
     private func rebuild() {
         let videos = videoJobs.map(Self.item(from:))
         let pulling = Set(cloudJobs.flatMap { $0.pulling ?? [] })
@@ -613,8 +623,7 @@ final class DownloadStore: ObservableObject {
                 && !(pulling.contains(e.id) && Self.isSubtitle(e))   // 字幕跟着片子走，一部片只显示一条
         }.map { e in
             var e = e
-            if pulling.contains(e.id), e.isActive { e.origin = "PikPak 中转 · 取回本机" }
-            else if e.fromThunder, e.isActive { e.origin = e.checking ? "迅雷中转 · 取回素材" : e.status == .running ? "迅雷素材已取回 · 继续下载" : "迅雷素材已取回" }
+            e.originLabel = Self.handoffLabel(e, pulling: pulling.contains(e.id))
             return e
         }
             + videos + thunderJobs.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
