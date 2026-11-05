@@ -38,6 +38,7 @@ struct Item: Identifiable, Equatable {
     var waitingLastPiece = false // 离完成只差一点、速度归零在干等（末块常和没选中的小文件共用，或源很慢）
     var thunderHasOriginal = false
     var thunderDiskEstimate = false // 迅雷记录滞后时显示的是磁盘占用，不作为完成依据
+    var thunderClosed = false   // 这条任务在迅雷里，但迅雷没打开，不会有进度
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
@@ -589,6 +590,7 @@ final class DownloadStore: ObservableObject {
             ThunderBridge.save(thunderJobs)
         }
         moveFinishedThunderJobsHome()
+        followThunderLaunchState()
         rebuild()
         if firstLoad { engineSeeded = true }
         if engineSeeded, !migratedOldCloudFolders {
@@ -630,8 +632,10 @@ final class DownloadStore: ObservableObject {
         all.sort { $0.createdAt > $1.createdAt }
         // 总暂停后用户又在迅雷里点了开始：文件还在写就不再显示暂停
         if let held = thunderHeldAt, Date().timeIntervalSince(held) > 15, thunderJobs.contains(where: { !$0.done && $0.speed > 0 }) { thunderHeldAt = nil }
+        let thunderRunning = ThunderBridge.isRunning
         for k in all.indices {
             if case .thunder = all[k].source, thunderHeldAt != nil, all[k].isActive { all[k].status = .paused; all[k].speed = 0 }
+            if case .thunder = all[k].source, all[k].isActive, !thunderRunning { all[k].thunderClosed = true; all[k].speed = 0 }
             if case .thunder = all[k].source { all[k].avgSpeed = all[k].speed }
             else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
@@ -999,6 +1003,25 @@ final class DownloadStore: ObservableObject {
     }
 
     var allPaused: Bool { !items.contains { $0.status == .running || $0.status == .waiting } }
+
+    /// 交给迅雷的任务：迅雷没开就提示一次，打开后任务如果停着就自动继续（11-05 用户定）。
+    /// 只看「没开 → 开了」这一下，用户之后在迅雷里手动暂停的不会被拉起来
+    private var thunderWasRunning: Bool?
+    private func followThunderLaunchState() {
+        let active = thunderJobs.filter { !$0.done }
+        let running = ThunderBridge.isRunning
+        defer { thunderWasRunning = running }
+        guard !active.isEmpty, thunderWasRunning != running else { return }
+        if !running {
+            let text = "迅雷没有打开，交给它的 \(active.count) 条任务不会继续下载"
+            noticeAction = NoticeAction(title: "打开迅雷", forText: text, run: { [weak self] in self?.openThunder() })
+            notice = text
+        } else if thunderWasRunning == false, thunderHeldAt == nil {
+            Task {
+                if await ThunderBridge.resumeJobsAfterLaunch(active) { notice = "迅雷已打开，任务自动继续下载" }
+            }
+        }
+    }
 
     /// 总暂停连迅雷一起停，界面上这些任务显示已暂停；只有这样停的，总继续才去开迅雷（11-05 用户：点了迅雷没反应也没提示）
     private var thunderHeldAt: Date?

@@ -549,7 +549,13 @@ struct TaskRow: View {
             }
             VStack(alignment: .trailing, spacing: 3) {
                 Text(primary).font(.system(size: 15, weight: .medium)).monospacedDigit().frame(height: 20)
-                if item.slow, !item.link.isEmpty {
+                if item.thunderClosed {
+                    Button { store.openThunder() } label: {
+                        Text("打开迅雷").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(height: 17)
+                } else if item.slow, !item.link.isEmpty {
                     // BT 里几乎没人传：给个直接的出路（云盘离线；没登录就去设置）
                     Button { store.sendToCloud(item) } label: {
                         Text("太慢？云盘离线").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
@@ -621,6 +627,7 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: "正在解析"
         case .running where item.videoStage == .merging: "正在合并"
         case .running where item.videoStage == .converting: "正在转换"
+        case .running where item.thunderClosed: "迅雷没打开"
         case .running where item.isThunder: item.avgSpeed > 0 ? "迅雷下载中" : "请查看迅雷"
         case .running where item.cloudProgress == 100: "云端已下好"
         case .running where item.cloudProgress != nil: "云端下载中"

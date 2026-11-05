@@ -312,6 +312,20 @@ enum ThunderBridge {
         return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
     }
 
+    static var isRunning: Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").isEmpty }
+
+    /// 迅雷刚打开时用：这些任务在迅雷里停着就让它继续。没权限就不动，也不弹授权框
+    static func resumeJobsAfterLaunch(_ jobs: [ThunderJob]) async -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        for _ in 0..<10 where mainWindow() == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
+        let rows = taskRows()
+        let paused = jobs.contains { job in
+            rows.contains { rowMatches($0, folderName: job.folder.map { URL(fileURLWithPath: $0).lastPathComponent }, name: job.name) && $0.status.contains("暂停") }
+        }
+        guard paused else { return false }
+        return await setAllTasks(paused: false)
+    }
+
     /// 总暂停 / 总继续用。迅雷没开时没什么可停的，算成功
     static func setAllTasks(paused: Bool) async -> Bool {
         guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.xunlei.Thunder").first else { return true }
