@@ -367,29 +367,130 @@ final class DownloadStore: ObservableObject {
         Diagnostics.save(report: report)
     }
 
-    /// 下不动时的出路：讲清两条路，点一下就走。登录 PikPak 成功后自动把这条任务交过去
+    /// 下不动时的出路：迅雷排前面（本机直连、不花代理流量），云盘写明会消耗代理流量。
+    /// 登录 PikPak 成功后自动把这条任务交过去
     func offerRescue(_ item: Item) {
         let alert = NSAlert()
         alert.messageText = L("这条任务下不动了")
-        alert.informativeText = L("这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。免费账号每天约 3 次，需要科学上网。\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。")
-        alert.addButton(withTitle: L("登录 PikPak"))
+        alert.informativeText = L("这个资源在 BT 网络里几乎没人分享，可以换一条路接着下：\n\n迅雷：用本机的迅雷接着下，下完回到原来的保存位置。走本机直连，不消耗代理流量。\n\nPikPak 云盘：由它的服务器先下好，再取回本机，用完自动清理。取回走系统代理，会消耗代理流量；免费账号每天约 3 次，需要科学上网。")
         alert.addButton(withTitle: ThunderBridge.installed ? L("用迅雷下载") : L("去安装迅雷"))
+        alert.addButton(withTitle: L("登录 PikPak"))
         alert.addButton(withTitle: L("先不用"))
         NSApp.activate(ignoringOtherApps: true)
         switch alert.runModal() {
         case .alertFirstButtonReturn:
+            if ThunderBridge.installed { handToThunder(item) } else { ThunderBridge.openOfficialSite() }
+        case .alertSecondButtonReturn:
             rescueWaitingKey = item.linkKey
             NotificationCenter.default.post(name: PikPak.relinkRequested, object: nil)
-        case .alertSecondButtonReturn:
-            if ThunderBridge.installed { handToThunder(item) } else { ThunderBridge.openOfficialSite() }
         default: break
         }
+    }
+
+    /// 自动转云盘前先问一句：取回这段走代理，流量算在用户头上。
+    /// 同一条任务只问一次；同一轮里多条卡住合成一个框，不连环弹（11-06 用户定）
+    func queueCloudConsent(_ item: Item) {
+        guard !cloudAsked.contains(item.linkKey) else { return }
+        cloudAsked.insert(item.linkKey)
+        if !cloudConsentQueue.contains(where: { $0.linkKey == item.linkKey }) { cloudConsentQueue.append(item) }
+        guard !cloudConsentShowing else { return }
+        cloudConsentShowing = true
+        Task { @MainActor in
+            // 等一拍，同一轮轮询里其它卡住的任务也进来，一起问
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            while !cloudConsentQueue.isEmpty {
+                let batch = cloudConsentQueue
+                cloudConsentQueue.removeAll()
+                let used = try? await PikPak.shared.offlinesUsedToday()
+                switch askCloudConsent(batch, used: used) {
+                case .cloud:
+                    for one in batch { sendToCloud(one, consented: true) }
+                case .thunder:
+                    if ThunderBridge.installed { for one in batch { handToThunder(one, promptIfMissing: false) } }
+                    else { ThunderBridge.openOfficialSite() }
+                case .later:
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            cloudConsentShowing = false
+        }
+    }
+
+    private enum CloudConsent { case cloud, thunder, later }
+
+    private func askCloudConsent(_ batch: [Item], used: Int?) -> CloudConsent {
+        let alert = NSAlert()
+        let total = batch.reduce(Int64(0)) { $0 + max(0, $1.total) }
+        alert.messageText = batch.count == 1
+            ? L("这条下不动了，要用云盘离线接着下吗？")
+            : String(localized: "有 \(batch.count) 条下不动了，要用云盘离线接着下吗？")
+        let subject = batch.count == 1 ? String(localized: "「\(batch[0].title)」") : L("这些任务")
+        var lines = [String(localized: "\(subject)在 BT 网络里几乎没人分享。PikPak 的服务器会先把它下到云端，再取回本机。")]
+        var traffic = total > 0
+            ? String(localized: "取回这段走系统代理，约 \(total.bytesText) 会算在你的代理流量里。")
+            : L("取回这段走系统代理，会消耗你的代理流量。")
+        if let used { traffic += String(localized: " 免费账号每天约 \(PikPak.freeDailyOfflines) 次离线，今天已用 \(used) 次。") }
+        lines.append(traffic)
+        lines.append(ThunderBridge.installed
+            ? L("装了迅雷的话，同样的资源走迅雷不花代理流量。")
+            : L("装上迅雷的话，同样的资源走迅雷不花代理流量。"))
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.addButton(withTitle: L("用云盘下载（消耗代理流量）"))
+        alert.addButton(withTitle: ThunderBridge.installed ? L("交给迅雷") : L("先去装迅雷"))
+        alert.addButton(withTitle: L("继续等"))
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .cloud
+        case .alertSecondButtonReturn: return .thunder
+        default: return .later
+        }
+    }
+
+    /// 云盘也走不了时的提示条：先讲迅雷，没装就给官网
+    private func suggestRoute(_ item: Item) {
+        let text: String
+        let action: NoticeAction
+        if ThunderBridge.installed {
+            text = String(localized: "「\(item.title)」下不动了，交给迅雷接着下？")
+            action = NoticeAction(title: L("交给迅雷"), forText: text) { [weak self] in self?.handToThunder(item) }
+        } else if hasCloudRoute {
+            text = String(localized: "「\(item.title)」下不动了，装上迅雷通常就能接着下")
+            action = NoticeAction(title: L("去装迅雷"), forText: text) { ThunderBridge.openOfficialSite() }
+        } else {
+            text = String(localized: "「\(item.title)」下不动了，换条路（迅雷或云盘）才能接着下")
+            action = NoticeAction(title: L("换条路"), forText: text) { [weak self] in self?.offerRescue(item) }
+        }
+        noticeAction = action
+        notice = text
+    }
+
+    private static let cloudTrafficAckKey = "cloudTrafficAcknowledged"
+
+    /// 用户自己点「交给云盘离线」时也说明一次会消耗代理流量（11-06 用户定）。勾了「不再提示」就不再问
+    private func confirmCloudTraffic(_ item: Item) -> Bool {
+        if UserDefaults.standard.bool(forKey: Self.cloudTrafficAckKey) { return true }
+        let alert = NSAlert()
+        alert.messageText = L("用云盘离线会消耗代理流量")
+        let size = item.total > 0 ? String(localized: "这条约 \(item.total.bytesText)，") : ""
+        alert.informativeText = String(localized: "PikPak 先把资源下到云端，再取回本机。取回这段走系统代理，\(size)流量会算在你的代理流量里。\n\n免费账号每天约 \(PikPak.freeDailyOfflines) 次离线。装了迅雷的话，走迅雷不花代理流量。")
+        let check = NSButton(checkboxWithTitle: L("以后不再提示"), target: nil, action: nil)
+        check.state = .off
+        check.sizeToFit()
+        alert.accessoryView = check
+        alert.addButton(withTitle: L("继续用云盘"))
+        alert.addButton(withTitle: L("取消"))
+        NSApp.activate(ignoringOtherApps: true)
+        let ok = alert.runModal() == .alertFirstButtonReturn
+        if ok, check.state == .on { UserDefaults.standard.set(true, forKey: Self.cloudTrafficAckKey) }
+        return ok
     }
 
     private func finishRescueAfterLogin() {
         guard let key = rescueWaitingKey, hasCloudRoute else { return }
         rescueWaitingKey = nil
-        if let item = items.first(where: { $0.linkKey == key && $0.isActive }) { sendToCloud(item) }
+        // 这条是从「换条路」里选了登录 PikPak，弹窗里已经写明会消耗代理流量，不再问第二遍
+        if let item = items.first(where: { $0.linkKey == key && $0.isActive }) { sendToCloud(item, consented: true) }
     }
 
     /// 换路下完的累计次数，只存在本机。告诉用户它救回了多少，也是将来说这个卖点的真实依据
@@ -404,11 +505,31 @@ final class DownloadStore: ObservableObject {
     private var cloudTried = Set<String>()
     private var cloudUnreachableNoticed = false
     private var thunderTried = Set<String>()
+    /// 问过「要不要用云盘」的任务：用户选了「继续等」就不再打扰，直到重启
+    private var cloudAsked = Set<String>()
+    /// 等确认的任务与「正在弹」标记：同一时刻只弹一个框，多条一起问
+    private var cloudConsentQueue: [Item] = []
+    private var cloudConsentShowing = false
     private let launchedAt = Date()
 
     /// 下了一半以上不自动转：云端要整部重新取回，反而更慢。刚启动时任务还在重新连接，也先不转
     static func canAutoHand(progress: Double, sinceLaunch: TimeInterval) -> Bool {
         progress < 0.5 && sinceLaunch > 120
+    }
+
+    /// 下不动之后走哪条路。迅雷优先——它走本机直连，不花代理流量、也不占云盘的免费次数；
+    /// 云盘要把文件经系统代理取回，这段流量算在用户头上，所以必须先问（11-06 用户定）
+    enum RescueRoute: Equatable {
+        case thunder    // 直接交给迅雷
+        case askCloud   // 先问一句「要消耗代理流量，转吗」
+        case suggest    // 云盘这条路走不了：提示装迅雷 / 换条路
+        case skip       // 问过了，用户选了继续等，不再打扰
+    }
+
+    static func rescueRoute(thunderReady: Bool, cloudReady: Bool, cloudAsked: Bool) -> RescueRoute {
+        if thunderReady { return .thunder }
+        if cloudReady { return cloudAsked ? .skip : .askCloud }
+        return .suggest
     }
 
     /// 从中转目录移回保存目录的已完成任务：内核记的还是旧路径，界面按这里的显示
@@ -792,20 +913,24 @@ final class DownloadStore: ObservableObject {
                 || Date().timeIntervalSince(noSpeedSince[i.id] ?? Date()) > 60)
             if all[k].slow, !all[k].link.isEmpty, Self.canAutoHand(progress: i.progress, sinceLaunch: Date().timeIntervalSince(launchedAt)) {
                 let it = all[k]
-                if Prefs.autoCloud, PikPak.loggedInUser != nil, !PikPak.sessionInvalid, !PikPak.recentlyUnreachable, !cloudTried.contains(i.linkKey) {
-                    cloudTried.insert(i.linkKey)
-                    Task { @MainActor in self.sendToCloud(it, automatic: true) }
-                } else if Prefs.autoThunder, ThunderBridge.installed, !thunderTried.contains(i.linkKey) {
+                let route = Self.rescueRoute(
+                    thunderReady: Prefs.autoThunder && ThunderBridge.installed && !thunderTried.contains(i.linkKey),
+                    cloudReady: Prefs.autoCloud && hasCloudRoute && !PikPak.recentlyUnreachable && !cloudTried.contains(i.linkKey),
+                    cloudAsked: cloudAsked.contains(i.linkKey))
+                switch route {
+                case .thunder:
+                    // 迅雷走本机直连：不花代理流量，也不占云盘每天的免费次数，可以静默转
                     thunderTried.insert(i.linkKey)
                     Task { @MainActor in self.handToThunder(it, promptIfMissing: false) }
-                } else if !hasCloudRoute, !rescuePrompted.contains(i.linkKey) {
-                    // 新用户还没有备用通道：卡住时主动告诉他，每条任务只说一次
+                case .askCloud:
+                    // 云盘要把文件经系统代理取回，流量算在用户头上：先问，不自动转
+                    Task { @MainActor in self.queueCloudConsent(it) }
+                case .suggest:
+                    guard !rescuePrompted.contains(i.linkKey) else { break }
                     rescuePrompted.insert(i.linkKey)
-                    Task { @MainActor in
-                        let text = String(localized: "「\(it.title)」下不动了，开通备用通道就能换条路接着下")
-                        self.noticeAction = NoticeAction(title: "开通", forText: text, run: { [weak self] in self?.offerRescue(it) })
-                        self.notice = text
-                    }
+                    Task { @MainActor in self.suggestRoute(it) }
+                case .skip:
+                    break
                 }
             }
             if !all[k].isActive, let f = all[k].location ?? all[k].file { all[k].fileGone = Self.isGone(f) }
@@ -1276,9 +1401,12 @@ final class DownloadStore: ObservableObject {
     }
 
     /// 云盘离线：BT 任务先暂停（云盘失败了还能接着 BT），交给 PikPak；云端下好后按直链拉回同一个位置
-    func sendToCloud(_ item: Item, automatic: Bool = false) {
+    func sendToCloud(_ item: Item, automatic: Bool = false, consented: Bool = false) {
         guard PikPak.loggedInUser != nil else { notice = L("先在设置里登录 PikPak，才能用云盘离线"); return }
         guard !item.link.isEmpty, !cloudJobs.contains(where: { $0.link == item.link && $0.cleanupReady != true }) else { return }
+        // 取回这段走代理、吃的是用户的流量：自动转已由 queueCloudConsent 问过，手动点也先说明一次
+        guard consented || confirmCloudTraffic(item) else { return }
+        cloudTried.insert(item.linkKey)
         let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
             ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)

@@ -111,6 +111,24 @@ final class CloudRecoveryTests: XCTestCase {
         XCTAssertFalse(DownloadStore.canAutoHand(progress: 0, sinceLaunch: 30))
     }
 
+    /// 迅雷排第一：它走本机直连，不花代理流量、不占云盘每天的免费次数。
+    /// 云盘要把文件经系统代理取回，流量算在用户头上，所以只能问，不能自动转（11-06 用户定）
+    @MainActor func testRescueRoutePutsThunderBeforeCloud() {
+        XCTAssertEqual(DownloadStore.rescueRoute(thunderReady: true, cloudReady: true, cloudAsked: false), .thunder)
+        XCTAssertEqual(DownloadStore.rescueRoute(thunderReady: false, cloudReady: true, cloudAsked: false), .askCloud)
+    }
+
+    /// 问过一次、用户选了「继续等」就别再问，也不改去烦他
+    @MainActor func testRescueRouteStaysQuietAfterUserDeclined() {
+        XCTAssertEqual(DownloadStore.rescueRoute(thunderReady: false, cloudReady: true, cloudAsked: true), .skip)
+    }
+
+    /// 云盘这条路走不了（没登录、关掉自动、刚连不上、试过失败）：只提示迅雷 / 换条路
+    @MainActor func testRescueRouteSuggestsThunderWhenCloudUnavailable() {
+        XCTAssertEqual(DownloadStore.rescueRoute(thunderReady: false, cloudReady: false, cloudAsked: false), .suggest)
+        XCTAssertEqual(DownloadStore.rescueRoute(thunderReady: false, cloudReady: false, cloudAsked: true), .suggest)
+    }
+
     @MainActor func testHandoffLabelLeavesOriginForMenuLogic() {
         var item = Item(id: "1", source: .engine("1"), title: "t", rawTitle: "t", origin: "种子文件", category: .movie, status: .running,
                         downloaded: 1, total: 2, speed: 0, file: nil, createdAt: Date(), thumbRemote: nil, linkKey: "k", location: nil)

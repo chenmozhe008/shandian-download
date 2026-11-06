@@ -556,11 +556,13 @@ struct TaskRow: View {
                     .buttonStyle(.plain)
                     .frame(height: 17)
                 } else if item.slow, !item.link.isEmpty {
-                    // BT 里几乎没人传：给个直接的出路（云盘离线；没登录就去设置）
+                    // BT 里几乎没人传：先给迅雷（本机直连、不花代理流量），没装迅雷才给云盘
                     Button {
-                        if store.hasCloudRoute { store.sendToCloud(item) } else { store.offerRescue(item) }
+                        if ThunderBridge.installed { store.handToThunder(item) }
+                        else if store.hasCloudRoute { store.sendToCloud(item) }
+                        else { store.offerRescue(item) }
                     } label: {
-                        Text(store.hasCloudRoute ? L("太慢？云盘离线") : L("下不动？换条路")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
+                        Text(ThunderBridge.installed ? L("太慢？交给迅雷") : store.hasCloudRoute ? L("太慢？云盘离线") : L("下不动？换条路")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.tint)
                     }
                     .buttonStyle(.plain)
                     .help("这个资源在 BT 网络里几乎没人分享；交给 PikPak 服务器下好，再取回本机")
@@ -777,8 +779,8 @@ private struct ItemMenu: View {
                 Button("改交云盘离线（PikPak）") { store.sendToCloud(item) }
             }
             if item.isActive, !item.link.isEmpty, item.origin == "磁力" || item.origin == "种子文件" {
-                Button("交给云盘离线（PikPak）") { store.sendToCloud(item) }
                 Button(ThunderBridge.installed ? L("用迅雷下载") : L("用迅雷下载（需先安装迅雷）…")) { store.handToThunder(item) }
+                Button("交给云盘离线（PikPak，会消耗代理流量）") { store.sendToCloud(item) }
             }
             Divider()
             Button("移除…") { store.removalTarget = item }

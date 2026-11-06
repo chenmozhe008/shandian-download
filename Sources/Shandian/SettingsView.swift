@@ -193,9 +193,9 @@ struct SettingsView: View {
                     }
                     Text("浏览器已登录 PikPak 时可直接重新关联，需安装闪电全能下载扩展。关联后浏览器中的 PikPak 可能退出登录。")
                         .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
-                    Toggle("下不动时自动交给云盘离线", isOn: $autoCloud)
-                        .help("BT 网络里几乎没人传的资源，交给 PikPak 服务器下好，再从云盘满速拉回")
-                    Text("磁力、种子 1 分钟没速度，或 3 分钟几乎没速度时转交，每次用掉一次离线。").font(.system(size: 12)).foregroundStyle(Theme.sub)
+                    Toggle("下不动时用云盘离线（会先确认）", isOn: $autoCloud)
+                        .help("交给 PikPak 服务器下好，再从云盘取回本机。取回走系统代理、会消耗代理流量，所以自动转交前都会先问一句")
+                    Text("磁力、种子 1 分钟没速度，或 3 分钟几乎没速度时，先建议交给迅雷；迅雷不可用才问你要不要用云盘。每次用掉一次离线，取回这段算代理流量。").font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
                     LabeledContent("今天已用") {
                         Text(offlinesToday.map { String(localized: "\($0) 次（免费约 \(PikPak.freeDailyOfflines) 次）") } ?? L("读取中")).foregroundStyle(Theme.sub)
                     }
@@ -297,8 +297,8 @@ struct ThunderSettingsSection: View {
     var body: some View {
         Section("迅雷（可选）") {
             if installed {
-                Toggle("下不动时自动交给迅雷（没关联云盘或云盘连不上时）", isOn: $autoThunder)
-                    .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里")
+                Toggle("下不动时优先交给迅雷", isOn: $autoThunder)
+                    .help("连续 3 分钟几乎没速度时，用本机的迅雷接着下，进度仍显示在闪电全能下载里。走本机直连，不消耗代理流量")
                 LabeledContent("辅助功能授权") {
                     if accessibility { Text("已允许").foregroundStyle(Theme.sub) }
                     else { Button("去允许") { ThunderBridge.openAccessibilitySettings() } }
