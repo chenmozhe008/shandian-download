@@ -18,6 +18,9 @@
 
 ## 当前状态
 
+- **2026-11-06：0.2.0 已提交两个商店审核**（接管下载 + 新工具栏图标）。Chrome：Pending review，勾选了审核通过后自动发布；Edge：In review，微软称 7 个工作日内答复。两边都已更新：单一用途、`downloads` 权限理由、storage / 本机连接理由、中英文商店介绍（删掉了「不会接管下载」）、Edge 认证说明（测试步骤）。数据声明沿用 0.1.1（认证信息、网站内容已勾，因为链接里可能带令牌）。隐私政策两份都已更新并推到 GitHub。
+- 提交方法（11-06 实测）：AppleScript 在已登录的浏览器标签里执行 JavaScript；zip 用 base64 写进 JS，`new File` + `DataTransfer` 塞进 `input[type=file]`。Edge Partner Center 的按钮是 `HE-BUTTON` 自定义元素；**关闭编辑页前先 `window.confirm=()=>true`**，否则弹原生确认框，标签页卡死、脚本超时
+
 - **最新状态（2026-11-04）：0.1.1 已通过审核并上架。** 以下是提交时的记录：0.1.1 曾显示 Pending review。 已勾选审核通过后自动发布，官方提示审核可能需要数周。发布者显示名 `chenmozhe008`，联系邮箱已验证，发布者声明为 non-trader。商店截图 1 张，为隔离 Chrome 配置中的真实右键菜单；未拍发送后的桌面应用界面。商店签名包的安装、发送和更新仍未实测；通过后要补测并更新应用和 README 的商店链接。
 - 现有 `browser-extension-store/` 为 Manifest V3 独立商店版，保留另行安装的完整版。只支持用户右键发送部分 HTTP/HTTPS 文件直链，不读取 Cookie、不扫描视频、不自动接管下载。
 - 已重新运行 `node Tests/store_extension_test.js`，权限、链接过滤、发送与失败处理测试通过。这是自动化测试，不等同于 Chrome 真机安装验证。
