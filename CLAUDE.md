@@ -13,7 +13,7 @@
   - App 启动时没有就拉起；退出 App 只暂停任务、不关内核
   - 补丁 10 项（块记录落盘免重校验、全局限速、边下边播、429/5xx 退避、每段≥20 MB、probe 只探测、失败原因字段、按需校验磁盘已有数据等），逐条见 `docs/internals.md`；补丁测试 `internal/protocol/http/shandian_test.go`
   - **内核默认不看磁盘上已有的文件**（anacrolix 只信自己的块完成记录），所以「接手迅雷没下完的文件」「换内核后找回进度」都要显式让内核校验：创建任务 / PATCH 任务时带 `opts.extra.shandianVerifyExisting = true`（11-01 实测：不带时 4.2 GB 完整文件也会从 0 重下）
-  - Go 工具链、Gopeed 源码、编译缓存都在移动硬盘 `Applications/ShandianBuild/`（不装全局）；**必须开 CGO**；`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链（本机命令行工具链接器和 SDK 对不上）
+  - Go 工具链、Gopeed 源码、编译缓存都在移动硬盘 `DevData/ShandianBuild/`（不装全局）；**必须开 CGO**；`build_engine.sh` 用移动硬盘上 Xcode-26.5 的工具链（本机命令行工具链接器和 SDK 对不上）
   - 推出移动硬盘时内核会被暂停→结束→2 秒后重启（`EngineHost.holdsFiles`），插回自动续
   - 只监听 127.0.0.1，不开 0.0.0.0
 - **视频网站**：yt-dlp + ffmpeg，国内站直连、境外站走系统代理。**yt-dlp 用 App 自带的目录版**（`Application Support/ShandianDownload/bin/yt-dlp_macos/`，单文件版启动慢 16 秒；每 7 天查最新 tag 重下），brew 版只做兜底
@@ -105,7 +105,7 @@
 ## 仓库
 
 GitHub **公开**库 `chenmozhe008/shandian-download`（10-28 建，10-29 用户同意公开，分支 master，GPL-3.0——内核基于 Gopeed GPL-3.0，只能用 GPL）。推送仍按全局红线先问用户
-- 发版收尾：本机换成发布的正式包（`/Applications`，不带开发版标记、签名和别人一样，11-05 用户定）；之后要改才再装开发版。发布签名备份在移动硬盘 `Applications/ShandianBuild/release-signing-backup/`
+- 发版收尾：本机换成发布的正式包（`/Applications`，不带开发版标记、签名和别人一样，11-05 用户定）；之后要改才再装开发版。发布签名备份在移动硬盘 `DevData/ShandianBuild/release-signing-backup/`
 - 发布：**M 芯片和 Intel 分开出包**（10-29 用户定：通用包内核翻倍，且用户习惯按芯片选）。`script/build_engine.sh` 一次编出 `gopeed-shandian-arm64` / `-amd64`；`ARCH=arm64|x86_64 script/build_app.sh package` 按芯片打包（本机以外的芯片在 `dist/<芯片>/`）。`output/release/<版本>/<芯片>/` 里拷 App（`ditto`，Release 说明写在 `output/release/<版本>/notes.md`；旧版本目录发版后移到废纸篓），**`script/release_sign.sh <App>` 改用共用的固定自签名证书再打包**（`tools/mac-app-workflow/release-sign.sh`）（本机 Apple Development 证书带用户邮箱不能外发；ad-hoc 每次更新都会让辅助功能授权失效。私钥在 `~/Library/Application Support/ShandianRelease/`，不进仓库，丢了可重建但用户要再授权一次），`ditto -c -k --keepParent` 打 zip，`gh release create v<版本>`。**附件名 `Shandian-<版本>-AppleSilicon.zip` / `Shandian-<版本>-Intel.zip`**（英文，中文名会被 GitHub 改成 default.zip；以后 Windows 照此加 `-Windows-x64`）。v0.16.0 首个公开版，v0.17.0 起分芯片
 - **install.sh 按附件名后缀 `-AppleSilicon.zip` / `-Intel.zip` 选包**（芯片用 `hw.optional.arm64` 判断，Rosetta 终端下 `uname -m` 不准）：发版改附件名要同步改脚本，否则一行命令安装失效
 - Intel 版是尽力支持：发版前用 Rosetta 跑 Intel 内核实测（另开端口 9998、BT 6882，下一个公开文件 + Sintel 磁力）。本机升到 macOS 27 后没有 Rosetta，就只能编译不能实测，届时跟用户商量是否停掉 Intel 版

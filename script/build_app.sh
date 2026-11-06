@@ -6,7 +6,7 @@ APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
-ENGINE_BIN="${SHANDIAN_ENGINE_BIN:-/Volumes/Jack Feng/Applications/ShandianBuild/gopeed-shandian-$GOARCH}"
+ENGINE_BIN="${SHANDIAN_ENGINE_BIN:-/Volumes/Jack Feng/DevData/ShandianBuild/gopeed-shandian-$GOARCH}"
 if [[ ! -x "$ENGINE_BIN" ]]; then
   echo "找不到可执行的下载内核：${ENGINE_BIN}。请先运行 script/build_engine.sh 编译内核。" >&2
   exit 1

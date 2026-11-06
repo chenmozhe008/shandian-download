@@ -6,7 +6,7 @@
 # Go 工具链和源码放移动硬盘 ShandianBuild/（不装全局），产物 ShandianBuild/gopeed-shandian-arm64 / -amd64，build_app.sh 按芯片打进 App
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-B="/Volumes/Jack Feng/Applications/ShandianBuild"
+B="/Volumes/Jack Feng/DevData/ShandianBuild"
 PROXY=http://127.0.0.1:7897
 mkdir -p "$B"
 if [ ! -x "$B/go/bin/go" ]; then
