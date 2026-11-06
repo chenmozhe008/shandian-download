@@ -121,7 +121,7 @@ There are two versions, both for Chrome and Edge. Pick one:
 | Right-click to send archive, document and installer links | ✓ | ✓ |
 | Take over downloads started on web pages | ✓ | ✓ (from 0.2.0, files over 5 MB) |
 | Magnet and ed2k links | ✓ | — |
-| Clicked torrent files go straight to the app | ✓ | — |
+| Clicked torrent files go straight to the app | ✓ | ✓ (from 0.2.0) |
 | A Download button over videos on video sites | ✓ | — |
 | Douyin, Xiaohongshu, Xinpianchang and other videos | ✓ | — |
 | WeChat Channels | ✓ | — |

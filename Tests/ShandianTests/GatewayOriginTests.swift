@@ -29,6 +29,7 @@ final class GatewayOriginTests: XCTestCase {
 
     func testStorePayloadRejectsOtherCapabilitiesAndUnsupportedLinks() {
         XCTAssertTrue(Gateway.validStorePayload(["url": "https://example.org/file.zip?token=abc"]))
+        XCTAssertTrue(Gateway.validStorePayload(["url": "https://example.org/sintel.torrent"]))
         XCTAssertFalse(Gateway.validStorePayload(["url": "https://example.org/file.zip", "cookies": []]))
         for url in ["magnet:?xt=urn:btih:123", "ftp://example.org/file.zip", "https://user:pass@example.org/file.zip", "https://youtube.com/file.zip", "https://example.org/video.m3u8", "https://example.org/" + String(repeating: "a", count: 8193)] {
             XCTAssertFalse(Gateway.validStorePayload(["url": url]))

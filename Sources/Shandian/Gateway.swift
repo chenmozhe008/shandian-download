@@ -27,7 +27,9 @@ final class Gateway: @unchecked Sendable {
     static func validStorePayload(_ obj: [String: Any]) -> Bool {
         guard Set(obj.keys) == ["url"], let raw = obj["url"] as? String, raw.utf8.count <= 8192,
               let parts = URLComponents(string: raw), ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
-              parts.host != nil, parts.user == nil, parts.password == nil, LinkKind.of(raw) == .http else { return false }
+              parts.host != nil, parts.user == nil, parts.password == nil,
+              // 普通文件和网页上的种子链接（商店版 0.2.0 接管点种子）；磁力、视频站等仍只给完整版
+              [.http, .torrentFile].contains(LinkKind.of(raw)) else { return false }
         return true
     }
     private var listener: NWListener?
