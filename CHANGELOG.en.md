@@ -1,5 +1,12 @@
 # What's New
 
+## 0.20.1 · 2026-11-06
+
+- Clicking a torrent file on a web page now hands it straight to Shandian Download Manager.
+- On Douyin, Xiaohongshu, Bilibili, YouTube and other video sites, a Download button appears in the top-right corner when you point at a video.
+- Settings › General now lets you make Shandian Download Manager the default app for magnet links and torrent files. It asks once on first use.
+- The browser extension takes over downloads from web pages: files of 5 MB and above, and torrent files. The extension is also on the Chrome Web Store and Edge Add-ons, and the store version takes over downloads and sends torrent links in the same way.
+
 ## 0.19.11 · 2026-11-06
 
 - Fixed a flood of “New Download” windows that could appear when opening the browser. The extension no longer takes over downloads that other extensions start in the background, takes over the same link only once within a short time, and the app no longer opens a second window for a link that is already waiting for confirmation.
