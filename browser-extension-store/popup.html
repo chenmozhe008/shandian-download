@@ -2,10 +2,13 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><style>
 body { width: 290px; margin: 0; padding: 16px; box-sizing: border-box; font: 13px -apple-system, sans-serif; line-height: 1.5; }
 h1 { font-size: 15px; margin: 0 0 8px; } p { margin: 8px 0; } #result { color: #8b4b00; }
+label { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; padding-top: 10px; border-top: 1px solid #e5e0d8; cursor: pointer; }
+label input { margin-top: 3px; } small { display: block; color: #777; }
 </style></head><body>
 <h1>闪电全能下载 · Shandian</h1>
-<p>右键常见文档、压缩包或安装包的链接，选择「发送到闪电」。</p>
+<p>右键常见文档、压缩包或安装包的链接，选择「发送到闪电」。网页上开始的种子文件和 5 MB 以上的文件下载也会交给闪电。</p>
 <p>请先打开电脑上的闪电全能下载。需要登录或 Cookie 的链接可能无法使用。</p>
-<p>Right-click a supported document, archive or installer link and choose “Send to Shandian”. Open the desktop app first. Links requiring login may not work.</p>
+<p>Right-click a supported document, archive or installer link and choose “Send to Shandian”. Torrent files and downloads over 5 MB started on web pages also go to Shandian. Open the desktop app first. Links requiring login may not work.</p>
+<label><input type="checkbox" id="takeover"><span>接管浏览器下载 · Take over browser downloads<small>应用没打开时由浏览器照常下载。 / The browser downloads as usual when the app isn't open.</small></span></label>
 <p id="result"></p>
 <script src="popup.js"></script></body></html>

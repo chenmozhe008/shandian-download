@@ -127,7 +127,7 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 | 安装方式 | 开启开发者模式后手动安装 | 在浏览器商店搜索，一键安装 |
 | 更新方式 | 随应用自动更新 | 由浏览器商店更新 |
 | 右键发送压缩包、文档、安装包链接 | ✓ | ✓ |
-| 网页上点击下载时自动接管 | ✓ | — |
+| 网页上点击下载时自动接管 | ✓ | ✓（0.2.0 起，5 MB 以上的文件） |
 | 磁力、ed2k 链接 | ✓ | — |
 | 点击种子文件直接交给应用 | ✓ | — |
 | 视频网站上悬停视频出现「下载」按钮 | ✓ | — |
@@ -135,13 +135,13 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 | 微信视频号 | ✓ | — |
 | 批量抓取页面中的链接 | ✓ | — |
 | 需要登录的下载链接 | ✓ | 可能无法使用 |
-| 浏览器权限 | 需要访问所有网站、Cookie 和下载 | 仅右键菜单、本地设置和连接本应用 |
+| 浏览器权限 | 需要访问所有网站、Cookie 和下载 | 仅右键菜单、下载、本地设置和连接本应用 |
 
 ### 商店版
 
 在 Chrome 网上应用店或 Edge 加载项商店搜索「Shandian Download Manager」，或直接打开：[Chrome](https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg) · [Edge](https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei)。
 
-安装后右键点击支持的文件链接，选择「发送到闪电」。使用时需要打开闪电全能下载（0.18.24 或更新版本）。
+安装后右键点击支持的文件链接，选择「发送到闪电」。0.2.0 起，网页上开始的 5 MB 以上的文件下载也会自动交给闪电，可在扩展弹窗中关闭；闪电没打开时由浏览器照常下载。使用时需要打开闪电全能下载（0.18.24 或更新版本）。
 
 ### 完整版
 

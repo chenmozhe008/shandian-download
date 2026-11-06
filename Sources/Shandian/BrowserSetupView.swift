@@ -48,7 +48,7 @@ struct BrowserSetupView: View {
     private enum Cell { case yes, no, note(String), text(String) }
     private static let abilities: [(String, Cell, Cell)] = [
         (L("右键下载压缩包、安装包、文档"), .yes, .yes),
-        (L("网页上点下载，自动交给软件"), .yes, .no),
+        (L("网页上点下载，自动交给软件"), .yes, .note(L("0.2.0 起"))),
         (L("右键下载磁力、电驴链接"), .yes, .no),
         (L("点种子文件，直接交给软件"), .yes, .no),
         (L("视频上出现「下载」按钮"), .yes, .no),

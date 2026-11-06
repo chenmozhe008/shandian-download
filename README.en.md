@@ -119,7 +119,7 @@ There are two versions, both for Chrome and Edge. Pick one:
 | Install | Manual, with Developer mode on | Search in the browser's store, one click |
 | Updates | With the app | Through the browser's store |
 | Right-click to send archive, document and installer links | ✓ | ✓ |
-| Take over downloads started on web pages | ✓ | — |
+| Take over downloads started on web pages | ✓ | ✓ (from 0.2.0, files over 5 MB) |
 | Magnet and ed2k links | ✓ | — |
 | Clicked torrent files go straight to the app | ✓ | — |
 | A Download button over videos on video sites | ✓ | — |
@@ -127,13 +127,13 @@ There are two versions, both for Chrome and Edge. Pick one:
 | WeChat Channels | ✓ | — |
 | Grab links from a page in bulk | ✓ | — |
 | Links that require sign-in | ✓ | May not work |
-| Browser permissions | All sites, cookies and downloads | Context menu, local settings and connecting to the app only |
+| Browser permissions | All sites, cookies and downloads | Context menu, downloads, local settings and connecting to the app only |
 
 ### Store version
 
 Search for **Shandian Download Manager** in the Chrome Web Store or Edge Add-ons, or open it directly: [Chrome](https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg) · [Edge](https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei).
 
-Right-click a supported file link and choose **发送到闪电 / Send to Shandian**. Shandian (0.18.24 or later) must be open.
+Right-click a supported file link and choose **发送到闪电 / Send to Shandian**. From 0.2.0, downloads over 5 MB started on web pages also go to Shandian automatically; turn this off in the extension popup. When Shandian isn't open, the browser downloads as usual. Shandian (0.18.24 or later) must be open.
 
 ### Full version
 

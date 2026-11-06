@@ -638,3 +638,4 @@
 "在浏览器里点磁力链接或种子文件时，直接交给闪电全能下载。之后可在设置的「通用」中更改。" = "Magnet links and torrent files you click in the browser will go straight to Shandian. You can change this later in Settings › General.";
 "点种子文件，直接交给软件" = "Click a torrent file to send it to the app";
 "视频上出现「下载」按钮" = "Download button over videos";
+"0.2.0 起" = "From 0.2.0";

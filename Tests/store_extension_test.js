@@ -10,9 +10,10 @@ let mode = "success";
 const context = vm.createContext({
   URL,
   chrome: {
-    runtime: { onInstalled: { addListener() {} } },
+    runtime: { id: "self", onInstalled: { addListener() {} } },
+    downloads: { onCreated: { addListener() {} } },
     contextMenus: { create() {}, onClicked: { addListener() {} } },
-    storage: { local: { async set(data) { Object.assign(state, data); } } },
+    storage: { local: { async set(data) { Object.assign(state, data); }, async get() { return {}; } } },
     action: { async setBadgeText() {} }
   },
   async fetch(url, options) {
@@ -27,7 +28,7 @@ const allowed = value => vm.runInContext(`supportedFileLink(${JSON.stringify(val
 const run = url => context.handleLink({ menuItemId: "shandian-file-link", linkUrl: url });
 
 (async () => {
-  assert.deepEqual(manifest.permissions, ["contextMenus", "storage"]);
+  assert.deepEqual(manifest.permissions, ["contextMenus", "storage", "downloads"]);
   assert.deepEqual(manifest.host_permissions, ["http://127.0.0.1/*"]);
   assert.equal(manifest.default_locale, "en");
   for (const locale of ["en", "zh_CN"]) {

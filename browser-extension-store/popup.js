@@ -7,3 +7,6 @@ chrome.storage.local.get("lastResult").then(({ lastResult }) => {
   document.getElementById("result").textContent = messages[lastResult] || "";
   chrome.action.setBadgeText({ text: "" });
 });
+const takeover = document.getElementById("takeover");
+chrome.storage.local.get("takeover").then(({ takeover: on = true }) => { takeover.checked = on; });
+takeover.addEventListener("change", () => chrome.storage.local.set({ takeover: takeover.checked }));
