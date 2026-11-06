@@ -69,6 +69,7 @@ struct SettingsView: View {
     @AppStorage(ClipboardWatcher.enabledKey) private var watchClipboard = true
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
     @State private var launchAtLogin = LoginLaunch.isEnabled
+    @State private var ownsLinks = DefaultHandler.isDefault
     @State private var tab = SettingsTab.general
     @State private var language = AppLanguage.current
     @State private var aiTool = AITool.claudeCode
@@ -94,6 +95,14 @@ struct SettingsView: View {
                         do { try LoginLaunch.set(on) }
                         catch { launchAtLogin = LoginLaunch.isEnabled }
                     }
+                LabeledContent("磁力链接和种子文件") {
+                    if ownsLinks {
+                        Text("用闪电全能下载打开").foregroundStyle(.secondary)
+                    } else {
+                        Button("设为默认") { Task { await DefaultHandler.makeDefault(); ownsLinks = DefaultHandler.isDefault } }
+                    }
+                }
+                .onAppear { ownsLinks = DefaultHandler.isDefault }
                 UpdateToggle(checker: store.updates)
             }
             }

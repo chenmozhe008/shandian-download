@@ -31,5 +31,12 @@ const wallpaper = { id: 1, url: 'https://cdn.example/img/MzA1Njk5NTc0MjYwNjk1MTE
   // 用户正常点的另一个下载照常接
   await listener({ id: 2, url: 'https://example.com/file.zip', mime: 'application/zip', totalBytes: 50e6, referrer: 'https://example.com/' });
   assert.equal(sent, 2);
-  console.log('接管防循环测试通过：别的扩展发起的不接，同一链接 2 分钟内只接一次');
+  // 种子文件只有几十 KB 也要接（点种子弹出 App），按地址、文件名或类型认
+  await listener({ id: 3, url: 'https://bt.example/get?id=1', filename: 'Sintel.torrent', mime: '', totalBytes: 40e3, referrer: 'https://bt.example/' });
+  await listener({ id: 4, url: 'https://bt.example/a.torrent', mime: 'application/x-bittorrent', totalBytes: 30e3, referrer: 'https://bt.example/' });
+  assert.equal(sent, 4);
+  // 其他小文件照旧不接
+  await listener({ id: 5, url: 'https://example.com/readme.pdf', mime: 'application/pdf', totalBytes: 40e3, referrer: 'https://example.com/' });
+  assert.equal(sent, 4);
+  console.log('接管测试通过：别的扩展发起的不接，同一链接 2 分钟内只接一次，种子文件不论大小都接');
 })().catch(e => { console.error(e); process.exitCode = 1; });

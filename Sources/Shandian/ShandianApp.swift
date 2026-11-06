@@ -94,6 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// 窗口里任何地方按 ⌘V 都能下载；焦点在输入框（搜索、新建下载）时照常粘贴文字
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginLaunch.migrate()
+        // 主窗口先出来，再问一次默认打开方式
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { DefaultHandler.askOnce() }
         UNUserNotificationCenter.current().delegate = self
         DownloadStore.registerNotificationActions()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

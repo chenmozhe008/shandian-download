@@ -34,10 +34,11 @@
 - 迅雷通道（`ThunderBridge.swift`，自动转交 11-05 起默认开）：下不动时云盘之后的第二选择；云盘没关联或刚连不上就直接走迅雷，靠辅助功能点按钮、读迅雷的进度文件；收回时按迅雷的「全部暂停」并确认不再写入。**不逆向迅雷协议、不碰会员**（用户多次要求 rev 迅雷，已拒绝：等于白用别人的商业服务）
 - 云盘离线（`PikPak.swift`）：接口照开源 PikPakAPI。**不在 App 里输密码**（用户 10-28 定），用网页窗口打开官方登录页取令牌，只存 `pikpak.json`（600）；取回后彻底删除云端副本（回收站也占容量）；已关联时下不动自动转交（1 分钟没速度或 3 分钟几乎没速度）。转交优先云盘、其次迅雷。签名常量会随 PikPak 改版变，细节见 `docs/internals.md`
 - 回收站：移除任务写 `removed.json`（最多 500 条），可重新下载
-- 磁力默认打开方式已改为闪电全能下载（10-27 用户同意）；`.torrent` 文件关联未改
+- 默认打开方式（`DefaultHandler`，11-06）：设置「通用」里「磁力链接和种子文件 › 设为默认」，首次打开问一次（`askedDefaultHandler`），只在用户同意后改，不悄悄抢迅雷等的关联
 - 浏览器扩展：**用自带的**（`browser-extension/`，MV3，Chrome / Edge 通用；10-28 用户说别绑篡改猴）。打包进 App、启动时拷到 `Application Support/ShandianDownload/BrowserExtension`（浏览器记路径，别指向 dist）。用户在扩展页开开发者模式、拖文件夹进去装一次——浏览器不允许第三方静默装扩展，Chrome 137+ 也不认 `--load-extension`
   - 扩展 ID 由 manifest 的 `key` 固定，网关 `/extension/*` 只认这个 Origin；**改 key 要同步改 `Gateway.extensionOrigin`**
-  - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接；**别的扩展发起的下载（`byExtensionId`、扩展页面来源）不接，同一链接 2 分钟内只接一次**（11-06：Chrome 新标签页扩展下壁纸被接管→取消→它重试→再接管，一次弹出几十个确认框；App 侧同一链接的确认框也只开一个）。完整规则见 `docs/internals.md`
+  - 接管原则：App 接下了才取消浏览器的下载，App 失败就退回浏览器重下；图片/网页/<5 MB 不接；**别的扩展发起的下载（`byExtensionId`、扩展页面来源）不接，同一链接 2 分钟内只接一次**（11-06：Chrome 新标签页扩展下壁纸被接管→取消→它重试→再接管，一次弹出几十个确认框；App 侧同一链接的确认框也只开一个）；**种子文件不论大小都接**（点种子弹 App，照迅雷）。完整规则见 `docs/internals.md`
+  - 视频悬停「下载」按钮（`video-button.js`，11-06）：只注入支持的视频站、只对 ≥ 400×225 的视频显示（信息流小预览不出），点了走 `downloadVideoInTab`。按钮放在 Shadow DOM 里只叠加不改页面；**别引用 `i18n.js`**（它加载时会翻译整页文字），文案自带中英两份。商店版不加（要所有网站权限，且商店政策限制视频下载）
   - 商店版是另一套：`browser-extension-store/`，只有右键发送文件直链；两版的区别和安装入口都在「浏览器扩展」窗口的对照表（`BrowserSetupView`），改功能时同步表格和 README；网关只精确放行 `Gateway.swift` 里列出的商店 ID，**不许放宽到任意扩展**。上架状态和后台操作方法见 `docs/CHROME_STORE_PREPARATION.md`
   - **抖音别改回包 fetch/XHR**（会和安全 SDK 防篡改死循环、页面卡死），只包 `JSON.parse` / `Response.prototype.json`；**所有视频入口都走 `downloadVideoInTab`**。抖音、小红书已实测，快手和抖音信息流未实测，视频号不接
 - 退出 App：`pauseAll` 后内核留着不关，下载中的任务记进 `resumeOnLaunch`，下次打开续上（补丁后内核重启也不用校验）

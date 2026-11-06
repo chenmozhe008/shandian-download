@@ -2,14 +2,17 @@
   "manifest_version": 3,
   "name": "__MSG_extName__",
   "default_locale": "en",
-  "version": "1.11.17",
+  "version": "1.11.18",
   "description": "__MSG_extDescription__",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjLx3XnL5YY26qyffqyVmlu/M30PNMw3Laz+Cq+WQmyCpORklWSfw2TTWe3/gI9S3LNVXF5bWfywZI1FsWVDH+p6zzWySIMvQFWJlim+HXjfpwEDkSmhV7jcY0evhtEFKKxdI2F1g755tEAICApxVQ8qa31i7exGEI8U4B+AbFbpqKfc4XbkMesWaaTl3p83HLNPSJzWuKEAz9cAONk3Mt3yYOP3fY0V69ajZDdaD+r7jVXhHvrM0cjGJAnfDIUAhzKdStdlCRcJdqXqUglykJy8XBZ/caFvWieb7qPD3GNkFLRHzeArydp8YfOj9yxYtdEeoVEYyzTxRJTU/f7KHGQIDAQAB",
   "permissions": ["downloads", "contextMenus", "cookies", "storage", "tabs", "alarms", "scripting"],
   "optional_permissions": ["webRequest"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
-  "content_scripts": [{ "matches": ["*://*.douyin.com/*"], "js": ["douyin-hook.js"], "run_at": "document_start", "world": "MAIN" }],
+  "content_scripts": [
+    { "matches": ["*://*.douyin.com/*"], "js": ["douyin-hook.js"], "run_at": "document_start", "world": "MAIN" },
+    { "matches": ["*://*.douyin.com/*", "*://*.xiaohongshu.com/*", "*://*.bilibili.com/*", "*://*.youtube.com/*", "*://*.x.com/*", "*://*.twitter.com/*", "*://*.weibo.com/*", "*://*.ixigua.com/*", "*://*.kuaishou.com/*", "*://*.vimeo.com/*", "*://*.xinpianchang.com/*"], "js": ["video-button.js"], "run_at": "document_idle" }
+  ],
   "action": { "default_title": "__MSG_extName__", "default_popup": "popup.html", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" } },
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
 }

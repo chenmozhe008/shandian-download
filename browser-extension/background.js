@@ -290,7 +290,13 @@ async function sendToApp(url, referrer, name, tabId, mediaType) {
 
 // 图片、网页、文本和已知很小的文件留给浏览器：多连接快不了，交出去反而多一个出错环节（参照 IDM 默认不接图片）
 const SMALL = 5 * 1024 * 1024;
+// 种子文件只有几十 KB，但点了就该交给 App（照迅雷：点种子弹软件），不受 5 MB 门槛限制
+function isTorrent(item) {
+  const path = (() => { try { return new URL(item.finalUrl || item.url).pathname; } catch (_) { return ""; } })();
+  return /\.torrent$/i.test(path) || /\.torrent$/i.test(item.filename || "") || (item.mime || "").toLowerCase() === "application/x-bittorrent";
+}
 function worthTakingOver(item) {
+  if (isTorrent(item)) return true;
   const mime = (item.mime || "").toLowerCase();
   if (/^(image|text)\//.test(mime) || mime === "application/xhtml+xml") return false;
   const size = item.totalBytes > 0 ? item.totalBytes : item.fileSize;
@@ -386,7 +392,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "downloadPage") {
-    chrome.tabs.get(msg.tabId).then((tab) => downloadVideoInTab(tab, msg.requireVideo)).then((ok) => reply({ ok: ok === true, noVideo: ok === null })).catch(() => reply({ ok: false }));
+    // 工具栏面板会带 tabId；视频上的「下载」按钮从页面里发来，用发送它的标签页
+    chrome.tabs.get(msg.tabId ?? _sender.tab?.id).then((tab) => downloadVideoInTab(tab, msg.requireVideo)).then((ok) => reply({ ok: ok === true, noVideo: ok === null })).catch(() => reply({ ok: false }));
     return true; // 异步回复
   }
   if (msg.type === "startCapture") {
