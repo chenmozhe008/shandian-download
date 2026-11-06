@@ -22,7 +22,7 @@ mkdir -p "$B/gopeed-src/cmd/web/dist" && echo '<!doctype html><title>Shandian en
 cd "$B/gopeed-src"
 # 必须开 CGO：不开时 anacrolix 用纯 Go 的 uTP（anacrolix/utp），连 uTP 用户很差，10-28 实测只剩 1 个连接、几十 KB/s；
 # 开了用 libutp。本机命令行工具（CommandLineTools）的链接器和 SDK 版本对不上，改用移动硬盘上 Xcode 的工具链和 SDK
-X="/Volumes/Jack Feng/Applications/Xcode-26.5.0.app/Contents/Developer"
+X="/Volumes/Jack Feng/DevData/Xcode-26.5.0.app/Contents/Developer"
 [ -d "$X" ] || { echo "找不到 Xcode：$X"; exit 1; }
 # M 芯片和 Intel 各编一份，分别打进两个安装包（合成通用二进制会让内核从 41 MB 翻倍到 85 MB）
 for A in arm64 amd64; do
