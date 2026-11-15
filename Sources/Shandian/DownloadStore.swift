@@ -1900,7 +1900,7 @@ final class DownloadStore: ObservableObject {
                     self.startThunderIfPaused(jobID)
                 case .unconfirmed: self.notice = L("请在迅雷中确认下载；原任务和文件仍保留")
                 case .needsAccessibility:
-                    let text = L("请到迅雷点「立即下载」。在系统设置里允许「辅助功能」后，闪电就能自动完成这一步；开关已打开仍不行时，请关掉再重新打开")
+                    let text = L("请到迅雷点「立即下载」。允许「辅助功能」后闪电能自动完成这一步；若开关已打开仍提示，先把列表里的闪电全能下载用「−」移除，再在设置的「通用」里点「去允许」")
                     self.noticeAction = NoticeAction(title: "打开系统设置", forText: text, run: { ThunderBridge.openAccessibilitySettings() })
                     self.notice = text
                 case .alreadyExists: self.thunderRefusedDuplicate(jobID: jobID, safeDir: safeDir, title: item.title, manual: promptIfMissing)

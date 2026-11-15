@@ -70,6 +70,7 @@ struct SettingsView: View {
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
     @State private var launchAtLogin = LoginLaunch.isEnabled
     @State private var ownsLinks = DefaultHandler.isDefault
+    @State private var axAllowed = ThunderBridge.accessibilityGranted
     @State private var tab = SettingsTab.general
     @State private var language = AppLanguage.current
     @State private var aiTool = AITool.claudeCode
@@ -103,6 +104,22 @@ struct SettingsView: View {
                     }
                 }
                 .onAppear { ownsLinks = DefaultHandler.isDefault }
+                LabeledContent("控制迅雷（辅助功能）") {
+                    if axAllowed {
+                        Text("已允许").foregroundStyle(.secondary)
+                    } else {
+                        Button("去允许") {
+                            ThunderBridge.openAccessibilitySettings()
+                            ThunderBridge.promptAccessibility()
+                            axAllowed = ThunderBridge.accessibilityGranted
+                        }
+                    }
+                }
+                .help("允许后，交给迅雷的任务能自动点「立即下载」。若系统设置里的开关已经打开、这里仍显示未允许，先把列表里那条「闪电全能下载」用「−」移除，再点「去允许」重新添加一次")
+                .onAppear { axAllowed = ThunderBridge.accessibilityGranted }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    axAllowed = ThunderBridge.accessibilityGranted
+                }
                 UpdateToggle(checker: store.updates)
             }
             }

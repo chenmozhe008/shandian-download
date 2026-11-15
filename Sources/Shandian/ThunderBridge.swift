@@ -147,8 +147,9 @@ enum ThunderBridge {
         UserDefaults(suiteName: "com.xunlei.Thunder")?.set(saveDir, forKey: "LastSavePath")
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
         Task {
-            // 第一次会请求「辅助功能」权限；没给就只能让用户自己在迅雷里点
-            guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) else {
+            // 只静默检查，不在交任务时弹系统授权框：系统框每调一次就弹一次，用户明明设过了还反复弹（11-15 用户反馈）。
+            // 没授权就退回「让用户自己在迅雷里点立即下载」，授权入口放在设置和提示条里，由用户主动点
+            guard AXIsProcessTrusted() else {
                 onResult(.needsAccessibility); return
             }
             for _ in 0..<40 {
@@ -271,7 +272,7 @@ enum ThunderBridge {
             alert.addButton(withTitle: L("再等等"))
         case .needsAccessibility:
             alert.messageText = L("需要允许「辅助功能」才能控制迅雷")
-            alert.informativeText = L("在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。如果开关已经打开，请先关掉再重新打开。也可以先在迅雷里手动暂停这条任务。")
+            alert.informativeText = L("在系统设置里允许闪电全能下载后，再点收回就能自动暂停迅雷。如果开关已经打开、这里仍说没权限，请把辅助功能列表里的闪电全能下载用「−」移除，再重新添加一次。也可以先在迅雷里手动暂停这条任务。")
             alert.addButton(withTitle: L("我已暂停，继续收回"))
             alert.addButton(withTitle: L("再等等"))
             alert.addButton(withTitle: L("打开系统设置"))
@@ -339,10 +340,20 @@ enum ThunderBridge {
         }
     }
 
-    /// 第一次用要在系统设置里允许；临时签名的正式包每次更新后也要重新允许
+    /// 用权限前只做静默检查：`AXIsProcessTrustedWithOptions(prompt:)` 每调一次就弹一次系统框，
+    /// 在交任务/暂停这类动作里自动调它，就变成每次操作都被问一遍（11-15 用户反馈「设置过还总弹」）
     private static func requestAccessibility() -> Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// 只有用户自己点「去授权」时才让系统弹框，且只弹这一次
+    @discardableResult
+    static func promptAccessibility() -> Bool {
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
+
+    /// 授权状态（不弹框），设置页和提示条用
+    nonisolated static var accessibilityGranted: Bool { AXIsProcessTrusted() }
 
     /// 窗口关着、或停在已完成等其他页时，切回「正在下载」，任务行和「全部暂停」才看得到
     private static func showThunderWindow(_ app: NSRunningApplication) async {
