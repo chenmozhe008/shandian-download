@@ -119,6 +119,42 @@ codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID" --timesta
 codesign --verify --strict "$APP"
 echo "打包完成：$APP"
 lipo -info "$APP/Contents/MacOS/$EXECUTABLE_NAME" "$APP/Contents/Resources/gopeed"
+
+# 收尾：只留当前这版的产物，其余移进废纸篓（11-15 用户定：每发一版留几百兆受不了）。
+# 移之前必须先注销 LaunchServices —— 废纸篓里的同名 App 会和已装的抢同一个 bundle id，
+# 「交给迅雷」时可能启动到旧包，辅助功能授权也就永远对不上（11-15 踩过这个坑）。
+cleanup_previous_outputs() {
+  local trash="$HOME/.Trash"
+  local lsr="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  local cur; cur="$(cd "$(dirname "$APP")" && pwd)"
+  local base rel keep d app name
+  for base in "$ROOT/output/dev" "$ROOT/output/release"; do
+    [[ -d "$base" ]] || continue
+    if [[ "$cur" == "$base"/* ]]; then
+      rel="${cur#"$base"/}"
+      keep="$base/${rel%%/*}"   # 同一个版本目录整体保留（正式包有 AppleSilicon / Intel 两个子目录）
+    else
+      keep="$(ls -1dt "$base"/*/ 2>/dev/null | head -1 || true)"
+      keep="${keep%/}"
+    fi
+    for d in "$base"/*; do
+      [[ -d "$d" ]] || continue
+      [[ "$d" == "$keep" ]] && continue
+      for app in "$d"/*.app "$d"/*/*.app; do
+        [[ -e "$app" ]] && { "$lsr" -u "$app" >/dev/null 2>&1 || true; }
+      done
+      name="闪电构建-$(basename "$base")-$(basename "$d")-$(date +%Y%m%d%H%M%S)"
+      mv "$d" "$trash/$name" 2>/dev/null && echo "已把上一版产物移入废纸篓：${d#"$ROOT"/}"
+    done
+  done
+  # 用自定义路径构建时 dist 会一直是旧的，一并清掉
+  if [[ "$cur" != "$ROOT/dist"* && -d "$ROOT/dist" ]]; then
+    while IFS= read -r app; do "$lsr" -u "$app" >/dev/null 2>&1 || true; done \
+      < <(find "$ROOT/dist" -maxdepth 3 -name "*.app" -type d 2>/dev/null)
+    mv "$ROOT/dist" "$trash/闪电构建-dist-$(date +%Y%m%d%H%M%S)" 2>/dev/null && echo "已把旧 dist 移入废纸篓"
+  fi
+}
+cleanup_previous_outputs
 if [[ "${1:-run}" == "--install-dev" ]]; then
   [[ "$DEV_BUILD" == 1 && "$ARCH" == "$(uname -m)" ]] || { echo '只能安装本机架构的开发构建。' >&2; exit 1; }
   "$HOME/Coding/tools/mac-app-workflow/install-dev.sh" shandian "$APP"

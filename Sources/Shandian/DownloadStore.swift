@@ -1177,7 +1177,7 @@ final class DownloadStore: ObservableObject {
         let kind: LinkKind = forceVideo ? .videoSite : detectedKind
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); return }
-        let dir = chosen ?? Folders.directory(for: kind)
+        let dir = chosen ?? Prefs.lastDir(kind) ?? Folders.directory(for: kind)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         if kind == .videoSite {
@@ -1409,7 +1409,7 @@ final class DownloadStore: ObservableObject {
         cloudTried.insert(item.linkKey)
         let base = item.location ?? item.file
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
-            ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
+            ?? (pendingRecords[item.id]?.dir ?? Prefs.lastDir(.magnet)?.path ?? Folders.movies.path)
         var engineID: String?
         var pendingRecord: PendingRecord?
         var thunderJob: ThunderJob?
@@ -1816,7 +1816,7 @@ final class DownloadStore: ObservableObject {
             return
         }
         let dir = (item.location != nil && item.location != item.file ? item.location?.deletingLastPathComponent() : item.file?.deletingLastPathComponent())?.path
-            ?? (pendingRecords[item.id]?.dir ?? Folders.movies.path)
+            ?? (pendingRecords[item.id]?.dir ?? Prefs.lastDir(.magnet)?.path ?? Folders.movies.path)
         let sourceID: String?
         let pendingRecord: PendingRecord?
         switch item.source {

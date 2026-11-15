@@ -26,6 +26,26 @@ enum Prefs {
     static var notify: Bool { UserDefaults.standard.object(forKey: notifyKey) as? Bool ?? true }
     static let doneSoundKey = "doneSound"
     static var doneSound: Bool { UserDefaults.standard.object(forKey: doneSoundKey) as? Bool ?? true }
+
+    /// 记住上次的保存位置（11-15 用户定）：开着时新建任务直接从上次存的地方开始，不用每次点。
+    /// 磁力/种子、视频网站、其他各记一份，免得拿电影的位置去存网页上的小文件
+    static let rememberDirKey = "rememberLastDir"
+    static var rememberDir: Bool { UserDefaults.standard.object(forKey: rememberDirKey) as? Bool ?? true }
+    static func lastDirKey(_ kind: LinkKind?) -> String {
+        switch kind {
+        case .magnet, .torrentFile, .ed2k: "lastDir.movie"
+        case .videoSite: "lastDir.video"
+        default: "lastDir.other"
+        }
+    }
+    static func lastDir(_ kind: LinkKind?) -> URL? {
+        guard rememberDir, let path = UserDefaults.standard.string(forKey: lastDirKey(kind)),
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+    static func setLastDir(_ url: URL, kind: LinkKind?) {
+        UserDefaults.standard.set(url.path, forKey: lastDirKey(kind))
+    }
 }
 
 /// 有任务在下时不让 Mac 因闲置睡眠（合盖、手动睡眠照常）；没在下就放开
@@ -68,6 +88,7 @@ struct SettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ClipboardWatcher.enabledKey) private var watchClipboard = true
     @AppStorage(NewTaskPanels.askKey) private var confirmNew = true
+    @AppStorage(Prefs.rememberDirKey) private var rememberDir = true
     @State private var launchAtLogin = LoginLaunch.isEnabled
     @State private var ownsLinks = DefaultHandler.isDefault
     @State private var axAllowed = ThunderBridge.accessibilityGranted
@@ -144,6 +165,12 @@ struct SettingsView: View {
                 Toggle("复制链接后弹出下载提示", isOn: $watchClipboard)
                     .onChange(of: watchClipboard) { if !watchClipboard { store.clipboardLinks = nil } }
                 Text("仅提示磁力、视频页面和常见文件链接；不会自动开始下载。关闭后仍可手动粘贴。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("保存位置") {
+                Toggle("记住上次的保存位置", isOn: $rememberDir)
+                Text("打开后，新建任务直接从上次存的文件夹开始，不用每次去挑。磁力/种子、视频网站、其他文件各记一份。关掉则每次回到设置里的默认位置。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

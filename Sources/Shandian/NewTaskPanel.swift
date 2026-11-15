@@ -88,7 +88,8 @@ final class NewTaskModel: ObservableObject {
         nameFromBrowser = name
         kind = forceVideo ? .videoSite : LinkKind.of(links[0])
         defaultDir = kind.map(Folders.directory(for:)) ?? Folders.downloads
-        dir = defaultDir
+        // 记住上次的保存位置（11-15 用户定）：直接从上次存的地方开始，不用每次点一遍
+        dir = Prefs.lastDir(kind) ?? defaultDir
         // 片名整理只给磁力/种子；普通文件用原文件名——这里的名字会直接当文件名交给内核，整理过会丢掉后缀
         let raw = DownloadStore.displayName(links[0])
         title = links.count > 1 ? "" : (name ?? (kind == .magnet || kind == .torrentFile ? PrettyTitle.clean(raw) : raw))
@@ -141,6 +142,14 @@ final class NewTaskModel: ObservableObject {
             menu.addItem(ClosureMenuItem.make(item) { [weak self] in self?.dir = d })
         }
         menu.addItem(.separator())
+        // 第一次用就在这儿把「记住」定下来，不用专门跑去设置里找（11-15 用户反馈每次都要点）
+        let remember = NSMenuItem(title: L("记住这个位置，以后默认用它"), action: nil, keyEquivalent: "")
+        remember.state = Prefs.rememberDir ? .on : .off
+        menu.addItem(ClosureMenuItem.make(remember) { [weak self] in
+            let on = !Prefs.rememberDir
+            UserDefaults.standard.set(on, forKey: Prefs.rememberDirKey)
+            if on, let self { Prefs.setLastDir(self.dir, kind: self.kind) }
+        })
         menu.addItem(ClosureMenuItem.make(NSMenuItem(title: L("选择其他文件夹…"), action: nil, keyEquivalent: "")) { [weak self] in self?.chooseFolder() })
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
@@ -154,6 +163,8 @@ final class NewTaskModel: ObservableObject {
 
     func download() {
         guard let store else { return }
+        // 记下这次用的位置，下次新建任务直接从这里开始（11-15 用户定）
+        Prefs.setLastDir(dir, kind: kind)
         if dir != defaultDir {
             var recent = UserDefaults.standard.stringArray(forKey: "recentDirs") ?? []
             recent.removeAll { $0 == dir.path }; recent.insert(dir.path, at: 0)
