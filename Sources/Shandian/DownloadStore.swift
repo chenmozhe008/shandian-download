@@ -4,6 +4,9 @@ import SwiftUI
 import Foundation
 @preconcurrency import UserNotifications
 
+/// 迅雷里那条任务的去向：取消了（没建成）/ 被删了。标签上各写一个短词，别把整句话塞进去（11-15 用户反馈重复且被截断）
+enum ThunderGone: Equatable { case cancelled, deleted }
+
 /// 界面上的一条下载，内核任务和视频站任务统一成这一种
 struct Item: Identifiable, Equatable {
     enum Source: Equatable { case engine(String), video(UUID), pending, thunder(String), cloud(String) }
@@ -40,7 +43,7 @@ struct Item: Identifiable, Equatable {
     var thunderDiskEstimate = false // 迅雷记录滞后时显示的是磁盘占用，不作为完成依据
     var thunderClosed = false   // 这条任务在迅雷里，但迅雷没打开，不会有进度
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
-    var thunderTrouble: String? // 迅雷那条出了状况（被删掉 / 根本没建成）：标签上照实写，别显示成「迅雷下载完成」
+    var thunderGone: ThunderGone?  // 迅雷那条出了状况（被删掉 / 根本没建成）：标签上只写短词，说明放在悬停提示里
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
     var isResolvingState: Bool { if case .resolving = status { return true }; return false }
@@ -2479,8 +2482,8 @@ final class DownloadStore: ObservableObject {
 
     private static func item(from j: ThunderJob) -> Item {
         let folder = j.folder.map(URL.init(fileURLWithPath:))
-        // 迅雷里这条出了状况（被删掉 / 根本没建成）：照实说，别让它一直挂着「请在迅雷查看」
-        let goneText: String? = j.goneAt == nil ? nil : (j.neverStarted == true ? L("没交给迅雷：迅雷里没有这条任务") : L("迅雷里的任务已被删除"))
+        // 迅雷里这条出了状况（被删掉 / 根本没建成）：标签上写短词，整句说明放悬停提示里，别在行里重复两遍
+        let gone: ThunderGone? = j.goneAt == nil ? nil : (j.neverStarted == true ? .cancelled : .deleted)
         // 迅雷 `.js` 里记的大小最准；没有就退回种子解析值、再退回文件占用（占用含 4K 对齐，会略大）
         let total = max(j.verifiedTotal ?? 0, j.dlSize ?? 0, j.total)
         let diskEstimate = !j.done && j.folder != nil && j.written == nil && j.bytes > (j.checked ?? 0) + (1 << 20)
@@ -2488,7 +2491,7 @@ final class DownloadStore: ObservableObject {
         if total > 0 { got = min(got, total) }
         if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,
-                      status: j.done ? .done : (goneText != nil ? .failed(goneText!) : .running),
+                      status: j.done ? .done : (gone != nil ? .failed("") : .running),
                       downloaded: got, total: total,
                       speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
@@ -2496,7 +2499,7 @@ final class DownloadStore: ObservableObject {
         it.thunderHasOriginal = j.sourceEngineID != nil || j.sourcePending != nil
         it.thunderDiskEstimate = diskEstimate
         it.thunderLocated = j.folder != nil
-        it.thunderTrouble = goneText
+        it.thunderGone = gone
         return it
     }
 

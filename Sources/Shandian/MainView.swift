@@ -536,7 +536,7 @@ struct TaskRow: View {
                     if case .thunder = item.source {
                         ThunderTag(active: item.isActive, downloaded: item.downloaded,
                                    createdAt: item.createdAt, located: item.thunderLocated,
-                                   trouble: item.thunderTrouble)
+                                   gone: item.thunderGone)
                     } else { Text(L(item.originLabel ?? item.origin)) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
@@ -591,7 +591,8 @@ struct TaskRow: View {
                     CircleIconButton(symbol: item.status == .paused || item.isFailed ? "play.fill" : "pause.fill",
                                      help: item.status == .paused ? L("继续下载") : item.isFailed ? L("重新开始") : L("暂停下载")) { store.togglePause(item) }
                 } else if item.isFailed {
-                    CircleIconButton(symbol: "arrow.clockwise", help: L("重试")) { store.retry(item) }
+                    CircleIconButton(symbol: "arrow.clockwise",
+                                     help: item.isThunder && item.thunderGone != nil ? L("重新交给迅雷") : L("重试")) { store.retry(item) }
                 }
                 CircleIconButton(symbol: "xmark", help: L("移除这条任务")) { store.removalTarget = item }
             }
@@ -687,13 +688,14 @@ private struct ThunderTag: View {
     let downloaded: Int64
     let createdAt: Date
     var located = true
-    /// 迅雷那条出了状况（被删掉 / 没建成）：标签上照实写，不能再显示成「迅雷下载完成」
-    var trouble: String? = nil
+    /// 迅雷那条出了状况（取消了 / 被删了）：只写短词，整句说明放悬停里。
+    /// 之前把「没交给迅雷：迅雷里没有这条任务」写进标签，行里又重复一遍，还被截断（11-15 用户反馈）
+    var gone: ThunderGone? = nil
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 9.5, weight: .bold))
-            Text(L(text)).font(.system(size: 11.5, weight: .semibold))
+            Text(L(text)).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
         }
         .foregroundStyle(color)
         .padding(.horizontal, 7).frame(height: 18)
@@ -703,25 +705,34 @@ private struct ThunderTag: View {
     }
 
     private var text: String {
-        if let trouble { return trouble }
+        switch gone {
+        case .cancelled: return L("未交给迅雷")
+        case .deleted: return L("迅雷里已删")
+        case nil: break
+        }
         guard active else { return L("迅雷下载完成") }
         if downloaded > 0 { return L("迅雷任务") }
         return L("请在迅雷查看")
     }
     private var symbol: String {
-        if trouble != nil { return "exclamationmark.triangle.fill" }
+        if gone != nil { return "exclamationmark.triangle.fill" }
         guard active else { return "checkmark.circle.fill" }
         if downloaded > 0 { return "bolt.fill" }
         return located ? "clock" : "arrow.up.right.circle"
     }
     /// 只在真的在迅雷里跑起来时用主题琥珀色，其余灰色，避免「在等」看着像「在跑」
     private var color: Color {
-        if trouble != nil { return Theme.failed }
+        if gone != nil { return Theme.failed }
         guard active, downloaded > 0 else { return Theme.sub }
         return Theme.tint
     }
     private var help: String {
-        guard trouble == nil, active, downloaded == 0 else { return text }
+        switch gone {
+        case .cancelled: return L("没交给迅雷：迅雷里没有这条任务，可能在新任务窗口里点了取消。点行尾的 ↻ 可重新交给迅雷")
+        case .deleted: return L("这条任务在迅雷里已被删除，不会再下载了。点行尾的 ↻ 可重新交给迅雷")
+        case nil: break
+        }
+        guard active, downloaded == 0 else { return text }
         return L("尚未读取到可靠进度，请到迅雷中查看任务状态")
     }
 }
@@ -779,6 +790,7 @@ private struct ItemMenu: View {
                     .disabled(item.checking)
             }
             if item.isThunder {
+                if item.thunderGone != nil { Button("重新交给迅雷") { store.retry(item) } }
                 if ThunderBridge.installed { Button("在迅雷中查看") { store.openThunder() } }
                 Button("收回到闪电（保留迅雷已下的部分）") { store.reclaimFromThunder(item) }
                 if item.thunderHasOriginal { Button("不用迅雷，从闪电原来的进度接着下") { store.restoreOriginalFromThunder(item) } }
