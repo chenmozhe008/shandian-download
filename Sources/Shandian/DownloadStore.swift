@@ -40,6 +40,7 @@ struct Item: Identifiable, Equatable {
     var thunderDiskEstimate = false // 迅雷记录滞后时显示的是磁盘占用，不作为完成依据
     var thunderClosed = false   // 这条任务在迅雷里，但迅雷没打开，不会有进度
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
+    var thunderTrouble: String? // 迅雷那条出了状况（被删掉 / 根本没建成）：标签上照实写，别显示成「迅雷下载完成」
 
     var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
     var isResolvingState: Bool { if case .resolving = status { return true }; return false }
@@ -1546,7 +1547,7 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    /// 迅雷里的任务被用户删掉 / 清空回收站之后，这条任务其实已经不会再有进度了。
+    /// 迅雷里的任务被用户删掉、或者根本没建成（在新任务窗口里点了取消）之后，这条其实已经不会再有进度了。
     /// 只读迅雷的任务账本（见 `ThunderBridge.liveness`），每条 20 秒查一次，不碰迅雷界面、不弹授权框
     private func checkThunderTasksAlive() {
         guard !thunderJobs.isEmpty else { return }
@@ -1561,16 +1562,41 @@ final class DownloadStore: ObservableObject {
             guard Date().timeIntervalSince(job.createdAt) > 120 else { continue }
             if let at = thunderCheckedAt[job.id], Date().timeIntervalSince(at) < 20 { continue }
             thunderCheckedAt[job.id] = Date()
-            guard ThunderBridge.liveness(of: job) == .removed else { continue }
-            thunderJobs[k].goneAt = Date()
-            thunderJobs[k].speed = 0
-            changed = true
             let jobID = job.id
-            let text = String(localized: "「\(job.title)」在迅雷里已被删除，没有在下载")
-            noticeAction = NoticeAction(title: L("重新交给迅雷"), forText: text) { [weak self] in self?.resubmitToThunder(jobID) }
-            notice = text
+            switch ThunderBridge.liveness(of: job) {
+            case .removed:
+                thunderJobs[k].goneAt = Date()
+                thunderJobs[k].speed = 0
+                changed = true
+                markThunderTrouble(L("迅雷里这条任务已被删除"), jobID: jobID, action: L("重新交给迅雷"),
+                                   run: { [weak self] in self?.resubmitToThunder(jobID) })
+            case .neverCreated:
+                // 我们那次没看到迅雷建任务，两分钟过去账本里还是没有它，文件也一个字节没落：用户点了取消。
+                // 不能再挂着「请在迅雷查看」，否则用户以为它还在迅雷里下（11-15 用户反馈）
+                guard job.submitState != .submitted, job.bytes == 0, job.folder == nil else { continue }
+                thunderJobs[k].goneAt = Date()
+                thunderJobs[k].neverStarted = true
+                thunderJobs[k].speed = 0
+                changed = true
+                // 迅雷没建成任务，我们建的那个空目录也一并收掉，别在保存目录里留个空壳
+                HandoffFiles.removeIfEmpty(URL(fileURLWithPath: job.dir))
+                markThunderTrouble(L("没交给迅雷：迅雷里没有这条任务"), jobID: jobID, action: L("重新交给迅雷"),
+                                   run: { [weak self] in self?.resubmitToThunder(jobID) })
+            case .alive, .unknown:
+                continue
+            }
         }
         if changed { ThunderBridge.save(thunderJobs) }
+    }
+
+    /// 迅雷那条出了状况：提示写短句（标题一长提示就两行），把列表滚到这条并闪一下，让用户知道是哪一条
+    private func markThunderTrouble(_ text: String, jobID: String, action: String, run: @escaping () -> Void) {
+        noticeAction = NoticeAction(title: action, forText: text, run: run)
+        notice = text
+        selectedID = jobID
+        scrollTarget = jobID
+        flashID = nil
+        flashID = jobID
     }
 
     private static func isFailedStatus(_ status: Item.Status) -> Bool {
@@ -1596,6 +1622,8 @@ final class DownloadStore: ObservableObject {
         thunderJobs[i].dir = safeDir
         thunderJobs[i].folder = nil
         thunderJobs[i].goneAt = nil
+        thunderJobs[i].neverStarted = nil
+        thunderJobs[i].submitState = nil
         thunderJobs[i].done = false
         thunderJobs[i].checked = nil
         thunderJobs[i].dlSize = nil
@@ -1613,21 +1641,45 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    /// 交给迅雷之后的结果处理（首次转交和「被删了重新交」共用）
+    /// 交给迅雷之后的结果处理（首次转交和「被删了重新交」共用）。
+    /// 提示统一写一行短句：以前带整条片名，两行之长、每次转交都弹（11-15 用户反馈太吵）
     private func handleThunderSubmit(_ result: ThunderBridge.SubmitResult, jobID: String, title: String, manual: Bool) {
+        if let i = thunderJobs.firstIndex(where: { $0.id == jobID }) {
+            thunderJobs[i].submitState = switch result {
+            case .submitted: .submitted
+            case .unconfirmed: .unconfirmed
+            case .needsAccessibility: .needsAccessibility
+            case .alreadyExists: nil
+            }
+            ThunderBridge.save(thunderJobs)
+        }
         switch result {
         case .submitted:
-            notice = String(localized: "已交给迅雷下载「\(title)」，原任务已保留")
+            // 静默：行上已经写着「迅雷任务」，进度也在动，不必每次再弹一条确认
             startThunderIfPaused(jobID)
         case .unconfirmed:
-            notice = L("请在迅雷中确认下载；原任务和文件仍保留")
+            let text = L("请在迅雷点一下「立即下载」")
+            noticeAction = NoticeAction(title: L("打开迅雷"), forText: text, run: { [weak self] in self?.openThunder() })
+            notice = text
         case .needsAccessibility:
-            let text = L("请到迅雷点「立即下载」。允许「辅助功能」后闪电能自动完成这一步；若开关已打开仍提示，先把列表里的闪电全能下载用「−」移除，再在设置的「通用」里点「去允许」")
-            noticeAction = NoticeAction(title: "打开系统设置", forText: text, run: { ThunderBridge.openAccessibilitySettings() })
+            // 每次运行只提醒一次：设置里有「去允许」，行上也写着「请在迅雷查看」，不必每次转交都弹
+            guard !axHintShown else { return }
+            axHintShown = true
+            let text = L("请在迅雷点「立即下载」；允许控制迅雷后可自动")
+            noticeAction = NoticeAction(title: L("去允许"), forText: text, run: { [weak self] in self?.askAccessibility() })
             notice = text
         case .alreadyExists:
             thunderRefusedDuplicate(jobID: jobID, safeDir: thunderJobs.first { $0.id == jobID }?.dir ?? "", title: title, manual: manual)
         }
+    }
+
+    /// 本次运行是否已经提醒过「辅助功能」：只在第一次转交时弹一次，之后靠行上的「请在迅雷查看」和设置里的入口
+    private var axHintShown = false
+
+    /// 用户自己点「去允许」才弹系统授权框；交任务时不弹（系统框每调一次就弹一次，11-15 用户反馈反复弹）
+    private func askAccessibility() {
+        ThunderBridge.openAccessibilitySettings()
+        ThunderBridge.promptAccessibility()
     }
 
     /// 云盘取回的文件移回保存目录。一个文件直接放保存目录；片子带字幕时放进以片名命名的文件夹。
@@ -1994,7 +2046,7 @@ final class DownloadStore: ObservableObject {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard thunderHeldAt == nil, let job = thunderJobs.first(where: { $0.id == jobID }), !job.done, job.speed == 0 else { return }
                 if await ThunderBridge.resumeJobsAfterLaunch([job]) {
-                    notice = L("迅雷里这条是暂停的，已让它开始；迅雷里其他暂停的任务也会一起开始")
+                    notice = L("已让迅雷开始这条（其他暂停的也会一起开始）")
                     return
                 }
             }
@@ -2427,6 +2479,8 @@ final class DownloadStore: ObservableObject {
 
     private static func item(from j: ThunderJob) -> Item {
         let folder = j.folder.map(URL.init(fileURLWithPath:))
+        // 迅雷里这条出了状况（被删掉 / 根本没建成）：照实说，别让它一直挂着「请在迅雷查看」
+        let goneText: String? = j.goneAt == nil ? nil : (j.neverStarted == true ? L("没交给迅雷：迅雷里没有这条任务") : L("迅雷里的任务已被删除"))
         // 迅雷 `.js` 里记的大小最准；没有就退回种子解析值、再退回文件占用（占用含 4K 对齐，会略大）
         let total = max(j.verifiedTotal ?? 0, j.dlSize ?? 0, j.total)
         let diskEstimate = !j.done && j.folder != nil && j.written == nil && j.bytes > (j.checked ?? 0) + (1 << 20)
@@ -2434,7 +2488,7 @@ final class DownloadStore: ObservableObject {
         if total > 0 { got = min(got, total) }
         if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,
-                      status: j.done ? .done : (j.goneAt != nil ? .failed(L("迅雷里的任务已被删除")) : .running),
+                      status: j.done ? .done : (goneText != nil ? .failed(goneText!) : .running),
                       downloaded: got, total: total,
                       speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
@@ -2442,6 +2496,7 @@ final class DownloadStore: ObservableObject {
         it.thunderHasOriginal = j.sourceEngineID != nil || j.sourcePending != nil
         it.thunderDiskEstimate = diskEstimate
         it.thunderLocated = j.folder != nil
+        it.thunderTrouble = goneText
         return it
     }
 

@@ -256,4 +256,36 @@ import CryptoKit
         XCTAssertEqual(restored.goneAt, job.goneAt)
     }
 
+    // MARK: 在迅雷的新建任务窗口里点了取消（11-15 用户反馈：取消了还一直显示「请在迅雷查看」）
+
+    func testNeverCreatedIsDistinguishedFromUnknown() {
+        let rows = [row(false, dir: "/m/迅雷下载/thunder-9", name: "别的片.mkv")]
+        // 账本读得到、里面没有我们这一个 thunder-<id>，也从没找到过它的文件夹 → 任务没建成
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.torrent",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .neverCreated)
+        // 账本读不到就什么都不能说
+        XCTAssertEqual(ThunderBridge.liveness(rows: nil, dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.torrent",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .unknown)
+        // 找到过文件夹、文件夹还在：里面可能有东西，不判没建成
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.torrent",
+                                              folderKnown: true, folderExists: true, wroteRecently: false), .unknown)
+        // 正在写文件一定是活的
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.torrent",
+                                              folderKnown: true, folderExists: true, wroteRecently: true), .alive)
+        // 保存目录是共用的「下载」（没有 thunder- 目录）时不瞎猜
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/Users/me/Downloads"], fileName: "片.torrent",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .unknown)
+    }
+
+    func testCancelSurvivesRestart() throws {
+        var job = ThunderJob(id: "thunder-1", title: "test", link: "magnet:test", dir: "/tmp", hash: nil, total: 0, createdAt: Date())
+        job.submitState = .unconfirmed
+        job.neverStarted = true
+        job.goneAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let restored = try JSONDecoder().decode(ThunderJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(restored.submitState, .unconfirmed)
+        XCTAssertEqual(restored.neverStarted, true)
+        XCTAssertEqual(restored.goneAt, job.goneAt)
+    }
+
 }

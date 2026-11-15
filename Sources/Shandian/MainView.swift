@@ -535,7 +535,8 @@ struct TaskRow: View {
                 HStack(spacing: 10) {
                     if case .thunder = item.source {
                         ThunderTag(active: item.isActive, downloaded: item.downloaded,
-                                   createdAt: item.createdAt, located: item.thunderLocated)
+                                   createdAt: item.createdAt, located: item.thunderLocated,
+                                   trouble: item.thunderTrouble)
                     } else { Text(L(item.originLabel ?? item.origin)) }
                     Text(sizeText)
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
@@ -686,6 +687,8 @@ private struct ThunderTag: View {
     let downloaded: Int64
     let createdAt: Date
     var located = true
+    /// 迅雷那条出了状况（被删掉 / 没建成）：标签上照实写，不能再显示成「迅雷下载完成」
+    var trouble: String? = nil
 
     var body: some View {
         HStack(spacing: 4) {
@@ -700,22 +703,25 @@ private struct ThunderTag: View {
     }
 
     private var text: String {
+        if let trouble { return trouble }
         guard active else { return L("迅雷下载完成") }
         if downloaded > 0 { return L("迅雷任务") }
         return L("请在迅雷查看")
     }
     private var symbol: String {
+        if trouble != nil { return "exclamationmark.triangle.fill" }
         guard active else { return "checkmark.circle.fill" }
         if downloaded > 0 { return "bolt.fill" }
         return located ? "clock" : "arrow.up.right.circle"
     }
     /// 只在真的在迅雷里跑起来时用主题琥珀色，其余灰色，避免「在等」看着像「在跑」
     private var color: Color {
+        if trouble != nil { return Theme.failed }
         guard active, downloaded > 0 else { return Theme.sub }
         return Theme.tint
     }
     private var help: String {
-        guard active, downloaded == 0 else { return text }
+        guard trouble == nil, active, downloaded == 0 else { return text }
         return L("尚未读取到可靠进度，请到迅雷中查看任务状态")
     }
 }

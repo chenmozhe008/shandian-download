@@ -37,6 +37,13 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     /// 迅雷里这条任务被删掉的时间。删任务时文件可能一起删、也可能留着，光看文件夹判断不了，
     /// 所以直接读迅雷自己的任务账本（见 `ThunderBridge.liveness`）。有值就说明它不会再下了
     var goneAt: Date? = nil
+    /// 交给迅雷那一次的结果。`unconfirmed` / `needsAccessibility` 说明我们没看到迅雷真的建了任务，
+    /// 隔两分钟账本里还是没有它，就是用户在迅雷的新建任务窗口里点了取消（11-15 用户反馈：取消了还一直显示「请在迅雷查看」）
+    var submitState: SubmitState? = nil
+    /// 迅雷里从来没建成这条任务（用户取消了）。和「被删掉」分开：提示和重试的说法不一样
+    var neverStarted: Bool? = nil
+
+    enum SubmitState: String, Codable { case submitted, unconfirmed, needsAccessibility }
 }
 
 @MainActor
@@ -682,6 +689,9 @@ enum ThunderBridge {
     enum Liveness: Equatable {
         case alive      // 账本里还记着这条（在下 / 暂停 / 排队都算）
         case removed    // 被删了
+        /// 账本能读，但里面没有我们交给迅雷时建的那个 `thunder-<id>` 目录，也对不上文件名：
+        /// 这条任务根本没建成（用户在新任务窗口里点了取消）
+        case neverCreated
         case unknown    // 判断不了：没装迅雷、账本读不到、对不上号
     }
 
@@ -729,6 +739,7 @@ enum ThunderBridge {
     ///   记录混在一起，只要有一条活着就会把已经删掉的那条盖过去
     /// - 命中的行全在回收站里才算删了；一行都认不到时，只有「以前找到过迅雷建的文件夹、现在文件夹也没了」
     ///   才敢断定被删（迅雷删任务默认连文件一起删，11-15 实测三条回收站任务的目录都已不在）
+    /// - 账本读得到、唯独没有我们这个唯一目录，也认不到文件名 → 任务没建成（用户在新任务窗口里点了取消）
     static func liveness(rows: [LedgerRow]?, dirs: Set<String>, fileName: String?, folderKnown: Bool,
                          folderExists: Bool, wroteRecently: Bool) -> Liveness {
         if folderKnown, folderExists, wroteRecently { return .alive }
@@ -739,7 +750,9 @@ enum ThunderBridge {
             matched = rows.filter { $0.fileName == fileName }
         }
         if !matched.isEmpty { return matched.contains { !$0.rubbish } ? .alive : .removed }
-        return folderKnown && !folderExists ? .removed : .unknown
+        if folderKnown { return folderExists ? .unknown : .removed }
+        // 账本记得着别的任务，就是没有我们这一个 thunder-<id>：迅雷里从没建成这条
+        return handoff.isEmpty ? .unknown : .neverCreated
     }
 
     /// 这条任务现在的状态：文件夹和迅雷账本一起看
