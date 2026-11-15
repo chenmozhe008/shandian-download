@@ -8,9 +8,8 @@
 - The last save location is remembered per category (magnet and torrent, video sites, other files), so a new task starts where you last saved. The location menu and Settings › Downloads let you control it.
 - If you delete a task inside Thunder, or cancel it in Thunder's new-task window, the app notices within 25 seconds and shows "Deleted in Thunder" or "Not handed to Thunder" instead of staying on "Check Thunder". Resubmit from the notice, the ↻ button or the context menu, with progress and save location preserved.
 - No more two-line notices: nothing pops up after a successful hand-off, and when you do need to click "Download Now" in Thunder the app shows one short line and scrolls to that task.
-- The "access files in your Downloads folder" prompt no longer repeats: locating Thunder's task folders no longer scans the whole Downloads folder every two seconds; it is a fallback used at most once a minute, and a refused read is not retried for ten minutes. The dialog now explains why it is needed.
-- The gopeed engine and yt-dlp are now signed with the app's own certificate, so the system treats them as part of the app and keeps permissions across updates.
-- Each build now moves the previous version's build artifacts to the Trash automatically.
+- The "access files in your Downloads folder" prompt no longer repeats: the app avoids scanning Downloads, looks there only occasionally when it really has to, and stops asking once you decline. The dialog now explains why it is needed.
+- The download engine and the video parser are signed with the app's own certificate, so the system treats them as part of the app and keeps the permissions you already granted across updates.
 
 ## 0.20.1 · 2026-11-06
 
