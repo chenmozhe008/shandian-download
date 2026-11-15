@@ -2,14 +2,14 @@
 
 ## 0.20.6 · 2026-11-15
 
-- Thunder is now the first suggestion when a download stalls: it connects directly, uses no proxy traffic and no cloud quota. PikPak becomes the fallback.
-- PikPak offline downloads now ask first: before handing a task over, the app explains that fetching it back goes through the system proxy, roughly how much traffic that takes, and offers "Download via cloud (uses proxy traffic)", "Hand to Thunder" and "Keep waiting". It asks once per task, merges several stalled tasks into one question, and the manual path asks the same way the first time, with a "don't ask again" option.
-- Handing a task to Thunder no longer triggers the system permission dialog every time. Accessibility is checked silently; when it is missing, one notice explains it with an "Open System Settings" button, and Settings › General shows the current state with a "Grant access" button.
-- The last save location is remembered per category (magnet and torrent, video sites, other files), so a new task starts where you last saved. The location menu and Settings › Downloads let you control it.
-- If you delete a task inside Thunder, or cancel it in Thunder's new-task window, the app notices within 25 seconds and shows "Deleted in Thunder" or "Not handed to Thunder" instead of staying on "Check Thunder". Resubmit from the notice, the ↻ button or the context menu, with progress and save location preserved.
-- No more two-line notices: nothing pops up after a successful hand-off, and when you do need to click "Download Now" in Thunder the app shows one short line and scrolls to that task.
-- The "access files in your Downloads folder" prompt no longer repeats: the app avoids scanning Downloads, looks there only occasionally when it really has to, and stops asking once you decline. The dialog now explains why it is needed.
-- The download engine and the video parser are signed with the app's own certificate, so the system treats them as part of the app and keeps the permissions you already granted across updates.
+- When a download makes no progress for a while, Thunder is now the first option: it connects directly, uses no proxy traffic and no daily cloud quota, and PikPak becomes the fallback.
+- PikPak hand-offs disclose the cost first: before handing a task over, the app states that fetching it back goes through the system proxy, roughly how much traffic that takes, and offers "Download via cloud (uses proxy traffic)", "Hand to Thunder" and "Keep waiting". Each task is asked once; several stalled tasks are merged into a single prompt. Manual hand-offs ask the same way once, with an option to stop asking.
+- Handing a task to Thunder no longer raises repeated system permission requests: Accessibility is checked silently, and when it is missing a single notice explains it with an "Open System Settings" button. Settings › General shows the current state with a direct way to grant it.
+- New tasks start in the last used save location: magnet and torrent files, video sites and other files are tracked separately. The location menu offers "Remember this location", and Settings › Downloads turns this on or off.
+- Task state stays in sync with Thunder: tasks deleted in Thunder, or cancelled in its new-task window, are detected automatically and marked "Deleted in Thunder" or "Not handed to Thunder" instead of staying on "Check Thunder". Hand them over again from the notice, the row button or the context menu, keeping progress and save location.
+- Fewer notices: none appear after a successful hand-off, and when confirmation in Thunder is required the app shows a single line and reveals that task.
+- Fewer requests for the Downloads folder: it is read only when needed, and declining access is not asked again. The system dialog now explains why access is needed.
+- The download engine and the video parser are signed with the app's own certificate, so the system treats them as part of the app and permissions already granted carry over to new versions.
 
 ## 0.20.1 · 2026-11-06
 
