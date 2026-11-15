@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.20.5"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.20.6"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -74,6 +74,14 @@ ZH_LPROJ="$APP/Contents/Resources/zh-Hans.lproj"; mkdir -p "$ZH_LPROJ"
 sed -E 's/^("([^"\\]|\\.)*")[[:space:]]*=.*;$/\1 = \1;/' "$ROOT/Resources/en.lproj/Localizable.strings" > "$ZH_LPROJ/Localizable.strings"
 plutil -lint -s "$ZH_LPROJ/Localizable.strings"
 printf '"CFBundleName" = "%s";\n"CFBundleDisplayName" = "%s";\n' "$APP_NAME" "$APP_NAME" > "$ZH_LPROJ/InfoPlist.strings"
+# 隐私授权框里的说明（中文）；不写这段系统只给一句干巴巴的「想访问下载文件夹中的文件」
+cat >> "$ZH_LPROJ/InfoPlist.strings" <<'STRINGS'
+"NSDownloadsFolderUsageDescription" = "闪电要读「下载」里的任务文件夹，才能显示交给迅雷的那些任务的进度。";
+"NSDesktopFolderUsageDescription" = "只有当你把下载保存到「桌面」时，闪电才会用到这个文件夹。";
+"NSDocumentsFolderUsageDescription" = "只有当你把下载保存到「文稿」时，闪电才会用到这个文件夹。";
+"NSRemovableVolumesUsageDescription" = "只有当你把下载目录设在移动硬盘上时，闪电才会读到它。";
+"NSNetworkVolumesUsageDescription" = "只有当你把下载目录设在网络磁盘上时，闪电才会读到它。";
+STRINGS
 # 强调色（琥珀）：侧栏选中行、按钮等系统控件跟随它；SwiftPM 不编译 xcassets，这里用 actool 单独编
 # actool 必须写一份 partial Info.plist，但下面的 Info.plist 是手写的、用不到它：写到系统临时目录，用完删掉
 ASSETS_PLIST="$(mktemp -t shandian-assets).plist"
@@ -99,6 +107,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>Shandian reads tasks inside your Downloads folder to show the progress of downloads it handed to Thunder.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>Shandian only touches the Desktop for downloads you choose to save there.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Shandian only touches Documents for downloads you choose to save there.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>Shandian only touches external drives that hold download folders you picked.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>Shandian only touches network volumes that hold download folders you picked.</string>
   <key>CFBundleURLTypes</key><array>
     <dict><key>CFBundleURLName</key><string>磁力链接</string><key>CFBundleURLSchemes</key><array><string>magnet</string></array></dict>
     <dict><key>CFBundleURLName</key><string>ed2k 链接</string><key>CFBundleURLSchemes</key><array><string>ed2k</string></array></dict>
@@ -115,6 +128,10 @@ PLIST
 # 给 AI 工具用的 MCP 服务，先于 App 本身签名
 cp "$(dirname "$BIN")/ShandianMCP" "$APP/Contents/MacOS/shandian-mcp"
 codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID.mcp" --timestamp=none "$APP/Contents/MacOS/shandian-mcp"
+# 内核和 yt-dlp 原来是 ad-hoc 签名（identifier 是 a.out）：系统隐私授权把这种程序当「没身份的陌生人」，
+# 换成同一张证书签，身份跟着 App 走，读「下载」的授权才可能沿用（11-15 老弹授权框的诱因之一）
+codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID.engine" --timestamp=none "$APP/Contents/Resources/gopeed"
+codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID.ytdlp" --timestamp=none "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
 codesign --force --sign "$CODESIGN_IDENTITY" --identifier "$BUNDLE_ID" --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 echo "打包完成：$APP"

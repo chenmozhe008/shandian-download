@@ -1,2 +1,7 @@
 "CFBundleName" = "Shandian";
 "CFBundleDisplayName" = "Shandian";
+"NSDownloadsFolderUsageDescription" = "Shandian reads tasks inside your Downloads folder to show the progress of downloads it handed to Thunder.";
+"NSDesktopFolderUsageDescription" = "Shandian only touches the Desktop for downloads you choose to save there.";
+"NSDocumentsFolderUsageDescription" = "Shandian only touches Documents for downloads you choose to save there.";
+"NSRemovableVolumesUsageDescription" = "Shandian only touches external drives that hold download folders you picked.";
+"NSNetworkVolumesUsageDescription" = "Shandian only touches network volumes that hold download folders you picked.";

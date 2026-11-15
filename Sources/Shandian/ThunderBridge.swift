@@ -450,6 +450,7 @@ enum ThunderBridge {
     /// 立刻再找一次任务文件夹（不受 2 秒节流限制）：收回前用，别因为刚好被节流就判成「不知道」
     static func locateNow(_ job: ThunderJob) -> String? {
         lookupAt[job.id] = nil
+        downloadsScanAt = .distantPast
         return locate(job)
     }
 
@@ -497,20 +498,47 @@ enum ThunderBridge {
     /// 保存位置可能有上百个文件夹，一秒一次的轮询里别反复扫，2 秒才试一次
     private static var lookupAt: [String: Date] = [:]
 
+    /// 读不了的目录（系统隐私授权没给）临时别再碰：不然每次轮询都撞一次权限，弹窗会反复冒出来。
+    /// 11-15 用户反馈「老是弹访问下载文件夹」，根因就是无条件的整目录扫描撞上没授权的「下载」
+    private static var blockedRoots: [String: Date] = [:]
+    /// 「下载」整个目录是兜底线索，全局 60 秒最多翻一次
+    private static var downloadsScanAt: Date = .distantPast
+    private static let downloadsScanGap: TimeInterval = 60
+    private static let blockedGap: TimeInterval = 600
+
+    private static func isBlocked(_ root: URL) -> Bool {
+        guard let until = blockedRoots[root.standardizedFileURL.path] else { return false }
+        if Date() < until { return true }
+        blockedRoots[root.standardizedFileURL.path] = nil
+        return false
+    }
+
+    private static func noteReadFailure(_ root: URL, _ error: Error) {
+        let code = (error as NSError).code
+        // NSFileReadNoPermissionError / EPERM / EACCES：没授权，退避十分钟再说
+        if code == NSFileReadNoPermissionError || code == Int(EPERM) || code == Int(EACCES) {
+            blockedRoots[root.standardizedFileURL.path] = Date().addingTimeInterval(blockedGap)
+        }
+    }
+
     private static func locate(_ job: ThunderJob) -> String? {
         if let t = lookupAt[job.id], Date().timeIntervalSince(t) < 2 { return nil }
         lookupAt[job.id] = Date()
-        let roots = searchRoots(job)
-        if let h = job.hash?.uppercased() {
-            for root in roots {
-                if let hit = match(root, hash: h, depth: root.path == Folders.downloads.path ? 2 : 1) { return hit }
-            }
-            for root in roots {
-                if let hit = matchTorrent(root, hash: h, depth: root.path == Folders.downloads.path ? 2 : 1) { return hit }
-            }
-        }
         // 没有确定的任务标识时不猜目录，避免多个任务并行时关联错文件。
-        return nil
+        guard let h = job.hash?.uppercased() else { return nil }
+        // 先只看我们确实把任务放过去的地方（交接目录、迅雷记的上次保存位置）
+        for root in searchRoots(job) where !isBlocked(root) {
+            if let hit = match(root, hash: h, depth: 1) { return hit }
+            if let hit = matchTorrent(root, hash: h, depth: 1) { return hit }
+        }
+        // 兜底才翻整个「下载」（迅雷可能自己换了位置）。这一步要过系统隐私授权，
+        // 所以只在别处都找不到时做，而且全局一分钟最多一次
+        guard Date().timeIntervalSince(downloadsScanAt) >= downloadsScanGap else { return nil }
+        let fallback = Folders.downloads
+        guard !isBlocked(fallback) else { return nil }
+        downloadsScanAt = Date()
+        if let hit = match(fallback, hash: h, depth: 2) { return hit }
+        return matchTorrent(fallback, hash: h, depth: 2)
     }
 
     /// 重复转交时回到原保存目录，避免不断叠加“迅雷下载/任务编号”。
@@ -559,7 +587,8 @@ enum ThunderBridge {
         }
     }
 
-    /// 迅雷可能把任务放在哪：我们指定的位置、迅雷记的上次保存位置、系统「下载」
+    /// 迅雷可能把任务放在哪：我们指定的位置、迅雷记的上次保存位置（系统「下载」是 locate 里的兜底，
+    /// 那里要过隐私授权，不能每次都扫）
     private static func searchRoots(_ job: ThunderJob) -> [URL] {
         var list = [URL(fileURLWithPath: job.dir)]
         // 迅雷可能复用之前交接的同一任务，数据仍留在较早的交接目录中。
@@ -570,9 +599,18 @@ enum ThunderBridge {
             list.append(ancestor)
         }
         if let p = savedPath, !p.isEmpty { list.append(URL(fileURLWithPath: p)) }
-        list.append(Folders.downloads)
         var seen = Set<String>()
         return list.filter { seen.insert($0.path).inserted }
+    }
+
+    /// 列目录；被系统隐私授权挡住时记一笔，别在轮询里反复撞
+    private static func children(of root: URL, keys: [URLResourceKey]?) -> [URL] {
+        do {
+            return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: keys)
+        } catch {
+            noteReadFailure(root, error)
+            return []
+        }
     }
 
     /// 根目录自己 + 下几层子文件夹里找 `.<hash>.js`（「下载」里迅雷常再套一层「迅雷下载」）
@@ -580,13 +618,13 @@ enum ThunderBridge {
         let fm = FileManager.default
         if fm.fileExists(atPath: root.appendingPathComponent(".\(hash).js").path) { return root.path }
         guard depth > 0 else { return nil }
-        let kids = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        let kids = children(of: root, keys: [.isDirectoryKey])
         for k in kids {
             if fm.fileExists(atPath: k.appendingPathComponent(".\(hash).js").path) { return k.path }
         }
         guard depth > 1 else { return nil }
         for k in kids {
-            let grand = (try? fm.contentsOfDirectory(at: k, includingPropertiesForKeys: nil)) ?? []
+            let grand = children(of: k, keys: nil)
             if let hit = grand.first(where: { fm.fileExists(atPath: $0.appendingPathComponent(".\(hash).js").path) }) {
                 return hit.path
             }
@@ -597,7 +635,7 @@ enum ThunderBridge {
     private static func matchTorrent(_ root: URL, hash: String, depth: Int) -> String? {
         if torrentTotal(in: root, hash: hash) != nil { return root.path }
         guard depth > 0 else { return nil }
-        let kids = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let kids = children(of: root, keys: nil)
         for k in kids {
             if let hit = matchTorrent(k, hash: hash, depth: depth - 1) { return hit }
         }

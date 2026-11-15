@@ -1561,8 +1561,11 @@ final class DownloadStore: ObservableObject {
         for k in thunderJobs.indices {
             let job = thunderJobs[k]
             guard !job.done, job.goneAt == nil else { continue }
-            // 刚交出去的两分钟先不判：任务可能刚建、账本还没写进来，别误报
-            guard Date().timeIntervalSince(job.createdAt) > 120 else { continue }
+            // 刚交出去先不判，别拿「账本还没写进来」当「没建成」。
+            // 需要用户在迅雷点「立即下载」的那种（辅助功能没生效）：任务要么他点了（账本立刻就有），
+            // 要么他取消了 —— 25 秒够用，不用干等两分钟，否则「请在迅雷查看」会一直挂着（11-15 用户反馈）
+            let grace: TimeInterval = job.submitState == .needsAccessibility ? 25 : 120
+            guard Date().timeIntervalSince(job.createdAt) > grace else { continue }
             if let at = thunderCheckedAt[job.id], Date().timeIntervalSince(at) < 20 { continue }
             thunderCheckedAt[job.id] = Date()
             let jobID = job.id
