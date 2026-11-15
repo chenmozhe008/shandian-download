@@ -1,5 +1,17 @@
 # What's New
 
+## 0.20.6 · 2026-11-15
+
+- Thunder is now the first suggestion when a download stalls: it connects directly, uses no proxy traffic and no cloud quota. PikPak becomes the fallback.
+- PikPak offline downloads now ask first: before handing a task over, the app explains that fetching it back goes through the system proxy, roughly how much traffic that takes, and offers "Download via cloud (uses proxy traffic)", "Hand to Thunder" and "Keep waiting". It asks once per task, merges several stalled tasks into one question, and the manual path asks the same way the first time, with a "don't ask again" option.
+- Handing a task to Thunder no longer triggers the system permission dialog every time. Accessibility is checked silently; when it is missing, one notice explains it with an "Open System Settings" button, and Settings › General shows the current state with a "Grant access" button.
+- The last save location is remembered per category (magnet and torrent, video sites, other files), so a new task starts where you last saved. The location menu and Settings › Downloads let you control it.
+- If you delete a task inside Thunder, or cancel it in Thunder's new-task window, the app notices within 25 seconds and shows "Deleted in Thunder" or "Not handed to Thunder" instead of staying on "Check Thunder". Resubmit from the notice, the ↻ button or the context menu, with progress and save location preserved.
+- No more two-line notices: nothing pops up after a successful hand-off, and when you do need to click "Download Now" in Thunder the app shows one short line and scrolls to that task.
+- The "access files in your Downloads folder" prompt no longer repeats: locating Thunder's task folders no longer scans the whole Downloads folder every two seconds; it is a fallback used at most once a minute, and a refused read is not retried for ten minutes. The dialog now explains why it is needed.
+- The gopeed engine and yt-dlp are now signed with the app's own certificate, so the system treats them as part of the app and keeps permissions across updates.
+- Each build now moves the previous version's build artifacts to the Trash automatically.
+
 ## 0.20.1 · 2026-11-06
 
 - Clicking a torrent file on a web page now hands it straight to Shandian Download Manager.
