@@ -1,5 +1,6 @@
 import AppKit
 @preconcurrency import ApplicationServices
+import SQLite3
 
 /// 迅雷通道：国内热门资源常在迅雷用户之间传，BT 网络里几乎没人（10-28 实测同一部片 BT 0、迅雷不开会员 3–5 MB/s）。
 /// 慢了就交给本机装着的迅雷下。不碰迅雷的协议和会员：只像用户一样用迅雷打开链接、点「立即下载」（辅助功能），
@@ -33,6 +34,9 @@ struct ThunderJob: Codable, Identifiable, Equatable {
     var completionVerified: Bool? = nil
     var legacyCompletionPreserved: Bool? = nil
     var homeMoveTried: Bool? = nil   // 下完后试过移回保存目录（失败也不反复试）
+    /// 迅雷里这条任务被删掉的时间。删任务时文件可能一起删、也可能留着，光看文件夹判断不了，
+    /// 所以直接读迅雷自己的任务账本（见 `ThunderBridge.liveness`）。有值就说明它不会再下了
+    var goneAt: Date? = nil
 }
 
 @MainActor
@@ -661,6 +665,91 @@ enum ThunderBridge {
         let files = (fm.enumerator(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: [.fileSizeKey])?.allObjects as? [URL] ?? [])
             .filter { !$0.lastPathComponent.hasPrefix(".") }
         return files.max { ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) < ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
+
+    // MARK: 迅雷里这条任务还在不在
+
+    /// 迅雷把任务清单存在 `~/Library/Application Support/Thunder/etm3/etm_map.db`（SQLite，带 json1）。
+    /// 删掉的任务先留在迅雷的回收站里（`in_rubbish=1`），清空回收站后整行消失。
+    /// 11-15 用户反馈：在迅雷里把下载关掉 / 删掉后，闪电这边还一直显示「迅雷下载中 · 0 B/s」，
+    /// 因为文件夹和 `.js` 都看不出「任务已经没了」。读它自己的账本最准，读不到就退回看文件夹
+    struct LedgerRow: Equatable {
+        var rubbish: Bool
+        var dir: String        // create_param.download_path：交给迅雷时我们建的 thunder-<id> 目录就在这儿
+        var fileName: String   // create_param.file_name：种子里的文件名，和 job.name 对得上
+    }
+
+    enum Liveness: Equatable {
+        case alive      // 账本里还记着这条（在下 / 暂停 / 排队都算）
+        case removed    // 被删了
+        case unknown    // 判断不了：没装迅雷、账本读不到、对不上号
+    }
+
+    private static var ledgerPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Thunder/etm3/etm_map.db").path
+    }
+
+    private static var ledgerCache: (rows: [LedgerRow]?, at: Date)?
+
+    /// 读迅雷的任务账本。老版本没有这个库、库被写锁住、表结构变了，都返回 nil（当作判断不了）
+    static func ledger() -> [LedgerRow]? {
+        if let c = ledgerCache, Date().timeIntervalSince(c.at) < 3 { return c.rows }
+        let rows = readLedger()
+        ledgerCache = (rows, Date())
+        return rows
+    }
+
+    private static func readLedger() -> [LedgerRow]? {
+        guard FileManager.default.fileExists(atPath: ledgerPath) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(ledgerPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 300)
+        var st: OpaquePointer?
+        guard sqlite3_prepare_v2(db, """
+            select in_rubbish,
+                   coalesce(json_extract(create_param,'$.download_path'),''),
+                   coalesce(json_extract(create_param,'$.file_name'),'')
+            from etm_task
+            """, -1, &st, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(st) }
+        var rows: [LedgerRow] = []
+        while sqlite3_step(st) == SQLITE_ROW {
+            func text(_ i: Int32) -> String { sqlite3_column_text(st, i).map { String(cString: $0) } ?? "" }
+            rows.append(LedgerRow(rubbish: sqlite3_column_int(st, 0) != 0, dir: text(1), fileName: text(2)))
+        }
+        return rows.isEmpty ? nil : rows
+    }
+
+    /// 纯判断（方便写测试）：
+    /// - 正在写文件就一定是活的，先信事实，别被同名旧任务的回收站记录骗了
+    /// - 先按我们交给迅雷时建的中转目录认（`迅雷下载/thunder-<id>`，每条任务唯一）；
+    ///   认不到再按文件名认。**不能拿用户的保存目录（比如「下载」「movies」）当键**——那里几十条任务的
+    ///   记录混在一起，只要有一条活着就会把已经删掉的那条盖过去
+    /// - 命中的行全在回收站里才算删了；一行都认不到时，只有「以前找到过迅雷建的文件夹、现在文件夹也没了」
+    ///   才敢断定被删（迅雷删任务默认连文件一起删，11-15 实测三条回收站任务的目录都已不在）
+    static func liveness(rows: [LedgerRow]?, dirs: Set<String>, fileName: String?, folderKnown: Bool,
+                         folderExists: Bool, wroteRecently: Bool) -> Liveness {
+        if folderKnown, folderExists, wroteRecently { return .alive }
+        guard let rows else { return folderKnown && !folderExists ? .removed : .unknown }
+        let handoff = dirs.filter { $0.contains("/thunder-") }
+        var matched = handoff.isEmpty ? [] : rows.filter { handoff.contains($0.dir) }
+        if matched.isEmpty, let fileName, !fileName.isEmpty {
+            matched = rows.filter { $0.fileName == fileName }
+        }
+        if !matched.isEmpty { return matched.contains { !$0.rubbish } ? .alive : .removed }
+        return folderKnown && !folderExists ? .removed : .unknown
+    }
+
+    /// 这条任务现在的状态：文件夹和迅雷账本一起看
+    static func liveness(of job: ThunderJob) -> Liveness {
+        let dirs = Set([job.dir, job.folder].compactMap { $0.map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
+        let known = job.folder != nil
+        let exists = job.folder.map { FileManager.default.fileExists(atPath: $0) } ?? false
+        let wrote = job.lastChangeAt.map { Date().timeIntervalSince($0) < 120 } ?? false
+        return liveness(rows: ledger(), dirs: dirs, fileName: job.name, folderKnown: known,
+                        folderExists: exists, wroteRecently: wrote)
     }
 }
 

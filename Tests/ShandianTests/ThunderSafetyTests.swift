@@ -191,4 +191,69 @@ import CryptoKit
         XCTAssertEqual(alert.buttons.first?.keyEquivalent, "\r")
     }
 
+    // MARK: 迅雷里那条任务被删掉要能看出来（11-15 用户反馈：删了任务，闪电还显示「迅雷下载中 0 B/s」）
+
+    private func row(_ rubbish: Bool, dir: String = "", name: String = "") -> ThunderBridge.LedgerRow {
+        ThunderBridge.LedgerRow(rubbish: rubbish, dir: dir, fileName: name)
+    }
+
+    func testDeletedThunderTaskIsDetectedFromRubbishRow() {
+        let dirs: Set<String> = ["/m/迅雷下载/thunder-1"]
+        // 账本里那条进了回收站 → 已删（用户删任务时文件可能还留着，光看文件夹看不出来）
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(true, dir: "/m/迅雷下载/thunder-1")], dirs: dirs,
+                                              fileName: "片.mkv", folderKnown: true, folderExists: true, wroteRecently: false), .removed)
+        // 还在下载列表里 → 活着
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(false, dir: "/m/迅雷下载/thunder-1")], dirs: dirs,
+                                              fileName: "片.mkv", folderKnown: true, folderExists: true, wroteRecently: false), .alive)
+        // 同名的旧任务在回收站、新任务还活着：不能报删
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(true, dir: "/m/迅雷下载/thunder-1"), row(false, dir: "/m/迅雷下载/thunder-1")],
+                                              dirs: dirs, fileName: "片.mkv", folderKnown: true, folderExists: true, wroteRecently: false), .alive)
+    }
+
+    func testUnknownWhenLedgerUnreadableUnlessFolderIsGone() {
+        let dirs: Set<String> = ["/m/迅雷下载/thunder-1"]
+        XCTAssertEqual(ThunderBridge.liveness(rows: nil, dirs: dirs, fileName: "片.mkv",
+                                              folderKnown: true, folderExists: true, wroteRecently: false), .unknown)
+        // 老版本迅雷没有这个库：文件夹被连任务一起删了也能看出来
+        XCTAssertEqual(ThunderBridge.liveness(rows: nil, dirs: dirs, fileName: "片.mkv",
+                                              folderKnown: true, folderExists: false, wroteRecently: false), .removed)
+        // 从没找到过文件夹时不能当成删了
+        XCTAssertEqual(ThunderBridge.liveness(rows: nil, dirs: dirs, fileName: "片.mkv",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .unknown)
+    }
+
+    func testWritesRightNowOutweighStaleRubbishRowWithSameName() {
+        // 刚交出去的同名资源：账本里还有一条老的回收站记录，但文件正在写，不能误判成删了
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(true, dir: "/m/迅雷下载/thunder-0", name: "片.mkv")],
+                                              dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.mkv",
+                                              folderKnown: true, folderExists: true, wroteRecently: true), .alive)
+    }
+
+    func testFallsBackToFileNameWhenHandoffFolderLooksDifferent() {
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(true, dir: "/别的目录/片", name: "片.mkv")],
+                                              dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.mkv",
+                                              folderKnown: true, folderExists: true, wroteRecently: false), .removed)
+        // 文件名也对不上就不下结论
+        XCTAssertEqual(ThunderBridge.liveness(rows: [row(true, dir: "/别的目录/另一部", name: "另一部.mkv")],
+                                              dirs: ["/m/迅雷下载/thunder-1"], fileName: "片.mkv",
+                                              folderKnown: true, folderExists: true, wroteRecently: false), .unknown)
+    }
+
+    func testCoarseSaveFolderDoesNotHideDeletedTask() {
+        // 保存目录是共用的「下载」时不能拿它当键：那里几十条记录混着，一条活着就会盖住已删的那条
+        let rows = [row(false, dir: "/Users/me/Downloads", name: "别的片.mkv"),
+                    row(true, dir: "/Users/me/Downloads", name: "片.mkv")]
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/Users/me/Downloads"], fileName: "片.mkv",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .removed)
+        XCTAssertEqual(ThunderBridge.liveness(rows: rows, dirs: ["/Users/me/Downloads"], fileName: "别的片.mkv",
+                                              folderKnown: false, folderExists: false, wroteRecently: false), .alive)
+    }
+
+    func testRemovedFlagSurvivesRestart() throws {
+        var job = ThunderJob(id: "thunder-1", title: "test", link: "magnet:test", dir: "/tmp", hash: nil, total: 0, createdAt: Date())
+        job.goneAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let restored = try JSONDecoder().decode(ThunderJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(restored.goneAt, job.goneAt)
+    }
+
 }

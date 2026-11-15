@@ -845,6 +845,7 @@ final class DownloadStore: ObservableObject {
             ThunderBridge.save(thunderJobs)
         }
         moveFinishedThunderJobsHome()
+        checkThunderTasksAlive()
         followThunderLaunchState()
         applyDownloadSchedule()
         rebuild()
@@ -875,6 +876,9 @@ final class DownloadStore: ObservableObject {
 
     private var reclaimedEngineIDs = Set<String>()
 
+    /// 上次查「迅雷里这条任务还在不在」的时间（每条 20 秒查一次，别每秒都读迅雷的账本）
+    private var thunderCheckedAt: [String: Date] = [:]
+
     private func rebuild() {
         let videos = videoJobs.map(Self.item(from:))
         let pulling = Set(cloudJobs.flatMap { $0.pulling ?? [] })
@@ -896,7 +900,7 @@ final class DownloadStore: ObservableObject {
         let thunderRunning = ThunderBridge.isRunning
         for k in all.indices {
             if case .thunder = all[k].source, thunderHeldAt != nil, all[k].isActive { all[k].status = .paused; all[k].speed = 0 }
-            if case .thunder = all[k].source, all[k].isActive, !thunderRunning { all[k].thunderClosed = true; all[k].speed = 0 }
+            if case .thunder = all[k].source, all[k].isActive, !thunderRunning, !Self.isFailedStatus(all[k].status) { all[k].thunderClosed = true; all[k].speed = 0 }
             if case .thunder = all[k].source { all[k].avgSpeed = all[k].speed }
             else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
@@ -1542,6 +1546,90 @@ final class DownloadStore: ObservableObject {
         }
     }
 
+    /// 迅雷里的任务被用户删掉 / 清空回收站之后，这条任务其实已经不会再有进度了。
+    /// 只读迅雷的任务账本（见 `ThunderBridge.liveness`），每条 20 秒查一次，不碰迅雷界面、不弹授权框
+    private func checkThunderTasksAlive() {
+        guard !thunderJobs.isEmpty else { return }
+        if thunderCheckedAt.count > 200 {
+            thunderCheckedAt = thunderCheckedAt.filter { id, _ in thunderJobs.contains { $0.id == id } }
+        }
+        var changed = false
+        for k in thunderJobs.indices {
+            let job = thunderJobs[k]
+            guard !job.done, job.goneAt == nil else { continue }
+            // 刚交出去的两分钟先不判：任务可能刚建、账本还没写进来，别误报
+            guard Date().timeIntervalSince(job.createdAt) > 120 else { continue }
+            if let at = thunderCheckedAt[job.id], Date().timeIntervalSince(at) < 20 { continue }
+            thunderCheckedAt[job.id] = Date()
+            guard ThunderBridge.liveness(of: job) == .removed else { continue }
+            thunderJobs[k].goneAt = Date()
+            thunderJobs[k].speed = 0
+            changed = true
+            let jobID = job.id
+            let text = String(localized: "「\(job.title)」在迅雷里已被删除，没有在下载")
+            noticeAction = NoticeAction(title: L("重新交给迅雷"), forText: text) { [weak self] in self?.resubmitToThunder(jobID) }
+            notice = text
+        }
+        if changed { ThunderBridge.save(thunderJobs) }
+    }
+
+    private static func isFailedStatus(_ status: Item.Status) -> Bool {
+        if case .failed = status { return true }
+        return false
+    }
+
+    /// 迅雷里的任务被删掉后重新交一次。这条本来就在迅雷手里，没有引擎任务可退，直接重新提交到同一个目录
+    func resubmitToThunder(_ jobID: String) {
+        guard let i = thunderJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        let job = thunderJobs[i]
+        guard !job.link.isEmpty else { notice = L("这条任务没留下链接，交不了"); return }
+        guard ThunderBridge.installed else { promptInstallThunder(); return }
+        let safeDir = ThunderBridge.handoffBase(URL(fileURLWithPath: job.dir)).appendingPathComponent("迅雷下载", isDirectory: true)
+            .appendingPathComponent(job.id, isDirectory: true).path
+        do {
+            try FileManager.default.createDirectory(atPath: safeDir, withIntermediateDirectories: true)
+        } catch {
+            notice = String(localized: "无法交给迅雷：\(error.localizedDescription)")
+            return
+        }
+        thunderCheckedAt[job.id] = nil
+        thunderJobs[i].dir = safeDir
+        thunderJobs[i].folder = nil
+        thunderJobs[i].goneAt = nil
+        thunderJobs[i].done = false
+        thunderJobs[i].checked = nil
+        thunderJobs[i].dlSize = nil
+        thunderJobs[i].written = nil
+        thunderJobs[i].bytes = 0
+        thunderJobs[i].speed = 0
+        thunderJobs[i].measuredAt = nil
+        thunderJobs[i].lastChangeAt = nil
+        thunderJobs[i].createdAt = Date()
+        ThunderBridge.save(thunderJobs)
+        selectedID = job.id
+        rebuild()
+        ThunderBridge.open(link: job.link, saveDir: safeDir) { [weak self] result in
+            self?.handleThunderSubmit(result, jobID: job.id, title: job.title, manual: true)
+        }
+    }
+
+    /// 交给迅雷之后的结果处理（首次转交和「被删了重新交」共用）
+    private func handleThunderSubmit(_ result: ThunderBridge.SubmitResult, jobID: String, title: String, manual: Bool) {
+        switch result {
+        case .submitted:
+            notice = String(localized: "已交给迅雷下载「\(title)」，原任务已保留")
+            startThunderIfPaused(jobID)
+        case .unconfirmed:
+            notice = L("请在迅雷中确认下载；原任务和文件仍保留")
+        case .needsAccessibility:
+            let text = L("请到迅雷点「立即下载」。允许「辅助功能」后闪电能自动完成这一步；若开关已打开仍提示，先把列表里的闪电全能下载用「−」移除，再在设置的「通用」里点「去允许」")
+            noticeAction = NoticeAction(title: "打开系统设置", forText: text, run: { ThunderBridge.openAccessibilitySettings() })
+            notice = text
+        case .alreadyExists:
+            thunderRefusedDuplicate(jobID: jobID, safeDir: thunderJobs.first { $0.id == jobID }?.dir ?? "", title: title, manual: manual)
+        }
+    }
+
     /// 云盘取回的文件移回保存目录。一个文件直接放保存目录；片子带字幕时放进以片名命名的文件夹。
     /// 字幕的内核任务随后移除（文件留着），已完成里只留片子一条。返回移动后的路径和大小，移动失败的保持原路径
     @discardableResult
@@ -1893,18 +1981,7 @@ final class DownloadStore: ObservableObject {
                 return
             }
             ThunderBridge.open(link: item.link, saveDir: safeDir) { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .submitted:
-                    self.notice = String(localized: "已交给迅雷下载「\(item.title)」，原任务已保留")
-                    self.startThunderIfPaused(jobID)
-                case .unconfirmed: self.notice = L("请在迅雷中确认下载；原任务和文件仍保留")
-                case .needsAccessibility:
-                    let text = L("请到迅雷点「立即下载」。允许「辅助功能」后闪电能自动完成这一步；若开关已打开仍提示，先把列表里的闪电全能下载用「−」移除，再在设置的「通用」里点「去允许」")
-                    self.noticeAction = NoticeAction(title: "打开系统设置", forText: text, run: { ThunderBridge.openAccessibilitySettings() })
-                    self.notice = text
-                case .alreadyExists: self.thunderRefusedDuplicate(jobID: jobID, safeDir: safeDir, title: item.title, manual: promptIfMissing)
-                }
+                self?.handleThunderSubmit(result, jobID: jobID, title: item.title, manual: promptIfMissing)
             }
         }
     }
@@ -2277,7 +2354,10 @@ final class DownloadStore: ObservableObject {
                 Task { @MainActor in self?.updateVideo(updated) }
             }
         case .engine: togglePause(item)
-        case .pending, .thunder, .cloud: break
+        case .thunder(let id):
+            // 迅雷里任务被删了：重新交一次，别让这条一直停在「失败」
+            resubmitToThunder(id)
+        case .pending, .cloud: break
         }
     }
 
@@ -2354,7 +2434,8 @@ final class DownloadStore: ObservableObject {
         if total > 0 { got = min(got, total) }
         if j.done { got = total }
         var it = Item(id: j.id, source: .thunder(j.id), title: j.title, rawTitle: j.title, origin: "迅雷", category: .movie,
-                      status: j.done ? .done : .running, downloaded: got, total: total,
+                      status: j.done ? .done : (j.goneAt != nil ? .failed(L("迅雷里的任务已被删除")) : .running),
+                      downloaded: got, total: total,
                       speed: j.done ? 0 : j.speed, file: ThunderBridge.mainFile(j), createdAt: j.createdAt, thumbRemote: nil,
                       linkKey: linkKey(j.link), location: folder)
         it.link = j.link
