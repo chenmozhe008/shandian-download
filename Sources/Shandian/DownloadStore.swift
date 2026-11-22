@@ -109,6 +109,7 @@ final class DownloadStore: ObservableObject {
     @Published var flashID: String?
 
     let thumbs = Thumbnails()
+    var openMainWindow: (() -> Void)?
     private var watcher: ClipboardWatcher?
     private var gateway: Gateway?
     private let host = EngineHost()
@@ -1120,7 +1121,113 @@ final class DownloadStore: ObservableObject {
     /// shandian://add 带 confirm=0：不弹确认框，按默认规则直接下
     func startWithoutAsking(_ links: [String]) {
         if deferUntilEngineReady(links, then: { [weak self] in self?.startWithoutAsking(links) }) { return }
-        links.forEach { start(link: $0) }
+        links.forEach { start(link: $0, showWindow: false) }
+    }
+
+    struct ZipEntry: Sendable {
+        let url: URL
+        let name: String
+        let headers: [String: String]
+    }
+
+    /// 浏览器扩展多选打包下载：带真实 Referer / Cookie 拉取各文件并用 ditto 打成单个压缩包，只产生一个 .zip
+    func startZipBundle(archiveName: String, entries: [ZipEntry]) {
+        guard !entries.isEmpty else { return }
+        let safeArchiveBase = archiveName
+            .replacingOccurrences(of: #"[\\/:*?"<>|]"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = safeArchiveBase.isEmpty ? L("音频合集") : (safeArchiveBase.lowercased().hasSuffix(".zip") ? String(safeArchiveBase.dropLast(4)) : safeArchiveBase)
+        let dir = Prefs.lastDir(.http) ?? Folders.directory(for: .http)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        presentActiveWindow()
+        notice = String(localized: "正在打包下载「\(baseName).zip」（0/\(entries.count)）…")
+        Task {
+            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("shandian-zip-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: tempDir) }
+            do {
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            } catch {
+                notice = String(localized: "打包失败：\(error.localizedDescription)")
+                return
+            }
+            var usedNames = Set<String>()
+            var savedCount = 0
+            for (idx, entry) in entries.enumerated() {
+                var req = URLRequest(url: entry.url, timeoutInterval: 60)
+                for (k, v) in entry.headers { req.setValue(v, forHTTPHeaderField: k) }
+                do {
+                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) { continue }
+                    guard !data.isEmpty else { continue }
+                    let cleaned = entry.name
+                        .replacingOccurrences(of: #"[\\/:*?"<>|]"#, with: " ", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let fallback = entry.url.lastPathComponent.isEmpty ? "file-\(idx + 1)" : entry.url.lastPathComponent
+                    let rawName = cleaned.isEmpty ? fallback : cleaned
+                    let ext = (rawName as NSString).pathExtension
+                    let stem = ext.isEmpty ? rawName : (rawName as NSString).deletingPathExtension
+                    var finalName = rawName
+                    var seq = 2
+                    while usedNames.contains(finalName.lowercased()) {
+                        finalName = ext.isEmpty ? "\(stem) (\(seq))" : "\(stem) (\(seq)).\(ext)"
+                        seq += 1
+                    }
+                    usedNames.insert(finalName.lowercased())
+                    try data.write(to: tempDir.appendingPathComponent(finalName), options: .atomic)
+                    savedCount += 1
+                    notice = String(localized: "正在打包下载「\(baseName).zip」（\(savedCount)/\(entries.count)）…")
+                } catch {
+                    continue
+                }
+            }
+            guard savedCount > 0 else {
+                notice = L("打包失败：未能获取选中的文件")
+                return
+            }
+            var destURL = dir.appendingPathComponent("\(baseName).zip")
+            var dupSeq = 2
+            while FileManager.default.fileExists(atPath: destURL.path) {
+                destURL = dir.appendingPathComponent("\(baseName) (\(dupSeq)).zip")
+                dupSeq += 1
+            }
+            let srcPath = tempDir.path
+            let dstPath = destURL.path
+            let zipOK = await Task.detached(priority: .userInitiated) { () -> Bool in
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+                proc.arguments = ["-c", "-k", "--sequesterRsrc", srcPath, dstPath]
+                do {
+                    try proc.run()
+                    proc.waitUntilExit()
+                    return proc.terminationStatus == 0
+                } catch {
+                    return false
+                }
+            }.value
+            guard zipOK, FileManager.default.fileExists(atPath: destURL.path) else {
+                notice = L("打包失败：无法生成压缩包")
+                return
+            }
+            Self.markQuarantine(destURL, source: entries.first?.url.absoluteString ?? "")
+            if Prefs.doneSound { Self.playDoneSound() }
+            let doneText = String(localized: "已打包完成：\(destURL.lastPathComponent)")
+            noticeAction = NoticeAction(title: "在访达中显示", forText: doneText, run: {
+                NSWorkspace.shared.activateFileViewerSelecting([destURL])
+            })
+            notice = doneText
+        }
+    }
+
+    /// 触发下载后把主窗口切到「下载中」并弹到最前，让用户立刻看到正在下载的画面
+    func presentActiveWindow() {
+        section = .active
+        NSApp.activate(ignoringOtherApps: true)
+        if let win = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || ($0.level == .normal && $0.frame.width >= 900) }) {
+            if win.isMiniaturized { win.deminiaturize(nil) }
+            win.makeKeyAndOrderFront(nil)
+        } else {
+            openMainWindow?()
+        }
     }
 
     /// 所有入口都走这里：去掉已在列表里的，再弹新建任务确认框（关掉询问时直接下载）
@@ -1180,11 +1287,11 @@ final class DownloadStore: ObservableObject {
     /// carry 用于从迅雷收回：任务解析、校验期间先把迅雷已经下好的量显示出来，别让用户以为从头再来；
     /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
     /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil) {
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil, showWindow: Bool = true) {
         guard let detectedKind = LinkKind.of(link) else { return }
         let kind: LinkKind = forceVideo ? .videoSite : detectedKind
         let key = Self.linkKey(link)
-        if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); return }
+        if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); if showWindow { presentActiveWindow() }; return }
         let dir = chosen ?? Prefs.lastDir(kind) ?? Folders.directory(for: kind)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -1193,6 +1300,7 @@ final class DownloadStore: ObservableObject {
             videoJobs.append(job); saveVideos(); rebuild()
             selectedID = job.id.uuidString
             notice = String(localized: "已添加：\(L(VideoSiteRunner.siteName(link))) 视频")
+            if showWindow { presentActiveWindow() }
             videoRunner.start(job, into: dir, headers: headers) { [weak self] updated in
                 Task { @MainActor in self?.updateVideo(updated) }
             }
@@ -1216,6 +1324,7 @@ final class DownloadStore: ObservableObject {
             savePending()
             selectedID = placeholder.id
             notice = String(localized: "已添加：\(placeholder.title)")
+            if showWindow { presentActiveWindow() }
             Task {
                 // 网页上的种子链接：内核会把它当普通文件下载，先取回种子再按本地种子交给内核
                 var url = url
@@ -1255,11 +1364,13 @@ final class DownloadStore: ObservableObject {
                 await poll()
             }
         } else {
+            let shownName = name ?? Self.displayName(link)
+            if showWindow { presentActiveWindow() }
             Task {
                 do {
                     let id = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
                     selectedID = id
-                    notice = String(localized: "已添加：\(name ?? Self.displayName(link))")
+                    notice = String(localized: "已添加：\(shownName)")
                 } catch { notice = String(localized: "添加失败：\(error.localizedDescription)") }
                 await poll()
             }

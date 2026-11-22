@@ -16,6 +16,7 @@ var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) =
   batch.onclick = async () => {
     document.body.classList.add('batch-mode');
     batch.disabled = true; batch.textContent = T('正在抓取…'); results.replaceChildren(); actions.hidden = true;
+    const mediaActions = document.getElementById('media-batch-actions'); if (mediaActions) mediaActions.hidden = true;
     try {
       const response = await chrome.runtime.sendMessage({ type: 'scanLinks', tabId: tab.id });
       if (response?.error) throw new Error('无法读取网页');

@@ -639,3 +639,9 @@
 "点种子文件，直接交给软件" = "Click a torrent file to send it to the app";
 "视频上出现「下载」按钮" = "Download button over videos";
 "0.2.0 起" = "From 0.2.0";
+"音频合集" = "Audio Bundle";
+"正在打包下载「%@.zip」（%lld/%lld）…" = "Packing “%@.zip” (%lld/%lld)…";
+"打包失败：%@" = "Couldn't create ZIP: %@";
+"打包失败：未能获取选中的文件" = "Couldn't create ZIP: none of the selected files could be downloaded";
+"打包失败：无法生成压缩包" = "Couldn't create the ZIP archive";
+"已打包完成：%@" = "ZIP ready: %@";

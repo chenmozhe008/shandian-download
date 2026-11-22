@@ -81,6 +81,21 @@ function pickPlayingVideo() {
     const src = srcs.find((x) => x && /^https?:/.test(x));
     if (src) return { src, title: document.title };
   }
+  const audios = [...document.querySelectorAll("audio")].sort((a, b) => ((b.paused ? 0 : 2) + (b.currentTime > 0 ? 1 : 0)) - ((a.paused ? 0 : 2) + (a.currentTime > 0 ? 1 : 0)));
+  for (const a of audios) {
+    const sources = [...a.querySelectorAll("source")];
+    const srcs = [a.currentSrc, a.src, ...sources.map((s) => s.src)];
+    const src = srcs.find((x) => x && /^https?:/.test(x));
+    if (src) {
+      let ext = "";
+      try { ext = new URL(src).pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || ""; } catch (_) {}
+      if (!["mp3", "m4a", "wav", "aac", "ogg", "flac", "webm"].includes(ext)) {
+        const mime = (sources.find((s) => s.src === src)?.type || "").split(";")[0].trim().toLowerCase();
+        ext = { "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg", "audio/flac": "flac", "audio/webm": "webm" }[mime] || "mp3";
+      }
+      return { src, title: document.title, ext };
+    }
+  }
   // 小红书：播放器是 blob，但页面数据里有视频直链（不用再等下载工具读 19 秒网页）
   try {
     const st = window.__INITIAL_STATE__;
@@ -109,33 +124,63 @@ async function pickInTab(tabId) {
 // 用户主动扫描时只读取页面上已有的媒体标签，不监听浏览历史或后台网络。
 function collectPageMedia() {
   const result = [];
-  const add = (src, kind, label, mime = "") => {
+  const mimeToExt = {
+    "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+    "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/ogg": "ogg",
+    "audio/flac": "flac", "audio/webm": "webm", "video/mp4": "mp4", "video/webm": "webm",
+    "video/quicktime": "mov", "application/vnd.apple.mpegurl": "m3u8", "application/x-mpegurl": "m3u8",
+    "application/dash+xml": "mpd"
+  };
+  const add = (src, kind, label, mime = "", fromElement = false) => {
+    if (!src) return;
     try {
       const url = new URL(src, location.href);
       if (!["http:", "https:"].includes(url.protocol)) return;
-      const ext = url.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || "";
-      const allowed = kind === "字幕" ? ["vtt", "srt", "ass", "ssa", "ttml"] : ["mp4", "m4v", "webm", "mov", "mp3", "m4a", "aac", "ogg", "wav", "m3u8", "mpd"];
-      // 无扩展名的二进制内容无法可靠识别，不猜测格式。
-      if (!allowed.includes(ext)) return;
-      result.push({ url: url.href, referrer: location.href, kind, label, ext, title: document.title });
+      if (/\.(m4s|ts|cmfv|cmfa)(?:$)/i.test(url.pathname)) return;
+      let ext = url.pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase() || "";
+      const allowed = kind === "字幕" ? ["vtt", "srt", "ass", "ssa", "ttml"] : ["mp4", "m4v", "webm", "mov", "mp3", "m4a", "aac", "ogg", "wav", "flac", "m3u8", "mpd"];
+      if (!allowed.includes(ext)) {
+        const cleanMime = (mime || "").split(";")[0].trim().toLowerCase();
+        if (mimeToExt[cleanMime]) ext = mimeToExt[cleanMime];
+        else if (fromElement && kind === "音频") ext = "mp3";
+        else if (fromElement && kind === "视频") ext = "mp4";
+        else return;
+      }
+      let filename = "";
+      try {
+        const base = decodeURIComponent(url.pathname.split("/").pop() || "");
+        const candidate = base.replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80);
+        const readable = candidate.length >= 2 && (
+          /[\u4e00-\u9fff]/.test(candidate) ||
+          (!/^(play|stream|audio|video|media|index|master|playlist|get|download|file|preview|sound|music|track)$/i.test(candidate) &&
+           !/^[0-9a-f_-]{6,}$/i.test(candidate) &&
+           !(/^[a-z0-9_-]+$/i.test(candidate) && /\d{4,}/.test(candidate)) &&
+           !/^[a-z0-9]{16,}$/i.test(candidate) &&
+           /[a-z]{3,}/i.test(candidate))
+        );
+        if (readable) filename = candidate;
+      } catch (_) {}
+      result.push({ url: url.href, referrer: location.href, kind, label, ext, title: document.title, ...(filename ? { filename } : {}) });
     } catch (_) {}
   };
   for (const element of document.querySelectorAll("video, audio")) {
     const kind = element.tagName.toLowerCase() === "audio" ? "音频" : "视频";
     const size = element.videoHeight ? `${element.videoWidth}×${element.videoHeight}` : "";
     const label = [kind, size].filter(Boolean).join(" · ");
-    add(element.currentSrc, kind, label);
-    add(element.src, kind, label);
-    for (const source of element.querySelectorAll("source")) add(source.src, kind, label, source.type);
+    add(element.currentSrc, kind, label, "", true);
+    add(element.src, kind, label, "", true);
+    for (const source of element.querySelectorAll("source")) add(source.src, kind, label, source.type, true);
     for (const track of element.querySelectorAll("track[src]")) {
       add(track.src, "字幕", ["字幕", track.label || track.srclang || ""].filter(Boolean).join(" · "));
     }
   }
-  // 播放器可能通过 JS 动态加载清单并把 blob: 给 video；只在手动扫描时读取本页已有资源。
+  // 播放器可能通过 JS 动态加载清单、new Audio() 或 fetch 拉取音视频；只在手动扫描时读取本页已有资源。
   for (const entry of performance.getEntriesByType("resource")) {
     try {
       const url = new URL(entry.name, location.href);
       if (/\.(m3u8|mpd)$/i.test(url.pathname)) add(url.href, "视频", "视频 · 分片流");
+      else if (/\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(url.pathname)) add(url.href, "音频", "音频 · 页面资源");
+      else if (/\.(mp4|m4v|webm|mov)$/i.test(url.pathname)) add(url.href, "视频", "视频 · 页面资源");
     } catch (_) {}
   }
   return result.slice(0, 100);
@@ -230,12 +275,35 @@ async function downloadVideoInTab(tab, requireVideo = false) {
     await reloadAndWait(tab.id, 4000);
     picked = await pickInTab(tab.id);
   }
+  if (!picked && typeof capturedForTab === "function") {
+    const captured = await capturedForTab(tab.id).catch(() => ({ active: false, items: [] }));
+    const latest = captured.items[captured.items.length - 1];
+    if (latest) {
+      if (latest.stream || ["m3u8", "mpd"].includes(latest.ext)) {
+        return sendToApp(latest.url, latest.referrer || tab.url, undefined, tab.id, "stream");
+      }
+      const stem = (latest.trackTitle || latest.filename || latest.title || tab.title || latest.kind || "媒体").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) || "媒体";
+      return sendToApp(latest.url, latest.referrer || tab.url, stem + "." + latest.ext, tab.id);
+    }
+  }
+  if (!picked && requireVideo) {
+    const scanned = (await scanPageMedia(tab.id)).filter((x) => x.kind === "音频" || x.kind === "视频");
+    const latest = scanned[scanned.length - 1];
+    if (latest) {
+      if (["m3u8", "mpd"].includes(latest.ext)) {
+        return sendToApp(latest.url, latest.referrer || tab.url, undefined, tab.id, "stream");
+      }
+      const stem = (latest.trackTitle || latest.filename || latest.title || tab.title || latest.kind || "媒体").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) || "媒体";
+      return sendToApp(latest.url, latest.referrer || tab.url, stem + "." + latest.ext, tab.id);
+    }
+  }
   if (picked && /\.(m3u8|mpd)$/i.test(new URL(picked.src).pathname)) {
     return sendToApp(picked.src, tab.url, undefined, tab.id);
   }
   if (picked) {
+    const ext = picked.ext || "mp4";
     const title = (picked.title || "视频").replace(/\s*[-|]\s*(抖音|小红书|哔哩哔哩.*|YouTube)\s*$/, "").trim().slice(0, 80) || "视频";
-    return sendToApp(picked.src, tab.url, title.replace(/[\\/:*?"<>|]/g, " ") + ".mp4", tab.id);
+    return sendToApp(picked.src, tab.url, title.replace(/[\\/:*?"<>|]/g, " ") + "." + ext, tab.id);
   }
   if (requireVideo) return null; // 普通网页找不到视频时，不把网页误当文件下载
   return sendToApp(videoPageURL(tab.url), tab.url, undefined, tab.id);   // 已支持的网站交给 yt-dlp
@@ -431,17 +499,106 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     }).catch(() => reply({ items: [] }));
     return true;
   }
+  if (msg.type === "previewAudio") {
+    if (!msg.tabId || !/^https?:/i.test(msg.url || "")) { reply({ ok: false }); return; }
+    chrome.scripting.executeScript({
+      target: { tabId: msg.tabId },
+      args: [msg.url],
+      func: async (url) => {
+        try {
+          if (window.__shandianPreview) {
+            try { window.__shandianPreview.pause(); window.__shandianPreview.src = ""; } catch (_) {}
+          }
+          const audio = new Audio(url);
+          window.__shandianPreview = audio;
+          await audio.play();
+          return { ok: true, duration: Number.isFinite(audio.duration) ? audio.duration : 0 };
+        } catch (_) {
+          return { ok: false };
+        }
+      }
+    }).then((frames) => reply(frames?.[0]?.result || { ok: false })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "previewAudioState") {
+    if (!msg.tabId) { reply({ playing: false, ended: true, currentTime: 0, duration: 0 }); return; }
+    chrome.scripting.executeScript({
+      target: { tabId: msg.tabId },
+      func: () => {
+        const a = window.__shandianPreview;
+        if (!a) return { playing: false, ended: true, currentTime: 0, duration: 0 };
+        return {
+          playing: !a.paused && !a.ended,
+          ended: !!a.ended,
+          currentTime: Number.isFinite(a.currentTime) ? a.currentTime : 0,
+          duration: Number.isFinite(a.duration) ? a.duration : 0
+        };
+      }
+    }).then((frames) => reply(frames?.[0]?.result || { playing: false, ended: true, currentTime: 0, duration: 0 })).catch(() => reply({ playing: false, ended: true, currentTime: 0, duration: 0 }));
+    return true;
+  }
+  if (msg.type === "seekPreviewAudio") {
+    if (!msg.tabId || typeof msg.time !== "number") { reply({ ok: false }); return; }
+    chrome.scripting.executeScript({
+      target: { tabId: msg.tabId },
+      args: [msg.time],
+      func: (t) => {
+        const a = window.__shandianPreview;
+        if (!a || !Number.isFinite(a.duration) || a.duration <= 0) return false;
+        a.currentTime = Math.max(0, Math.min(a.duration, t));
+        return true;
+      }
+    }).then((frames) => reply({ ok: !!frames?.[0]?.result })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "stopPreviewAudio") {
+    if (!msg.tabId) { reply({ ok: true }); return; }
+    chrome.scripting.executeScript({
+      target: { tabId: msg.tabId },
+      func: () => {
+        if (window.__shandianPreview) {
+          try { window.__shandianPreview.pause(); window.__shandianPreview.src = ""; } catch (_) {}
+          window.__shandianPreview = null;
+        }
+      }
+    }).then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.type === "downloadMediaZip") {
+    const rawItems = Array.isArray(msg.items) ? msg.items : [];
+    const valid = rawItems.filter((item) => item && /^https?:/i.test(item.url) && ["视频", "音频", "字幕"].includes(item.kind) && /^[a-z0-9]{2,5}$/.test(item.ext));
+    if (valid.length < 2) { reply({ ok: false }); return; }
+    (async () => {
+      const clean = (text) => (text || "").replace(/[\\/:*?"<>|]/g, " ").trim();
+      const payloadItems = [];
+      for (const item of valid) {
+        const readableName = typeof isReadableFilename === "function" && isReadableFilename(item.filename) ? item.filename : "";
+        const stem = clean(item.trackTitle || readableName || item.title || item.kind).slice(0, 80) || item.kind;
+        const headers = await headersFor(item.url, item.referrer);
+        payloadItems.push({ url: item.url, name: `${stem}.${item.ext}`, headers });
+      }
+      const post = () => fetch("http://127.0.0.1:6800/extension/zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archiveName: msg.archiveName || T("音频合集"), items: payloadItems })
+      }).then((r) => r.ok);
+      try {
+        return { ok: await post() };
+      } catch (_) {
+        if (msg.tabId === undefined || !(await launchApp(msg.tabId))) return { ok: false };
+        return { ok: await post().catch(() => false) };
+      }
+    })().then(reply).catch(() => reply({ ok: false }));
+    return true;
+  }
   if (msg.type === "downloadMedia") {
     const item = msg.item;
     if (!item || !/^https?:/i.test(item.url) || !["视频", "音频", "字幕"].includes(item.kind) || !/^[a-z0-9]{2,5}$/.test(item.ext)) { reply({ ok: false }); return; }
     const clean = text => text.replace(/[\\/:*?"<>|]/g, " ").trim();
-    const stem = clean(item.title || item.kind).slice(0, 70) || item.kind;
-    const label = clean(item.label || item.kind).slice(0, 30);
-    let hash = 2166136261;
-    for (const char of item.url) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    const suffix = " - " + label + " - " + (hash >>> 0).toString(16).padStart(8, "0");
+    const readableName = typeof isReadableFilename === "function" && isReadableFilename(item.filename) ? item.filename : "";
+    const stem = clean(item.trackTitle || readableName || item.title || item.kind).slice(0, 80) || item.kind;
     const stream = item.stream === true || ["m3u8", "mpd"].includes(item.ext);
-    const name = stream ? undefined : stem + suffix + "." + item.ext;
+    const name = stream ? undefined : stem + "." + item.ext;
     sendToApp(item.url, item.referrer, name, msg.tabId, stream ? "stream" : undefined).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
     return true;
   }

@@ -16,8 +16,33 @@
     font-size: 15px; font-weight: 600; cursor: pointer; }
   button.main:disabled { opacity: .6; cursor: default; }
   button.scan { margin-top: 8px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; }
-  .results { max-height: 210px; overflow-y: auto; margin-top: 6px; }
+  button.capture-prominent { border-color: var(--tint); color: var(--tint); font-weight: 600; background: rgba(224, 153, 47, 0.08); }
+  button.capture-active { border-color: #2E9B56; color: #2E9B56; font-weight: 600; background: rgba(46, 155, 86, 0.08); }
+  .stop-confirm { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; padding: 7px 9px; border: 1px solid rgba(217, 72, 59, 0.45); border-radius: 8px; background: rgba(217, 72, 59, 0.08); font-size: 12px; }
+  .stop-confirm[hidden] { display: none; }
+  .stop-confirm .stop-btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .stop-confirm button { padding: 4px 9px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--text); }
+  .stop-confirm button.danger { border: 0; background: #D9483B; color: #fff; font-weight: 600; }
+  .results { max-height: 230px; overflow-y: auto; margin-top: 6px; }
   .result { display: block; width: 100%; text-align: left; margin-top: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: transparent; cursor: pointer; }
+  .media-card { margin-top: 6px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; }
+  .media-row { display: flex; align-items: center; gap: 6px; }
+  .media-row input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; margin: 0; }
+  .media-info { flex: 1; min-width: 0; }
+  .media-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-meta { font-size: 11px; color: var(--sub); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-preview { flex-shrink: 0; width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text); font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .media-preview.playing { border-color: var(--tint); color: var(--tint); background: rgba(224, 153, 47, 0.12); }
+  .wave-player { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--line); }
+  .wave-player[hidden] { display: none; }
+  .wave-bars { position: relative; flex: 1; height: 22px; display: flex; align-items: center; gap: 1.5px; cursor: pointer; }
+  .wave-bar { flex: 1; border-radius: 1.5px; background: var(--line); transition: background-color 0.1s linear; min-height: 3px; }
+  .wave-bar.played { background: var(--tint); }
+  .wave-cursor { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--tint); border-radius: 1px; pointer-events: none; left: 0%; transition: left 0.12s linear; }
+  .wave-time { font-size: 10.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+  .media-dl { flex-shrink: 0; padding: 5px 10px; border: 0; border-radius: 6px; background: var(--tint); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .media-dl:disabled { opacity: .65; cursor: default; }
+  .media-dl.done { background: #2E9B56; opacity: 1; }
   .batch-row { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
   .batch-row span.name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .batch-row small { color: var(--sub); white-space: nowrap; }
@@ -40,11 +65,22 @@
     <button class="scan" id="wechat-toggle" hidden>下载视频号 ›</button>
     <div id="wechat" hidden><input class="wechat-input" id="wechat-link" placeholder="粘贴微信视频号分享链接"><button class="main" id="wechat-download">解析并下载视频号</button><div class="hint">链接将交给已登录的腾讯元宝解析，不读取聊天记录。</div></div>
     <button class="main" id="dl">下载这个视频</button>
-    <button class="scan" id="capture" title="仅在本页侦测媒体类型，5 分钟后自动停止；首次启用需要浏览器授权">开始侦测本页播放资源</button>
-    <div class="hint" id="capture-note">浏览器会为扩展授予网站网络请求访问权限；侦测只处理当前标签页，5 分钟后停止并撤销授权。</div>
-    <button class="scan" id="scan">查找页面中的视频和字幕</button>
+    <button class="scan" id="capture" title="开启后播放音频或视频即可自动捕获，仅作用于当前标签页，5 分钟后自动停止">侦测本页面音视频</button>
+    <div class="stop-confirm" id="stop-confirm" hidden>
+      <span id="stop-confirm-text">停止侦测并清空记录？</span>
+      <span class="stop-btns">
+        <button id="stop-cancel">取消</button>
+        <button class="danger" id="stop-ok">确认清空</button>
+      </span>
+    </div>
+    <div class="hint" id="capture-note">开启后播放音频或视频即可自动捕获，仅作用于当前标签页，5 分钟后自动停止。</div>
+    <button class="scan" id="scan">扫描当前页面</button>
     <button class="scan" id="batch">批量抓取页面下载链接</button>
     <div class="results" id="results"></div>
+    <div class="batch-actions" id="media-batch-actions" hidden>
+      <label><input type="checkbox" id="media-select-all" checked> 全选</label>
+      <button id="media-download-selected">下载所选</button>
+    </div>
     <div class="batch-actions" id="batch-actions" hidden>
       <label><input type="checkbox" id="select-all" checked> 全选</label>
       <button id="download-selected">下载所选</button>
@@ -56,6 +92,7 @@
     <input type="checkbox" id="takeover">
   </label>
   <script src="i18n.js"></script>
+  <script src="zip-pack.js"></script>
   <script src="popup.js"></script>
   <script src="batch-ui.js"></script>
 </body>
