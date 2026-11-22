@@ -4,10 +4,10 @@
 
 # Shandian Download Manager
 
-**Stuck at 0%? It switches to another route and finishes the download.**
+**A fast, all-in-one native macOS download manager.**
 
-A free, open-source, native macOS download manager. When BitTorrent stalls, it hands the task to cloud offline download or a local Thunder client,<br>
-then moves the file back to your folder and cleans up the cloud copy
+Free, open-source, and built with SwiftUI. One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection —<br>
+fast multi-connection downloads, with automatic route switching when BitTorrent stalls
 
 Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels · Web audio & video detection
 
@@ -20,10 +20,6 @@ Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, 
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
-<img src="docs/images/demo-rescue.gif" alt="A stalled task is handed to cloud offline download, then saved locally" width="800">
-
-<sub>Animation is sped up and uses sample data. Real speed depends on the source and your network.</sub>
-
 <!-- screenshot --><img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
 
 </div>
@@ -34,10 +30,11 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 
 ## Highlights
 
-- **Stuck at 0%? Switches routes automatically**: Stalled BitTorrent and magnet tasks are handed over to a local Thunder client or PikPak cloud offline download, then moved back to your original folder with temporary copies cleaned up
+- **All your downloads in one place**: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites managed in a single window, with clipboard detection and automatic browser download takeover
+- **Fast multi-connection engine**: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and domain-aware proxy routing
 - **Capture playing web audio & video**: Turn on “Detect Media on This Page” in the extension, play briefly to capture the full file, preview with an interactive waveform, keep original item names, or pack multiple items into a single `.zip` archive
-- **Native Mac workflow**: One window for torrents, direct links, cloud drives, and video sites; supports play-while-downloading, scheduled hours, per-category save folders, and brings the active download view forward when a task starts
-- **Built-in MCP server for AI tools**: Connect Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients to add downloads and check progress locally
+- **Automatic route switching for stalled torrents**: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back to your folder and clean up temporary copies
+- **Native Mac workflow & AI integration**: Pure SwiftUI with play-while-downloading, scheduled hours, and per-category save folders; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
 
 ## Supported sources
 
