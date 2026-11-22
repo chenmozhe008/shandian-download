@@ -9,7 +9,7 @@
 A free, open-source, native macOS download manager. When BitTorrent stalls, it hands the task to cloud offline download or a local Thunder client,<br>
 then moves the file back to your folder and cleans up the cloud copy
 
-Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
+Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels · Web audio & video detection
 
 [简体中文](README.md) | English
 
@@ -41,6 +41,7 @@ The app is written in SwiftUI. Downloads are handled by a patched build of [Gope
 | YouTube, X, Bilibili, Weibo | Copy the video page URL and press ⌘V |
 | Douban movie trailers | Paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
+| Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or pack multiple items into a ZIP |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
 | Baidu Netdisk and other cloud drives | Obtain a direct link with the [LinkSwift](https://greasyfork.org/scripts/583582-linkswift) userscript (installed separately), then send it to Shandian |
 
@@ -125,6 +126,7 @@ There are two versions, both for Chrome and Edge. Pick one:
 | A Download button over videos on video sites | ✓ | — |
 | Douyin, Xiaohongshu, Xinpianchang and other videos | ✓ | — |
 | WeChat Channels | ✓ | — |
+| Web audio & video detection, preview and ZIP download | ✓ | — |
 | Grab links from a page in bulk | ✓ | — |
 | Links that require sign-in | ✓ | May not work |
 | Browser permissions | All sites, cookies and downloads | Context menu, downloads, local settings and connecting to the app only |

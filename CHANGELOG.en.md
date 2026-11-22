@@ -1,5 +1,14 @@
 # What's New
 
+## 0.21.2 · 2026-11-22
+
+- The browser extension now supports “Detect Media on This Page”: captures common audio and video formats automatically, shows a live badge count on the toolbar icon, and adapts the main action to audio or video.
+- Added inline audio preview with a waveform and progress bar: click to preview in the current tab's context (preserving referrer and sign-in state), with live time display and click-to-seek along the waveform.
+- Automatic media naming: detects the item's title from the active card on the page, skips opaque hash filenames and UI labels, and saves downloads with readable names.
+- Multi-select ZIP download: selecting multiple audio or video items packs them into a single `.zip` archive via the desktop app instead of opening multiple confirmation dialogs; stopping detection with captured items now asks for confirmation with Cancel / Clear.
+- Starting a download brings the main Shandian window to the front on the Active downloads view so progress is immediately visible.
+- The browser extension has been updated to `1.11.32`. Click Reload for it once on the browser's extensions page.
+
 ## 0.20.6 · 2026-11-15
 
 - When a download makes no progress for a while, Thunder is now the first option: it connects directly, uses no proxy traffic and no daily cloud quota, and PikPak becomes the fallback.

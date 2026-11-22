@@ -195,7 +195,7 @@ private struct IntroPage: View {
         ("photo.on.rectangle", L("影片一目了然"), L("自动整理影片名称，显示影片画面或视频封面。")),
         ("checkmark.seal.fill", L("无广告"), L("下载核心为开源项目 Gopeed 和 yt-dlp；部分网站需要登录。")),
     ]
-    private let sources = [L("磁力"), L("种子"), "ed2k", L("HTTP 直链"), L("网盘直链"), "YouTube", "X", L("B 站"), L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号")]
+    private let sources = [L("磁力"), L("种子"), "ed2k", L("HTTP 直链"), L("网盘直链"), "YouTube", "X", L("B 站"), L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号"), L("网页音视频")]
     private let notes: [(String, String)] = [
         ("doc.on.clipboard", L("复制链接后在窗口中按 ⌘V 即可下载，也可拖入链接或种子文件；装好浏览器扩展后，网页上点下载会直接交给闪电全能下载。")),
         ("externaldrive", L("磁力、种子和其他下载默认存到「下载」，可在设置中选择保存位置。")),

@@ -645,3 +645,5 @@
 "打包失败：未能获取选中的文件" = "Couldn't create ZIP: none of the selected files could be downloaded";
 "打包失败：无法生成压缩包" = "Couldn't create the ZIP archive";
 "已打包完成：%@" = "ZIP ready: %@";
+"网页音视频侦测与打包下载" = "Web audio & video detection and ZIP download";
+"网页音视频" = "Web audio & video";
