@@ -13,10 +13,12 @@ Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, 
 
 [简体中文](README.md) | English
 
+[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
+![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <img src="docs/images/demo-rescue.gif" alt="A stalled task is handed to cloud offline download, then saved locally" width="800">
 
@@ -26,11 +28,16 @@ Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, 
 
 </div>
 
-Shandian Download Manager (闪电全能下载) is an open-source download manager for the Mac. It brings magnet links, torrents, ed2k, HTTP/HTTPS files, cloud-drive direct links and video platforms together in a single window. Copy a link and press ⌘V in the window to start; the link type is detected automatically. With the companion browser extension, downloads started on web pages are handed over to Shandian.
+Shandian Download Manager (闪电全能下载) is an open-source download manager for the Mac. It brings magnet links, torrents, ed2k, HTTP/HTTPS files, cloud-drive direct links, video platforms, and web audio/video detection together in a single native window. Copy a link and press ⌘V to start; the link type is detected automatically. With the companion Chrome / Edge extension, browser downloads are taken over automatically and playing web media can be captured, previewed, and downloaded in bulk.
 
-The app is written in SwiftUI. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+The app is written in SwiftUI and supports both Simplified Chinese and English. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
-> **Language note:** the app interface is currently available in Simplified Chinese only.
+## Highlights
+
+- **Stuck at 0%? Switches routes automatically**: Stalled BitTorrent and magnet tasks are handed over to a local Thunder client or PikPak cloud offline download, then moved back to your original folder with temporary copies cleaned up
+- **Capture playing web audio & video**: Turn on “Detect Media on This Page” in the extension, play briefly to capture the full file, preview with an interactive waveform, keep original item names, or pack multiple items into a single `.zip` archive
+- **Native Mac workflow**: One window for torrents, direct links, cloud drives, and video sites; supports play-while-downloading, scheduled hours, per-category save folders, and brings the active download view forward when a task starts
+- **Built-in MCP server for AI tools**: Connect Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients to add downloads and check progress locally
 
 ## Supported sources
 
@@ -144,6 +151,8 @@ Right-click a supported file link and choose **发送到闪电 / Send to Shandia
 3. Drag the `BrowserExtension` folder onto the extensions page
 
 Once installed, the window shows **已连接** (Connected).
+
+**Detect web audio & video**: Open the extension on a media page, click **Detect Media on This Page**, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or pack multiple items into a single `.zip` archive.
 
 ## For AI Tools (MCP)
 

@@ -1,4 +1,4 @@
-<!-- 搜索关键词：Mac 下载工具, macOS 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, mac download manager, magnet downloader, torrent client for mac, ed2k client mac, yt-dlp gui, native macos downloader -->
+<!-- 搜索关键词：Mac 下载工具, macOS 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, 网页音频下载, 网页音视频嗅探, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, MCP 下载, mac download manager, magnet downloader, torrent client for mac, ed2k client mac, audio sniffer, yt-dlp gui, native macos downloader -->
 <div align="center">
 
 <img src="docs/images/icon.png" width="128" alt="闪电全能下载图标">
@@ -14,10 +14,12 @@
 
 简体中文 | [English](README.en.md)
 
+[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
+![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="800">
 
@@ -25,9 +27,16 @@
 
 </div>
 
-闪电全能下载（Shandian Download Manager）是一款面向 Mac 的开源下载管理工具，将磁力链接、种子、ed2k、HTTP 直链、网盘直链以及主流视频平台的下载整合在同一个窗口中管理。复制链接后在窗口中按 ⌘V 即可添加任务，链接类型自动识别；配合浏览器扩展，网页上的下载会直接交由本应用接管。
+闪电全能下载（Shandian Download Manager）是一款面向 Mac 的开源下载管理工具，将磁力链接、种子、ed2k、HTTP 直链、网盘直链、主流视频平台以及网页音视频侦测整合在同一个原生窗口中。复制链接后按 ⌘V 即可添加，链接类型自动识别；搭配 Chrome / Edge 浏览器扩展，网页下载自动接管，播放中的音视频也可一键捕获、试听并打包下载。
 
 应用基于 SwiftUI 原生开发，下载内核为 [Gopeed](https://github.com/GopeedLab/gopeed) 的定制版本，视频平台下载由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
+
+## 核心亮点
+
+- **任务卡在 0%，自动换路下完**：BT / 磁力无速度时自动转交本机迅雷或 PikPak 云盘离线，下载完成后自动归位到原保存目录并清理中转副本
+- **网页音视频即播即抓**：扩展开启「侦测本页面音视频」后播放片刻即可捕获完整文件，支持扩展内波形进度试听、自动提取原始素材名、多选一键打包为单个 `.zip` 压缩包
+- **多渠道统一管理，原生顺手**：磁力、种子、网盘直链与主流视频平台一站式处理；支持边下边播、定时下载、自动记忆各类保存位置，触发下载时自动拉起进度视图
+- **原生接入 AI 工具（MCP）**：内置本机 MCP 服务，支持 Claude Code、Codex、Cursor、ChatGPT 桌面版等直接提交下载与查看进度
 
 ## 支持的下载类型
 
@@ -154,6 +163,8 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 安装完成后，窗口中会显示「已连接」。
 
 **下载视频**：打开视频页，点击浏览器工具栏中的闪电全能下载图标，再点击「下载这个视频」；也可在视频画面上点按右键，选择「用闪电全能下载」。
+
+**侦测网页音视频**：在包含音频或视频的网页点开扩展，点击「侦测本页面音视频」后播放素材，图标会显示已捕获数量角标。重新点开扩展即可按素材原名试听波形进度、单条下载，或勾选多条一键打包为 `.zip` 压缩包下载。
 
 ## 给 AI 工具用（MCP）
 
