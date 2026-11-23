@@ -53,7 +53,7 @@ struct BrowserSetupView: View {
         (L("点种子文件，直接交给软件"), .yes, .note(L("0.2.0 起"))),
         (L("视频上出现「下载」按钮"), .yes, .no),
         (L("抖音、小红书、视频号等视频"), .yes, .no),
-        (L("网页音视频侦测与打包下载"), .yes, .no),
+        (L("网页音视频侦测与批量下载"), .yes, .no),
         (L("需要登录才能下的文件"), .yes, .note(L("可能失败"))),
     ]
     private static let setup: [(String, Cell, Cell)] = [

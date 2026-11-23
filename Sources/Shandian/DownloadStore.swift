@@ -1170,14 +1170,15 @@ final class DownloadStore: ObservableObject {
         alert.messageText = L("检测到百度网盘分享链接")
         alert.informativeText = executable == nil
             ? L("用闪电下载需要先安装百度官方 bdpan 工具并授权百度账号。也可以在百度网盘分享页选择文件下载。")
-            : L("用闪电下载会把本次分享的内容转存到已授权账号，再保存到本机。速度取决于百度网盘提供的通道。")
+            : L("闪电会先转存分享，再下载到本机。本地下载成功后会自动清理本次转存。网盘目录可在「我的应用数据 → bdpan → Shandian」查看或手动清理。")
         var codeField: NSTextField?
         if shares.count == 1, let share = shares.first, executable != nil,
            URLComponents(url: share, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "pwd" && !($0.value ?? "").isEmpty }) != true {
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
             field.placeholderString = L("提取码（如有）")
-            alert.accessoryView = field
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
             codeField = field
+            alert.accessoryView = field
         }
         alert.addButton(withTitle: executable == nil ? L("打开百度网盘分享页") : L("用闪电下载"))
         alert.addButton(withTitle: executable == nil ? L("安装与授权说明") : L("打开百度网盘分享页"))
@@ -1193,7 +1194,8 @@ final class DownloadStore: ObservableObject {
                     parts.queryItems = (parts.queryItems ?? []).filter { $0.name != "pwd" } + [URLQueryItem(name: "pwd", value: value)]
                     target = parts.url ?? share
                 }
-                baiduDownloads.start(share: target, directory: directory, executable: executable)
+                baiduDownloads.start(share: target, directory: directory, executable: executable,
+                                     cleanCloudCopy: true)
             }
             presentActiveWindow()
         } else if response == .alertSecondButtonReturn, executable == nil {
@@ -1220,8 +1222,8 @@ final class DownloadStore: ObservableObject {
             alert.messageText = L("下载飞书文档音视频")
             alert.informativeText = executable == nil
                 ? L("请先安装飞书官方 lark-cli 并授权能访问此文档的飞书账号。")
-                : L("闪电通过已授权的飞书账号读取这篇文档，将有下载权限的原始音视频附件保存为一个 ZIP。")
-            alert.addButton(withTitle: executable == nil ? L("安装与授权说明") : L("打包下载"))
+                : L("闪电通过已授权的飞书账号读取这篇文档，将有下载权限的原始音视频附件保存到同一个文件夹。")
+            alert.addButton(withTitle: executable == nil ? L("安装与授权说明") : L("下载到文件夹"))
             alert.addButton(withTitle: L("打开飞书文档"))
             alert.addButton(withTitle: L("取消"))
             NSApp.activate(ignoringOtherApps: true)
@@ -1236,21 +1238,23 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    private func downloadFeishuMedia(_ document: URL, executable: URL) {
-        readingFeishuDocuments.insert(document)
+    @discardableResult
+    func downloadFeishuMedia(_ document: URL, executable: URL, selectedIDs: Set<String>? = nil) -> Bool {
+        guard readingFeishuDocuments.insert(document).inserted else { return false }
         notice = L("正在读取飞书文档音视频…")
         presentActiveWindow()
         Task {
             defer { readingFeishuDocuments.remove(document) }
             do {
                 let bundle = try await Task.detached(priority: .userInitiated) {
-                    try FeishuMedia.prepare(document, executable: executable)
+                    try FeishuMedia.prepare(document, executable: executable, selectedIDs: selectedIDs)
                 }.value
                 startZipBundle(archiveName: bundle.name, entries: bundle.entries)
             } catch {
                 notice = (error as? FeishuMedia.Failure)?.localizedDescription ?? FeishuMedia.Failure.cli.localizedDescription
             }
         }
+        return true
     }
 
     /// 触发下载后把主窗口切到「下载中」并弹到最前，让用户立刻看到正在下载的画面

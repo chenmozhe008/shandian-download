@@ -519,6 +519,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     }).catch(() => reply({ items: [] }));
     return true;
   }
+  if (msg.type === "scanFeishuMedia" || msg.type === "downloadFeishuMedia") {
+    chrome.tabs.get(msg.tabId).then(tab => {
+      const url = new URL(tab.url);
+      if (url.protocol !== "https:" || !(url.hostname === "feishu.cn" || url.hostname.endsWith(".feishu.cn")) ||
+          !/^\/(wiki|docx)\/[a-z0-9]+\/?$/i.test(url.pathname)) return { ok: false };
+      if (msg.type === "downloadFeishuMedia") {
+        return extensionBatchRequest("feishu-media/download", { url: url.href, ids: msg.ids });
+      }
+      return extensionBatchRequest("feishu-media", { url: url.href });
+    }).then(reply).catch(() => reply({ ok: false }));
+    return true;
+  }
   if (msg.type === "previewAudio") {
     if (!msg.tabId || !/^https?:/i.test(msg.url || "")) { reply({ ok: false }); return; }
     chrome.scripting.executeScript({

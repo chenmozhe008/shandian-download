@@ -12,6 +12,7 @@ final class BaiduDownloads {
         var file: URL?
         var bytes: Int64 = 0
         var failure: Failure?
+        var cleanCloudCopy: Bool?
     }
 
     private enum Failure: String, Codable {
@@ -152,10 +153,12 @@ final class BaiduDownloads {
     }
 
     static func arguments(share: URL, local: URL, id: UUID) -> [String] {
-        ["download", share.absoluteString, local.path + "/", "-t", "Shandian/\(id.uuidString)", "--no-check-update", "--json"]
+        ["download", share.absoluteString, local.path + "/", "-t", transferPath(id), "--no-check-update", "--json"]
     }
 
-    func start(share: URL, directory: URL, executable: URL) {
+    private nonisolated static func transferPath(_ id: UUID) -> String { "Shandian/\(id.uuidString)" }
+
+    func start(share: URL, directory: URL, executable: URL, cleanCloudCopy: Bool = false) {
         var identity = URLComponents(url: share, resolvingAgainstBaseURL: false)
         identity?.scheme = "https"
         identity?.host = "pan.baidu.com"
@@ -163,16 +166,18 @@ final class BaiduDownloads {
         let identityQuery = identity?.queryItems?.filter { ["surl", "uk", "shareid"].contains($0.name) } ?? []
         identity?.queryItems = identityQuery.isEmpty ? nil : identityQuery
         let key = "baidu-share-" + SHA256.hash(data: Data((identity?.string ?? share.absoluteString).utf8)).description
-        if let previous = records.first(where: { $0.key == key && $0.file == nil }) {
+        if let index = records.firstIndex(where: { $0.key == key && $0.file == nil }) {
+            let previous = records[index]
             guard processes[previous.id] == nil else {
                 onNotice?(L("这条百度网盘分享正在下载"))
                 return
             }
             shares[previous.id] = share
-            run(previous, share: share, executable: executable)
+            records[index].cleanCloudCopy = cleanCloudCopy
+            run(records[index], share: share, executable: executable)
             return
         }
-        let record = Record(key: key, directory: directory)
+        let record = Record(key: key, directory: directory, cleanCloudCopy: cleanCloudCopy)
         records.append(record)
         shares[record.id] = share
         run(record, share: share, executable: executable)
@@ -212,7 +217,8 @@ final class BaiduDownloads {
         let staging = stage(record)
         let process = Process()
         process.executableURL = executable
-        process.arguments = Self.arguments(share: share, local: staging, id: record.id)
+        let transferID = UUID()
+        process.arguments = Self.arguments(share: share, local: staging, id: transferID)
         process.standardInput = FileHandle.nullDevice
         let output = Pipe()
         process.standardOutput = output
@@ -230,7 +236,7 @@ final class BaiduDownloads {
                 let response = Self.readOutput(from: output.fileHandleForReading, process: process)
                     .flatMap { try? JSONDecoder().decode(CLIResponse.self, from: $0) }
                 let failure = response == nil ? Failure.downloadFailed : response?.failure
-                await self?.finish(record, failure: failure)
+                await self?.finish(record, failure: failure, transferID: transferID, executable: executable)
             }
             fetchListing(for: record.id, share: share, executable: executable)
         } catch {
@@ -283,20 +289,27 @@ final class BaiduDownloads {
         return data
     }
 
-    private func finish(_ record: Record, failure: Failure?) {
+    private func finish(_ record: Record, failure: Failure?, transferID: UUID, executable: URL) {
         processes.removeValue(forKey: record.id)
         progress.removeValue(forKey: record.id)
+        let expectedBytes = listings[record.id]?.totalBytes
         clearListing(record.id)
         let staging = stage(record)
         guard let index = records.firstIndex(where: { $0.id == record.id }) else {
             try? FileManager.default.removeItem(at: staging)
             return
         }
-        if failure == nil, let output = try? Self.commit(staging: staging, to: record.directory) {
+        if failure == nil, let output = try? Self.commit(staging: staging, to: record.directory, expectedBytes: expectedBytes) {
             records[index].file = output.file
             records[index].bytes = output.bytes
             records[index].failure = nil
             shares.removeValue(forKey: record.id)
+            if record.cleanCloudCopy == true {
+                Task.detached { [weak self] in
+                    guard !Self.cleanTransfer(transferID, executable: executable) else { return }
+                    await self?.reportCleanupFailure(transferID)
+                }
+            }
         } else {
             let reason = failure ?? .downloadFailed
             records[index].failure = reason
@@ -306,7 +319,29 @@ final class BaiduDownloads {
         publish()
     }
 
-    nonisolated static func commit(staging: URL, to directory: URL) throws -> (file: URL, bytes: Int64) {
+    private func reportCleanupFailure(_ id: UUID) {
+        onNotice?(String(format: L("网盘转存目录可在「我的应用数据 → bdpan → %@」手动清理。"), Self.transferPath(id)))
+    }
+
+    private nonisolated static func cleanTransfer(_ id: UUID, executable: URL) -> Bool {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = executable
+        process.arguments = ["rm", transferPath(id), "--force", "--json", "--no-check-update"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() }
+        catch { return false }
+        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeout)
+        defer { timeout.cancel() }
+        guard let data = readOutput(from: output.fileHandleForReading, process: process),
+              let result = try? JSONDecoder().decode(CLIResponse.self, from: data) else { return false }
+        return result.code == 0
+    }
+
+    nonisolated static func commit(staging: URL, to directory: URL, expectedBytes: Int64? = nil) throws -> (file: URL, bytes: Int64) {
         let fm = FileManager.default
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]
         let children = try fm.contentsOfDirectory(at: staging, includingPropertiesForKeys: Array(keys))
@@ -321,7 +356,9 @@ final class BaiduDownloads {
                 bytes += Int64(metadata.fileSize ?? 0)
             }
         }
-        guard count > 0, !children.isEmpty else { throw CocoaError(.fileReadNoSuchFile) }
+        guard count > 0, !children.isEmpty, expectedBytes.map({ $0 == bytes }) ?? true else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
         let single = children.count == 1
         let source = single ? children[0] : staging
         let name = single ? source.lastPathComponent : L("百度网盘分享文件")

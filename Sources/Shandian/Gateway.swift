@@ -178,6 +178,32 @@ final class Gateway: @unchecked Sendable {
         }
         guard r.method == "POST", let obj = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, json(["ok": false])) }
         if let origin = r.headers["origin"], Self.storeOrigins.contains(origin), !Self.validStorePayload(obj) { return (400, json(["ok": false])) }
+        if r.path == "/extension/feishu-media" || r.path == "/extension/feishu-media/download" {
+            guard let raw = obj["url"] as? String, raw.utf8.count <= 8192,
+                  let url = FeishuMedia.documentURL(raw) else { return (400, json(["ok": false])) }
+            guard let executable = FeishuMedia.executable else { return (200, json(["ok": false, "setup": true])) }
+            if r.path == "/extension/feishu-media/download" {
+                guard let ids = obj["ids"] as? [String], !ids.isEmpty, ids.count <= 10_000,
+                      ids.allSatisfy({ $0.utf8.count == 64 && $0.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) } })
+                else { return (400, json(["ok": false])) }
+                let selected = Set(ids)
+                guard selected.count == ids.count else { return (400, json(["ok": false])) }
+                let accepted = await MainActor.run {
+                    store?.downloadFeishuMedia(url, executable: executable, selectedIDs: selected)
+                }
+                return (200, json(["ok": accepted == true, "busy": accepted == false]))
+            }
+            let document = await Task.detached {
+                try? FeishuMedia.list(url, executable: executable)
+            }.value
+            guard let document else { return (200, json(["ok": false])) }
+            let items = document.files.map { file -> [String: Any] in
+                var item: [String: Any] = ["id": file.selectionID, "name": file.name]
+                if let size = file.size { item["size"] = size }
+                return item
+            }
+            return (200, json(["ok": true, "title": document.title, "items": items]))
+        }
         if r.path == "/extension/wechat" {
             guard let share = obj["share"] as? String, share.utf8.count <= 8192, LinkKind.isWeChatChannelShare(share),
                   let playable = obj["playable"] as? String, playable.utf8.count <= 16384,

@@ -9,7 +9,9 @@
 Free, open-source, and built with SwiftUI. One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection —<br>
 fast multi-connection downloads, with automatic route switching when BitTorrent stalls
 
-Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
+Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
+
+[Apple Silicon download](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [Intel download](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 [简体中文](README.md) | English
 
@@ -24,7 +26,7 @@ Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu docu
 
 </div>
 
-Shandian Download Manager (闪电全能下载) is an open-source Mac app for magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms. Copy a link and press ⌘V to add it. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and save downloadable audio and video from documents in one ZIP.
+Shandian Download Manager (闪电全能下载) is an open-source Mac app for magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms. Copy a link and press ⌘V to add it. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and download original audio and video attachments from Feishu and Qingque Docs. Save one file directly or group multiple originals in one folder.
 
 The app is written in SwiftUI and supports both Simplified Chinese and English. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
@@ -32,8 +34,9 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 
 - <strong>All your downloads in one place</strong>: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites managed in a single window, with clipboard detection and automatic browser download takeover
 - <strong>Fast multi-connection engine</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and domain-aware proxy routing
-- <strong>Bulk web downloads and ZIP packaging</strong>. Add selected file links from the current page in one action. Scan, detect and preview web media, then pack selected downloadable files into one ZIP and follow its progress in the app
-- <strong>Baidu Netdisk share downloads</strong>. Paste a share URL and access code. After initial authorization, save files locally with Shandian without installing the Baidu Netdisk desktop client
+- <strong>Bulk document media downloads</strong>. Scan Feishu and Qingque Docs for original attachments, choose what to download, and keep original filenames. Two or more selected attachments save together in one folder
+- <strong>Web links and media detection</strong>. Add downloadable links in bulk or capture audio and video as it plays, with previews and selective downloads
+- <strong>Baidu Netdisk share downloads</strong>. Paste a share URL and access code. After initial authorization, save files locally with Shandian without installing the Baidu Netdisk desktop client. Shandian cleans up the temporary cloud transfer after it verifies the local download
 - <strong>Automatic route switching for stalled torrents</strong>: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back to your folder and clean up temporary copies
 - <strong>Native Mac workflow & AI integration</strong>: Pure SwiftUI with play-while-downloading, scheduled hours, and per-category save folders; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
 
@@ -46,18 +49,17 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 | YouTube, X, Bilibili, Weibo | Copy the video page URL and press ⌘V |
 | Douban movie trailers | Paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
-| Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or pack multiple items into a ZIP |
-| Direct file links, including accessible MP4, MP3 and ZIP links in Feishu Docs | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
+| Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or save multiple files to one folder |
+| Direct file links, including MP4, MP3 and ZIP | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
 | Baidu Netdisk shares | Paste a share link and an access code if needed. Choose “Download with Shandian” after setting up the [official bdpan tool](https://github.com/baidu-netdisk/bdpan-storage), or open the share page |
-| Feishu document audio and video | Paste the document link into Shandian or choose Pack Feishu Document Media in the full extension. Requires Feishu's official lark-cli and authorization |
-| Tencent Docs | The full extension scans for accessible file links and detects playable media exposed by the page. Results depend on the document and account permissions |
+| Feishu document audio and video | Open the full extension on the document to choose attachments, or paste the document link into Shandian to download all attachments. Requires Feishu’s official lark-cli and authorization |
+| Qingque Docs audio and video | Choose Scan Current Page in the full extension and select accessible original attachments |
 | Cloud storage direct links | Obtain a direct link with [LinkSwift](https://github.com/hmjz100/LinkSwift) and send it to Shandian |
-| Document audio and video | Scan the current page in the full extension, then download files individually or select multiple files for one ZIP. See Document audio and video downloads below |
 
 Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
 
-For Baidu Netdisk shares, bdpan saves a copy in your authorized account's app data folder before downloading it. Follow Baidu's setup and authorization instructions the first time. Shandian shows bytes transferred, speed, and percentage when a total size is available. Cloud storage, permissions and transfer speed depend on Baidu Netdisk. Baidu blocks saving your own shares back to the same account. In that case, open the official share page or find the original in Netdisk.
+For Baidu Netdisk shares, bdpan saves a copy in your authorized account's app data folder before downloading it. Follow Baidu's setup and authorization instructions the first time. Shandian shows bytes transferred, speed, and percentage when a total size is available. After verifying the local files, Shandian removes the temporary cloud copy. The transfer folder is under My Application Data → bdpan → Shandian. Cloud storage, permissions and transfer speed depend on Baidu Netdisk. Baidu blocks saving your own shares back to the same account. In that case, open the official share page or find the original in Netdisk.
 
 ## Performance
 
@@ -138,8 +140,8 @@ There are two versions, both for Chrome and Edge. Pick one:
 | A Download button over videos on video sites | ✓ | — |
 | Douyin, Xiaohongshu, Xinpianchang and other videos | ✓ | — |
 | WeChat Channels | ✓ | — |
-| Web audio & video detection, preview and ZIP download | ✓ | — |
-| Scan document audio and video and download as ZIP | ✓ | — |
+| Web audio & video detection, preview and bulk saving | ✓ | — |
+| Scan and select audio and video in Feishu and Qingque Docs | ✓ | — |
 | Grab links from a page in bulk | ✓ | — |
 | Links that require sign-in | ✓ | May not work |
 | Browser permissions | All sites, cookies and downloads | Context menu, downloads, local settings and connecting to the app only |
@@ -158,17 +160,17 @@ Right-click a supported file link and choose <strong>发送到闪电 / Send to S
 
 Once installed, the window shows <strong>已连接</strong> (Connected).
 
-<strong>Detect web audio & video</strong>: Open the extension on a media page, click <strong>Detect Media on This Page</strong>, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or pack multiple items into a single `.zip` archive.
+<strong>Detect web audio & video</strong>: Open the extension on a media page, click <strong>Detect Media on This Page</strong>, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or save multiple downloadable files together in one folder.
 
-<strong>Download web files in bulk</strong>. On Feishu Docs or another web page, choose <strong>Scan Page for Download Links</strong> and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use <strong>Detect Media on This Page</strong> for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
+<strong>Download web files in bulk</strong>. On a supported web page, choose <strong>Scan Page for Download Links</strong> and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use <strong>Detect Media on This Page</strong> for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
 
 #### Document audio and video downloads
 
-For Feishu documents and wiki pages, choose Pack Feishu Document Media to find original attachments, including media the player has yet to load. Install [Feishu's official lark-cli](https://github.com/larksuite/cli) and authorize an account with access to the document and download permissions. You can also paste the document link directly into Shandian.
+<strong>Feishu Docs and Wiki</strong>. Open the full extension on the document to list original attachments, their sizes and the selection count. All items start selected. You can also paste the document link into Shandian to download all attachments. Install and authorize [Feishu’s official lark-cli](https://github.com/larksuite/cli) with an account that can access the document and download its attachments.
 
-For Tencent Docs, choose Scan Current Page or Detect Media on This Page for media the browser can read, or Scan Page for Download Links for supported direct file links.
+<strong>Qingque Docs</strong>. Open an accessible document and choose Scan Current Page in the full extension. It lists up to 100 original audio and video attachments per scan, including items outside the visible area.
 
-For example, open an accessible Qingque Docs document and choose Scan Current Page in the full extension. It lists up to 100 original audio and video attachments per scan, including items outside the visible area. Save individual files with their original names or select several for one ZIP. The ZIP task shows completed file count and speed, and can reuse verified files when you resume or retry.
+Save one original directly or save several together in a document folder. Bulk downloads show completed file count and speed, and can reuse verified files on retry.
 
 ## For AI Tools (MCP)
 

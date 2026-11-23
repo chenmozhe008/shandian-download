@@ -51,6 +51,25 @@
   .batch-actions button { padding: 6px 10px; border: 0; border-radius: 7px; background: var(--tint); color: white; cursor: pointer; }
   .batch-actions button:disabled { opacity: .5; cursor: default; }
   .batch-row input, .batch-actions input { width: auto; height: auto; accent-color: var(--tint); }
+  body.feishu-media-mode { width: 390px; }
+  .feishu-media-mode .title { margin-bottom: 8px; }
+  .feishu-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .feishu-heading[hidden] { display: none; }
+  .feishu-heading h1 { font-size: 14px; margin: 0; }
+  .feishu-heading button { border: 0; background: transparent; color: var(--sub); padding: 5px 0 5px 8px; cursor: pointer; }
+  .feishu-heading button:disabled { opacity: .6; cursor: default; }
+  .feishu-media-mode .results { max-height: 288px; }
+  .feishu-media-mode .results:not(:empty) { border: 1px solid var(--line); border-radius: 9px; }
+  .feishu-media-mode .media-row { gap: 9px; padding: 9px 10px; cursor: pointer; }
+  .feishu-media-mode .media-row + .media-row { border-top: 1px solid var(--line); }
+  .feishu-media-mode .media-row:hover { background: rgba(224, 153, 47, .09); }
+  .feishu-media-mode .media-meta { flex-shrink: 0; margin: 0; font-variant-numeric: tabular-nums; }
+  .feishu-media-mode .batch-actions { margin-top: 11px; }
+  .feishu-media-mode .batch-actions label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .feishu-media-mode .batch-actions input { width: 16px; height: 16px; margin: 0; }
+  .feishu-media-mode .batch-actions button { min-height: 35px; padding: 7px 12px; font-weight: 600; color: #211607; }
+  .feishu-selected { color: var(--sub); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .feishu-media-mode .hint:empty, .feishu-media-mode #batch { display: none; }
   .wechat-input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); }
   .hint { color: var(--sub); font-size: 12px; margin-top: 8px; line-height: 1.5; }
   .row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); }
@@ -75,18 +94,21 @@
     </div>
     <div class="hint" id="capture-note">开启后播放音频或视频即可自动捕获，仅作用于当前标签页，5 分钟后自动停止。</div>
     <button class="scan" id="scan">扫描当前页面</button>
-    <button class="scan" id="document-media" hidden>打包飞书文档音视频</button>
     <button class="scan" id="batch">批量抓取页面下载链接</button>
+    <div class="feishu-heading" id="feishu-heading" hidden>
+      <h1>文档音视频</h1>
+      <button id="feishu-rescan">重新扫描</button>
+    </div>
     <div class="results" id="results"></div>
     <div class="batch-actions" id="media-batch-actions" hidden>
-      <label><input type="checkbox" id="media-select-all" checked> 全选</label>
+      <label><input type="checkbox" id="media-select-all" checked> 全选 <span class="feishu-selected" id="feishu-selected" hidden></span></label>
       <button id="media-download-selected">下载所选</button>
     </div>
     <div class="batch-actions" id="batch-actions" hidden>
       <label><input type="checkbox" id="select-all" checked> 全选</label>
       <button id="download-selected">下载所选</button>
     </div>
-    <div class="hint" id="hint"></div>
+    <div class="hint" id="hint" role="status"></div>
   </div>
   <label class="row">
     <span>接管浏览器下载<small>网页上点下载时交给闪电全能下载</small></span>

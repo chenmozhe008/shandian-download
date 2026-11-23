@@ -25,4 +25,15 @@ final class FeishuMediaTests: XCTestCase {
             XCTAssertNil(FeishuMedia.documentURL(url), url)
         }
     }
+
+    func testSelectionKeepsDocumentOrderAndRejectsMissingAttachments() throws {
+        let first = FeishuMedia.Attachment(token: "video1", name: "同名.mp4", size: nil)
+        let second = FeishuMedia.Attachment(token: "video2", name: "同名.mp4", size: nil)
+        let third = FeishuMedia.Attachment(token: "audio1", name: "声音.wav", size: nil)
+        let files = [first, second, third]
+        XCTAssertEqual(try FeishuMedia.selectedAttachments(files, ids: [third.selectionID, second.selectionID]), [second, third])
+        XCTAssertEqual(try FeishuMedia.selectedAttachments(files, ids: nil), files)
+        XCTAssertThrowsError(try FeishuMedia.selectedAttachments([first], ids: [first.selectionID, second.selectionID]))
+        XCTAssertThrowsError(try FeishuMedia.selectedAttachments(files, ids: []))
+    }
 }

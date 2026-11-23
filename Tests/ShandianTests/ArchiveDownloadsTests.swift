@@ -4,6 +4,40 @@ import XCTest
 
 @MainActor
 final class ArchiveDownloadsTests: XCTestCase {
+    func testBatchFolderKeepsOriginalFilesAndExistingFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let stage = root.appendingPathComponent(".stage")
+        let existing = root.appendingPathComponent("素材")
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: false)
+        try Data([1]).write(to: stage.appendingPathComponent("视频.mp4"))
+        try Data([2]).write(to: stage.appendingPathComponent("音频.wav"))
+
+        let output = try ArchiveDownloads.saveOutput(stage, to: root, folderName: "素材", singleFileName: nil)
+
+        XCTAssertEqual(output.lastPathComponent, "素材 (2)")
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: output.path)), ["视频.mp4", "音频.wav"])
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: existing.path).isEmpty)
+    }
+
+    func testSingleOutputSavesOriginalBesideExistingFile() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let stage = root.appendingPathComponent(".stage")
+        try fm.createDirectory(at: stage, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let existing = root.appendingPathComponent("视频.mp4")
+        try Data([1]).write(to: existing)
+        try Data([2]).write(to: stage.appendingPathComponent("视频.mp4"))
+
+        let output = try ArchiveDownloads.saveOutput(stage, to: root, folderName: "文档", singleFileName: "视频.mp4")
+        XCTAssertEqual(output.lastPathComponent, "视频 (2).mp4")
+        XCTAssertEqual(try Data(contentsOf: output), Data([2]))
+        XCTAssertEqual(try Data(contentsOf: existing), Data([1]))
+        XCTAssertEqual(Set(try fm.contentsOfDirectory(atPath: root.path)), ["视频.mp4", "视频 (2).mp4"])
+    }
+
     func testCompletedAndInterruptedArchivesAreRecoveredAsOrdinaryItems() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

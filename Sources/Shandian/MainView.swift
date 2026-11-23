@@ -485,7 +485,7 @@ private struct SpeedChart: View {
 /// 空闲页：带暖光的放置区（⌘V 或拖入），下面列支持的来源和累计下载
 private struct EmptyState: View {
     @ObservedObject var store: DownloadStore
-    private let sources = [L("磁力"), L("种子"), "ed2k", L("直链"), L("网盘"), L("B 站"), "YouTube", "X", L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号"), L("网页音视频")]
+    private let sources = [L("磁力"), L("种子"), "ed2k", L("直链"), L("百度网盘"), L("飞书文档"), L("轻雀文档"), L("B 站"), "YouTube", "X", L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号"), L("网页音视频")]
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -494,7 +494,7 @@ private struct EmptyState: View {
                 Image(nsImage: BrandGlyph.image(height: 60)).foregroundStyle(Theme.tint)
                     .shadow(color: Theme.tint.opacity(0.45), radius: 14)
                 Text("复制链接后按 ⌘V 开始下载").font(.system(size: 20, weight: .bold))
-                Text("也可以拖入链接或种子文件；视频号会显示操作指引").font(.system(size: 13.5)).foregroundStyle(Theme.sub)
+                Text("也可拖入链接或种子文件。网页和文档音视频可通过浏览器扩展批量保存。").font(.system(size: 13.5)).foregroundStyle(Theme.sub)
                 FlowChips(items: sources)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 48)

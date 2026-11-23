@@ -1,5 +1,12 @@
 # What's New
 
+## 0.22.6 · 2026-11-23
+
+- Scan Feishu Docs and Wiki pages for original audio and video attachments. The list shows filenames, file sizes and selection count. Save one attachment directly or save several together in one folder. Feishu’s official lark-cli and authorization are required.
+- Scan Qingque Docs for accessible original audio and video attachments, including items outside the visible area. Bulk media downloads from Qingque and other sites keep original filenames in one folder.
+- Baidu Netdisk cleans up the current cloud transfer after the local download is verified. The transfer directory is available under My Application Data → bdpan → Shandian for manual cleanup.
+- The home screen lists Baidu Netdisk, Feishu Docs and Qingque Docs. The full Chrome / Edge extension is now 1.11.39. Reload it on your browser’s extensions page after upgrading.
+
 ## 0.22.2 · 2026-11-23
 
 - Package original audio and video from Feishu documents in one ZIP. Choose Pack Feishu Document Media in the full Chrome or Edge extension, or paste a Feishu document link into Shandian. Install the official Feishu lark-cli and authorize an account with download access first. Shandian validates downloaded file sizes and reports permission failures.

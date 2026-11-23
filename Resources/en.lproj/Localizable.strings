@@ -127,6 +127,7 @@
 "请先安装飞书官方 lark-cli 并授权能访问此文档的飞书账号。" = "Install the official Feishu lark-cli and authorize an account that can access this document.";
 "闪电通过已授权的飞书账号读取这篇文档，将有下载权限的原始音视频附件保存为一个 ZIP。" = "Shandian reads the document with your authorized Feishu account and packages its downloadable original media attachments in one ZIP.";
 "打开飞书文档" = "Open Feishu document";
+"飞书附件列表已变化，请在浏览器扩展里重新扫描后再下载。" = "Feishu attachments have changed. Scan again in the browser extension before downloading.";
 "正在读取飞书文档音视频…" = "Reading Feishu document media…";
 "无法读取飞书文档，请检查 lark-cli 授权和文档权限。" = "Could not read the Feishu document. Check lark-cli authorization and document permissions.";
 "这篇飞书文档没有可下载的原始音视频附件。" = "This Feishu document has no downloadable original audio or video attachments.";
@@ -689,3 +690,17 @@
 "百度网盘分享已过期，请向分享者索取新链接。" = "This Baidu Netdisk share has expired. Ask the sender for a new link.";
 "百度网盘报告分享链接异常，请打开分享页确认。" = "Baidu Netdisk reported a problem with this link. Open the share page to check it.";
 "百度网盘不允许转存自己分享的文件。请从网盘中的原文件下载。" = "Baidu Netdisk cannot save your own shares back to your account. Download the original from your Netdisk.";
+
+"飞书文档" = "Feishu Docs";
+"轻雀文档" = "Qingque Docs";
+"网页批量下载" = "Batch Web Download";
+"音视频合集" = "Media Collection";
+"下载到文件夹" = "Save to Folder";
+"也可拖入链接或种子文件。网页和文档音视频可通过浏览器扩展批量保存。" = "You can also drop links or torrent files. Use the browser extension to save web and document media in batches.";
+"网页音视频侦测与批量下载" = "Detect and batch download web media";
+"批量下载失败：%@" = "Batch download failed: %@";
+"无法保存批量下载记录" = "Could not save batch download history";
+"闪电通过已授权的飞书账号读取这篇文档，将有下载权限的原始音视频附件保存到同一个文件夹。" = "Shandian reads the document with your authorized Feishu account and saves its downloadable original media attachments to one folder.";
+
+"闪电会先转存分享，再下载到本机。本地下载成功后会自动清理本次转存。网盘目录可在「我的应用数据 → bdpan → Shandian」查看或手动清理。" = "Shandian saves a cloud copy before downloading and cleans it up after a successful local download. Find or remove transfer folders in Baidu Netdisk under My App Data → bdpan → Shandian.";
+"网盘转存目录可在「我的应用数据 → bdpan → %@」手动清理。" = "You can manually clean up the cloud transfer folder under My App Data → bdpan → %@.";

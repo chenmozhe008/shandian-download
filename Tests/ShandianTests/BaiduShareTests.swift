@@ -91,11 +91,21 @@ final class BaiduShareTests: XCTestCase {
         let helper = root.appendingPathComponent("bdpan")
         let fixture = """
         #!/bin/sh
+        if [ "$1" = rm ]; then
+            cmp "$(dirname "$0")/transfer-path" - <<EOF || exit 1
+        $2
+        EOF
+            [ "$3" = --force ] && [ -f "$(dirname "$0")/sample.txt" ] || exit 1
+            touch "$(dirname "$0")/cleaned"
+            printf '%s' '{"code":0}'
+            exit 0
+        fi
         if [ "$1" = transfer ] && [ "$2" = list ]; then
             printf '%s' '{"has_more":false,"items":[{"name":"sample.txt","size":20,"is_dir":false}]}'
             exit 0
         fi
         [ "$1" = download ] && [ "$2" = "https://pan.baidu.com/s/test?pwd=aB12" ] || exit 1
+        printf '%s\n' "$5" > "$(dirname "$0")/transfer-path"
         printf 'downloaded' > "${3}sample.txt.part"
         while [ ! -f "${3}../finish" ]; do sleep 0.05; done
         printf 'downloaded' >> "${3}sample.txt.part"
@@ -108,7 +118,7 @@ final class BaiduShareTests: XCTestCase {
         let store = BaiduDownloads(storage: storage)
         defer { store.shutdown() }
 
-        store.start(share: URL(string: "https://pan.baidu.com/s/test?pwd=aB12")!, directory: root, executable: helper)
+        store.start(share: URL(string: "https://pan.baidu.com/s/test?pwd=aB12")!, directory: root, executable: helper, cleanCloudCopy: true)
         let id = try XCTUnwrap(store.items.first?.id)
         let partial = root.appendingPathComponent(".shandian-baidu-\(id)/sample.txt.part")
         for _ in 0..<40 where store.items.first?.total != 20 || !FileManager.default.fileExists(atPath: partial.path) {
@@ -128,10 +138,12 @@ final class BaiduShareTests: XCTestCase {
         XCTAssertEqual(store.items.first?.avgSpeed, 0)
 
         try Data().write(to: root.appendingPathComponent("finish"))
-        for _ in 0..<40 where store.items.first?.status != .done {
+        let cleaned = root.appendingPathComponent("cleaned")
+        for _ in 0..<80 where store.items.first?.status != .done || !FileManager.default.fileExists(atPath: cleaned.path) {
             try await Task.sleep(for: .milliseconds(25))
         }
 
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cleaned.path))
         XCTAssertEqual(store.items.first?.status, .done)
         XCTAssertEqual(store.items.first?.file, root.appendingPathComponent("sample.txt"))
         XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("sample.txt"), encoding: .utf8), "downloadeddownloaded")
@@ -147,6 +159,7 @@ final class BaiduShareTests: XCTestCase {
         let helper = root.appendingPathComponent("bdpan")
         let fixture = """
         #!/bin/sh
+        if [ "$1" = rm ]; then touch "$(dirname "$0")/unexpected-cleanup"; exit 1; fi
         [ "$1" = download ] || exit 1
         printf 'partial' > "${3}sample.txt"
         printf '%s' '{"code":1,"error":"errno=13002, msg=share link is expired"}'
@@ -156,7 +169,7 @@ final class BaiduShareTests: XCTestCase {
         let storage = root.appendingPathComponent("history.json")
         let store = BaiduDownloads(storage: storage)
 
-        store.start(share: URL(string: "https://pan.baidu.com/s/test?pwd=aB12")!, directory: root, executable: helper)
+        store.start(share: URL(string: "https://pan.baidu.com/s/test?pwd=aB12")!, directory: root, executable: helper, cleanCloudCopy: true)
         for _ in 0..<40 where store.items.first?.status == .running {
             try await Task.sleep(for: .milliseconds(25))
         }
@@ -165,6 +178,7 @@ final class BaiduShareTests: XCTestCase {
         XCTAssertEqual(store.items.first?.status, expected)
         XCTAssertEqual(BaiduDownloads(storage: storage).items.first?.status, expected)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("sample.txt").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("unexpected-cleanup").path))
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains { $0.hasPrefix(".shandian-baidu-") })
     }
 }

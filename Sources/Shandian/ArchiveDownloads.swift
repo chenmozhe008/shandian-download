@@ -25,6 +25,7 @@ final class ArchiveDownloads {
         var files: [Int: Int64] = [:]
         var file: URL?
         var archiveBytes: Int64 = 0
+        var stageBesideDestination: Bool?
         var error: String?
     }
 
@@ -69,7 +70,8 @@ final class ArchiveDownloads {
             }
             var item = Item(id: record.id.uuidString, source: .archive(record.id),
                             title: record.file?.lastPathComponent ?? record.title, rawTitle: record.title,
-                            origin: "网页打包下载", category: .other, status: status,
+                            origin: record.file?.pathExtension.lowercased() == "zip" ? "网页打包下载" : "网页批量下载",
+                            category: .other, status: status,
                             downloaded: done ? record.archiveBytes : record.files.values.reduce(0, +) + (sample?.bytes ?? 0),
                             total: done ? record.archiveBytes : record.expectedBytes, speed: speed,
                             file: record.file, createdAt: record.createdAt, thumbRemote: nil, linkKey: "")
@@ -81,12 +83,11 @@ final class ArchiveDownloads {
 
     func start(name: String, directory: URL, entries incoming: [Entry]) {
         guard !incoming.isEmpty else { return }
-        let title = Self.safeName(name) ?? L("音频合集")
-        let archive = title.lowercased().hasSuffix(".zip") ? title : title + ".zip"
+        let title = Self.folderName(name)
         // 用摘要找回同一批任务。请求头和源链接只保留在内存中。
         let key = incoming.map { "\($0.stableID ?? $0.url.absoluteString)\n\($0.name)\n\($0.expectedBytes ?? 0)" }.joined(separator: "\n")
         let signature = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
-        if let record = records.first(where: { $0.signature == signature && $0.title == archive && $0.state != .done }) {
+        if let record = records.first(where: { $0.signature == signature && Self.folderName($0.title) == title && $0.state != .done }) {
             entries[record.id] = incoming
             if record.state != .packing { resume(record.id) }
             return
@@ -95,8 +96,8 @@ final class ArchiveDownloads {
             ? incoming.compactMap(\.expectedBytes).reduce(0) { sum, size in
                 sum > Int64.max - size ? Int64.max : sum + size
             } : 0
-        let record = Record(signature: signature, title: archive, directory: directory,
-                            count: incoming.count, expectedBytes: totalBytes)
+        let record = Record(signature: signature, title: title, directory: directory,
+                            count: incoming.count, expectedBytes: totalBytes, stageBesideDestination: true)
         records.append(record)
         entries[record.id] = incoming
         publish()
@@ -135,26 +136,26 @@ final class ArchiveDownloads {
         samples.removeValue(forKey: id)
         if let task = tasks[id] { task.cancel() }
         else if let record {
-            try? fileManager.removeItem(at: staging(id))
-            try? fileManager.removeItem(at: stagingArchive(record))
+            try? fileManager.removeItem(at: staging(record))
         }
         publish()
     }
 
     private func run(_ id: UUID) {
-        guard tasks[id] == nil, let source = entries[id] else { return }
+        guard tasks[id] == nil, let source = entries[id],
+              let record = records.first(where: { $0.id == id }) else { return }
         tasks[id] = Task { [self] in
             await download(id, entries: source)
             tasks.removeValue(forKey: id)
             // 继续操作可能发生在上一轮退出前，始终只让一个任务写入同一批文件。
             if records.contains(where: { $0.id == id && $0.state == .running }) { run(id) }
-            if !records.contains(where: { $0.id == id }) { try? fileManager.removeItem(at: staging(id)) }
+            if !records.contains(where: { $0.id == id }) { try? fileManager.removeItem(at: staging(record)) }
         }
     }
 
     private func download(_ id: UUID, entries: [Entry]) async {
         guard let record = records.first(where: { $0.id == id }) else { return }
-        let stage = staging(id)
+        let stage = staging(record)
         do {
             try fileManager.createDirectory(at: stage, withIntermediateDirectories: true,
                                             attributes: [.posixPermissions: 0o700])
@@ -188,50 +189,47 @@ final class ArchiveDownloads {
             }
             try Task.checkCancellation()
             guard records.contains(where: { $0.id == id && $0.state == .running }) else { return }
-            try await pack(id, stage: stage, record: record)
+            let singleFile = names.count == 1 ? names.first : nil
+            let destination = try Self.saveOutput(stage, to: record.directory, folderName: Self.folderName(record.title),
+                                                  singleFileName: singleFile)
+            guard let index = records.firstIndex(where: { $0.id == id }) else { return }
+            records[index].state = .done
+            records[index].file = destination
+            records[index].archiveBytes = records[index].files.values.reduce(0, +)
+            self.entries.removeValue(forKey: id)
+            publish()
         } catch {
             samples.removeValue(forKey: id)
             guard !Task.isCancelled, let index = records.firstIndex(where: { $0.id == id }) else { return }
             records[index].state = .failed
             records[index].error = error.localizedDescription
             publish()
-            onNotice?(String(localized: "打包下载失败：\(error.localizedDescription)"))
+            onNotice?(String(localized: "批量下载失败：\(error.localizedDescription)"))
         }
     }
 
-    private func pack(_ id: UUID, stage: URL, record: Record) async throws {
-        guard let index = records.firstIndex(where: { $0.id == id }) else { return }
-        records[index].state = .packing
-        publish()
-        try fileManager.createDirectory(at: record.directory, withIntermediateDirectories: true)
-        let temporary = stagingArchive(record)
-        if fileManager.fileExists(atPath: temporary.path) { try fileManager.removeItem(at: temporary) }
-        defer { try? fileManager.removeItem(at: temporary) }
-        try await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            process.arguments = ["-c", "-k", "--sequesterRsrc", stage.path, temporary.path]
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { throw Failure.pack }
-        }.value
-        try Task.checkCancellation()
-        guard let latest = records.firstIndex(where: { $0.id == id }),
-              let bytes = Self.fileSize(temporary), bytes > 0 else { throw Failure.pack }
-        let stem = (record.title as NSString).deletingPathExtension
-        var destination = record.directory.appendingPathComponent(record.title)
+    nonisolated static func saveOutput(_ stage: URL, to directory: URL, folderName: String,
+                                       singleFileName: String?) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        let name = singleFileName ?? folderName
+        let isFolder = singleFileName == nil
+        let source = isFolder ? stage : stage.appendingPathComponent(name, isDirectory: false)
+        let ext = isFolder ? "" : (name as NSString).pathExtension
+        let stem = ext.isEmpty ? name : (name as NSString).deletingPathExtension
+        var destination = directory.appendingPathComponent(name, isDirectory: isFolder)
         var copy = 2
-        while fileManager.fileExists(atPath: destination.path) {
-            destination = record.directory.appendingPathComponent("\(stem) (\(copy)).zip")
-            copy += 1
+        while true {
+            do {
+                try fm.moveItem(at: source, to: destination)
+                if !isFolder { try? fm.removeItem(at: stage) }
+                return destination
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
+                let numberedName = ext.isEmpty ? "\(stem) (\(copy))" : "\(stem) (\(copy)).\(ext)"
+                destination = directory.appendingPathComponent(numberedName, isDirectory: isFolder)
+                copy += 1
+            }
         }
-        try fileManager.moveItem(at: temporary, to: destination)
-        records[latest].state = .done
-        records[latest].file = destination
-        records[latest].archiveBytes = bytes
-        entries.removeValue(forKey: id)
-        try? fileManager.removeItem(at: stage)
-        publish()
     }
 
     private func updateProgress(_ id: UUID, index: Int, bytes: Int64) {
@@ -253,17 +251,21 @@ final class ArchiveDownloads {
             let data = try JSONEncoder().encode(records)
             try PrivateFile.write(data, to: storage)
         } catch {
-            onNotice?(L("无法保存打包下载记录"))
+            onNotice?(L("无法保存批量下载记录"))
         }
         onChange?()
     }
 
-    private func staging(_ id: UUID) -> URL {
-        storage.deletingLastPathComponent().appendingPathComponent("archive-parts-\(id.uuidString)", isDirectory: true)
+    private func staging(_ record: Record) -> URL {
+        if record.stageBesideDestination == true {
+            return record.directory.appendingPathComponent(".shandian-batch-\(record.id.uuidString)", isDirectory: true)
+        }
+        return storage.deletingLastPathComponent().appendingPathComponent("archive-parts-\(record.id.uuidString)", isDirectory: true)
     }
 
-    private func stagingArchive(_ record: Record) -> URL {
-        record.directory.appendingPathComponent(".shandian-\(record.id.uuidString).partial.zip")
+    private static func folderName(_ value: String) -> String {
+        let stem = value.lowercased().hasSuffix(".zip") ? String(value.dropLast(4)) : value
+        return safeName(stem) ?? L("音视频合集")
     }
 
     private static func fileSize(_ url: URL) -> Int64? {
@@ -293,11 +295,10 @@ final class ArchiveDownloads {
     }
 
     private enum Failure: LocalizedError {
-        case invalidFile, pack
+        case invalidFile
         var errorDescription: String? {
             switch self {
             case .invalidFile: L("原文件读取失败或大小不符")
-            case .pack: L("无法生成压缩包")
             }
         }
     }

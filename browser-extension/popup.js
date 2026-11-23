@@ -2,6 +2,127 @@ var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) =
 // 点扩展图标弹出的小面板：视频网站页面上直接「下载这个视频」；下面是接管下载的开关
 const VIDEO_SITES = ["douyin.com", "xiaohongshu.com", "bilibili.com", "youtube.com", "x.com", "twitter.com", "weibo.com", "ixigua.com", "kuaishou.com", "vimeo.com", "xinpianchang.com"];
 
+const formatSize = (bytes) => {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+function setupFeishu(tabId) {
+  document.body.classList.add("feishu-media-mode");
+  const get = id => document.getElementById(id);
+  for (const id of ["dl", "scan", "capture", "capture-note"]) get(id).hidden = true;
+  get("feishu-heading").hidden = false;
+  const scan = get("feishu-rescan");
+  const title = get("title");
+  const list = get("results");
+  const hint = get("hint");
+  const actions = get("media-batch-actions");
+  const selectAll = get("media-select-all");
+  const count = get("feishu-selected");
+  const download = get("media-download-selected");
+  count.hidden = false;
+
+  let rows = [];
+  let scanning = false;
+  let submitting = false;
+  let submitted = false;
+  const selectedRows = () => rows.filter(({ check }) => check.checked);
+  const update = () => {
+    const selected = selectedRows().length;
+    selectAll.checked = rows.length > 0 && selected === rows.length;
+    selectAll.indeterminate = selected > 0 && selected < rows.length;
+    selectAll.disabled = scanning || submitting;
+    for (const { check } of rows) check.disabled = scanning || submitting;
+    scan.disabled = scanning || submitting;
+    download.disabled = scanning || submitting || submitted || selected === 0;
+    download.textContent = T(submitting ? "正在添加…" : selected === 1 ? "下载原文件" : "下载到文件夹");
+    count.textContent = T("已选 {n} / {total}", { n: selected, total: rows.length });
+  };
+  const selectionChanged = () => {
+    if (submitted) hint.textContent = "";
+    submitted = false;
+    update();
+  };
+  selectAll.onchange = () => {
+    for (const { check } of rows) check.checked = selectAll.checked;
+    selectionChanged();
+  };
+  download.onclick = async () => {
+    if (download.disabled) return;
+    const ids = selectedRows().map(({ id }) => id);
+    submitting = true;
+    update();
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "downloadFeishuMedia", tabId, ids });
+      submitted = response?.ok === true;
+      if (submitted) hint.textContent = T("已交给闪电全能下载，请在应用中查看进度。");
+      else if (response?.busy) hint.textContent = T("闪电正在读取这篇文档，请稍后再试。");
+      else if (response?.setup) hint.textContent = T("请先安装并授权飞书官方 lark-cli。");
+      else throw new Error("handoff failed");
+    } catch (_) {
+      hint.textContent = T("没能交给闪电全能下载，请确认应用已打开后重试。");
+    } finally {
+      submitting = false;
+      update();
+    }
+  };
+  scan.onclick = async () => {
+    scanning = true;
+    scan.textContent = T("正在扫描…");
+    hint.textContent = T("正在读取整篇飞书文档…");
+    update();
+    const previous = new Map(rows.map(({ id, check }) => [id, check.checked]));
+    const defaultChecked = !rows.length || selectAll.checked;
+    const fallback = T("请打开闪电全能下载，并确认 lark-cli 已授权访问这篇文档。");
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "scanFeishuMedia", tabId });
+      if (!response?.ok) {
+        hint.textContent = response?.setup ? T("请先安装并授权飞书官方 lark-cli。") : fallback;
+        return;
+      }
+      const items = response.items || [];
+      if (items.some(file => !file.id)) {
+        hint.textContent = T("请更新闪电全能下载后重新扫描。");
+        return;
+      }
+      submitted = false;
+      if (response.title) title.textContent = title.title = response.title;
+      list.replaceChildren();
+      rows = items.map(file => {
+        const row = document.createElement("label");
+        row.className = "media-row";
+        row.title = file.name;
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = previous.get(file.id) ?? defaultChecked;
+        check.onchange = selectionChanged;
+        const name = document.createElement("span");
+        name.className = "media-info media-name";
+        name.textContent = file.name;
+        const size = document.createElement("span");
+        size.className = "media-meta";
+        size.textContent = formatSize(file.size);
+        row.appendChild(check);
+        row.appendChild(name);
+        if (size.textContent) row.appendChild(size);
+        list.appendChild(row);
+        return { id: file.id, check };
+      });
+      actions.hidden = rows.length === 0;
+      hint.textContent = rows.length ? "" : T("这篇文档没有原始音视频附件。");
+    } catch (_) {
+      hint.textContent = fallback;
+    } finally {
+      scanning = false;
+      scan.textContent = T("重新扫描");
+      update();
+    }
+  };
+  void scan.onclick();
+}
+
 async function main() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let url;
@@ -67,22 +188,9 @@ async function main() {
     };
   }
   const scan = document.getElementById("scan");
-  const documentMedia = document.getElementById("document-media");
-  if (documentMedia && url?.protocol === "https:" && (host === "feishu.cn" || host.endsWith(".feishu.cn")) &&
-      /^\/(wiki|docx)\/[a-z0-9]+\/?$/i.test(url.pathname)) {
-    documentMedia.hidden = false;
-    documentMedia.onclick = async () => {
-      documentMedia.disabled = true;
-      try {
-        const result = await chrome.runtime.sendMessage({ type: "downloadLinks", tabId: tab.id, urls: [url.href] });
-        page.querySelector("#hint").textContent = result?.ok
-          ? T("已交给闪电全能下载，请在应用中查看进度。")
-          : T("没能交给闪电全能下载，请确认应用已打开后重试。");
-      } catch (_) {
-        page.querySelector("#hint").textContent = T("没能交给闪电全能下载，请确认应用已打开后重试。");
-      } finally { documentMedia.disabled = false; }
-    };
-  }
+  const onFeishuDoc = url?.protocol === "https:" && (host === "feishu.cn" || host.endsWith(".feishu.cn")) &&
+    /^\/(wiki|docx)\/[a-z0-9]+\/?$/i.test(url.pathname);
+  if (onFeishuDoc) setupFeishu(tab.id);
   const capture = document.getElementById("capture");
   const stopConfirm = document.getElementById("stop-confirm");
   const stopConfirmText = document.getElementById("stop-confirm-text");
@@ -92,7 +200,7 @@ async function main() {
   const mediaBatchBar = document.getElementById("media-batch-actions");
   const mediaSelectAll = document.getElementById("media-select-all");
   const mediaDownloadSelected = document.getElementById("media-download-selected");
-  if (isWebPage && host !== "mypikpak.com") {
+  if (isWebPage && host !== "mypikpak.com" && !onFeishuDoc) {
     let capturing = false;
     let capturedCount = 0;
     let activePreviewBtn = null;
@@ -139,18 +247,13 @@ async function main() {
         btn.textContent = T(mediaList.length === 1 ? "下载这个视频" : latestFirst ? "下载最新视频" : "下载第一个视频");
       }
     };
-    const formatSize = (bytes) => {
-      if (!bytes || bytes <= 0) return "";
-      if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    };
     const cleanFilePart = (s, fallback) => (s || "").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 70) || fallback;
     const renderMediaItems = (items, latestFirst = false) => {
       if (!results.replaceChildren || !document.createElement) return;
       stopPreview();
       results.replaceChildren();
-      const showBatch = items.length > 1 && mediaBatchBar && mediaSelectAll && mediaDownloadSelected;
+      const canSaveToFolder = (item) => !item.stream && !["m3u8", "mpd"].includes(item.ext);
+      const showBatch = items.filter(canSaveToFolder).length > 1 && mediaBatchBar && mediaSelectAll && mediaDownloadSelected;
       if (mediaBatchBar) mediaBatchBar.hidden = !showBatch;
       const rows = [];
       const syncBatchBar = () => {
@@ -158,7 +261,7 @@ async function main() {
         const checked = rows.filter((r) => r.checkbox.checked);
         mediaSelectAll.checked = rows.length > 0 && checked.length === rows.length;
         mediaDownloadSelected.disabled = checked.length === 0;
-        if (checked.length >= 2) mediaDownloadSelected.textContent = T("打包下载（{n}个）", { n: checked.length });
+        if (checked.length >= 2) mediaDownloadSelected.textContent = T("下载到文件夹（{n} 个）", { n: checked.length });
         else if (checked.length === 1) mediaDownloadSelected.textContent = T("下载所选（{n}个）", { n: 1 });
         else mediaDownloadSelected.textContent = T("下载所选");
       };
@@ -167,7 +270,7 @@ async function main() {
         const row = document.createElement("div"); row.className = "media-row";
         const displayName = item.trackTitle || item.filename || item.title || T(item.kind);
         let checkbox = null;
-        if (showBatch) {
+        if (showBatch && canSaveToFolder(item)) {
           checkbox = document.createElement("input");
           checkbox.type = "checkbox";
           checkbox.checked = true;
@@ -300,7 +403,7 @@ async function main() {
         card.appendChild(row);
         if (waveBox) card.appendChild(waveBox);
         results.appendChild(card);
-        rows.push({ ...entry, doDownload });
+        if (checkbox) rows.push({ ...entry, doDownload });
       });
       if (showBatch) {
         mediaSelectAll.onchange = () => {
@@ -315,17 +418,16 @@ async function main() {
             return;
           }
           mediaDownloadSelected.disabled = true;
-          mediaDownloadSelected.textContent = T("正在打包…");
-          const archiveStem = cleanFilePart(tab.title, T("音频合集"));
-          const archiveName = `${archiveStem} (${targets.length}个).zip`;
-          const directItems = targets.filter((r) => !r.item.stream && !["m3u8", "mpd"].includes(r.item.ext));
+          mediaDownloadSelected.textContent = T("正在添加…");
+          const archiveStem = cleanFilePart(tab.title, T("音视频合集"));
+          const directItems = targets;
           let zipSent = false;
           if (directItems.length >= 2) {
             try {
               const res = await chrome.runtime.sendMessage({
                 type: "downloadMediaZip",
                 tabId: tab.id,
-                archiveName,
+                archiveName: `${archiveStem} (${directItems.length}个)`,
                 items: directItems.map((r) => r.item)
               });
               zipSent = !!res?.ok;
@@ -337,9 +439,9 @@ async function main() {
               r.dlBtn.classList?.add("done");
               setTimeout(() => { r.dlBtn.textContent = T("下载"); r.dlBtn.classList?.remove("done"); }, 1500);
             }
-            page.querySelector("#hint").textContent = T("已交给闪电全能下载打包为单个压缩包。");
+            page.querySelector("#hint").textContent = T("已交给闪电全能下载，原文件将保存到同一个文件夹。");
           } else {
-            page.querySelector("#hint").textContent = T("打包失败，请确认闪电全能下载已打开后重试。");
+            page.querySelector("#hint").textContent = T("未能保存到文件夹，请确认闪电全能下载已打开后重试。");
           }
           syncBatchBar();
         };
@@ -431,7 +533,7 @@ async function main() {
       } catch (_) { page.querySelector("#hint").textContent = T("读取页面失败，请刷新页面后重试。"); }
       finally { scan.disabled = false; scan.textContent = T("重新扫描"); }
     };
-  } else { scan.style.display = "none"; capture.style.display = "none"; document.getElementById("capture-note").style.display = "none"; }
+  } else if (!onFeishuDoc) { scan.style.display = "none"; capture.style.display = "none"; document.getElementById("capture-note").style.display = "none"; }
   const box = document.getElementById("takeover");
   const { takeover = true } = await chrome.storage.local.get("takeover");
   box.checked = takeover;

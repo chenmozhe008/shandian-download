@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum FeishuMedia {
@@ -28,6 +29,10 @@ enum FeishuMedia {
         let token: String
         let name: String
         let size: Int64?
+
+        var selectionID: String {
+            SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
     }
 
     private final class DocumentReader: NSObject, XMLParserDelegate {
@@ -80,13 +85,14 @@ enum FeishuMedia {
     }
 
     enum Failure: LocalizedError {
-        case cli, noMedia, incomplete
+        case cli, noMedia, incomplete, selectionChanged
 
         var errorDescription: String? {
             switch self {
             case .cli: L("无法读取飞书文档，请检查 lark-cli 授权和文档权限。")
             case .noMedia: L("这篇飞书文档没有可下载的原始音视频附件。")
             case .incomplete: L("飞书未提供全部音视频的下载链接，请检查附件下载权限后重试。")
+            case .selectionChanged: L("飞书附件列表已变化，请在浏览器扩展里重新扫描后再下载。")
             }
         }
     }
@@ -99,9 +105,21 @@ enum FeishuMedia {
         return (reader.title.trimmingCharacters(in: .whitespacesAndNewlines), reader.attachments)
     }
 
-    static func prepare(_ url: URL, executable: URL) throws -> (name: String, entries: [ArchiveDownloads.Entry]) {
+    static func list(_ url: URL, executable: URL) throws -> (title: String, files: [Attachment]) {
         let document: DocumentResponse = try run(executable, ["docs", "+fetch", "--as", "user", "--doc", url.absoluteString])
-        let (title, files) = try attachments(in: document.document.content)
+        return try attachments(in: document.document.content)
+    }
+
+    static func selectedAttachments(_ files: [Attachment], ids: Set<String>?) throws -> [Attachment] {
+        guard let ids else { return files }
+        let selected = files.filter { ids.contains($0.selectionID) }
+        guard !ids.isEmpty, selected.count == ids.count else { throw Failure.selectionChanged }
+        return selected
+    }
+
+    static func prepare(_ url: URL, executable: URL, selectedIDs: Set<String>? = nil) throws -> (name: String, entries: [ArchiveDownloads.Entry]) {
+        let (title, attachments) = try list(url, executable: executable)
+        let files = try selectedAttachments(attachments, ids: selectedIDs)
         guard !files.isEmpty else { throw Failure.noMedia }
 
         var links: [String: URL] = [:]
