@@ -1,5 +1,13 @@
 # What's New
 
+## 0.22.0 · 2026-11-23
+
+- **Bulk media downloads from Qingque Docs**. Scan the open document with the full Chrome or Edge extension to list original audio and video attachments available to your browser session, including items you have yet to scroll to. Save files with their original names or select several to download as one ZIP.
+- **Bulk downloads from web pages**. Scan the current page for downloadable links and add selected items together. On Feishu Docs and similar pages, use this for accessible attachment links. You can also pack supported audio and video found by scanning or detection into a ZIP. Results depend on which resources the page exposes and what your account can download.
+- **ZIP task progress**. The app shows the number of files downloaded, transfer speed, and when it is creating the archive. Resuming or retrying reuses downloaded files that passed validation.
+- **Baidu Netdisk share downloads**. Paste the share URL and access code, then use Shandian to save the files locally after installing and authorizing Baidu's official `bdpan` tool. The Baidu Netdisk desktop client is optional. The app shows transferred bytes, speed, and percentage when the total size is available. It also offers the official share page and explains common link errors, including attempted transfers of your own shares. Transfers and speeds are subject to Baidu Netdisk.
+- The bundled full browser extension is now `1.11.34`. Reload it once on your browser's extensions page after upgrading.
+
 ## 0.21.2 · 2026-11-22
 
 - The browser extension now supports “Detect Media on This Page”: captures common audio and video formats automatically, shows a live badge count on the toolbar icon, and adapts the main action to audio or video.

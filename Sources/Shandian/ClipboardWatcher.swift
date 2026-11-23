@@ -39,7 +39,7 @@ final class ClipboardWatcher {
     private func show(_ links: [String]) {
         close()
         let view = ClipboardPopup(links: links,
-                                  onDownload: { [weak self] in self?.store?.addFromPopup(links); self?.close() },
+                                  onAccept: { [weak self] in self?.close(); self?.store?.addFromPopup(links) },
                                   onIgnore: { [weak self] in self?.close() })
         let host = NSHostingView(rootView: view)
         host.frame.size = host.fittingSize
@@ -71,20 +71,29 @@ final class ClipboardWatcher {
 
 private struct ClipboardPopup: View {
     let links: [String]
-    let onDownload: () -> Void
+    let onAccept: () -> Void
     let onIgnore: () -> Void
 
     var body: some View {
         let first = links[0]
         let kind = LinkKind.of(first)
+        let hasBaiduShare = links.contains { LinkKind.baiduShareURL($0) != nil }
+        let isWeChatShare = LinkKind.isWeChatChannelShare(first)
         HStack(alignment: .top, spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 4) {
-                Text(LinkKind.isWeChatChannelShare(first) ? L("检测到视频号链接") : links.count > 1 ? String(localized: "检测到 \(links.count) 个下载链接") : L("检测到下载链接"))
+                Text(links.count > 1 ? String(localized: "剪贴板中有 \(links.count) 个链接") :
+                       hasBaiduShare ? L("检测到百度网盘分享链接") :
+                       isWeChatShare ? L("检测到视频号链接") : L("检测到下载链接"))
                     .font(.system(size: 15, weight: .semibold))
-                Text(PrettyTitle.clean(DownloadStore.displayName(first)))
-                    .font(.system(size: 14)).lineLimit(1).truncationMode(.middle)
-                if LinkKind.isWeChatChannelShare(first) {
+                if !hasBaiduShare {
+                    Text(PrettyTitle.clean(DownloadStore.displayName(first)))
+                        .font(.system(size: 14)).lineLimit(1).truncationMode(.middle)
+                }
+                if hasBaiduShare {
+                    Text(L("可用闪电下载，或打开百度网盘分享页"))
+                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                } else if isWeChatShare {
                     Text("需要登录腾讯元宝，并通过浏览器扩展下载")
                         .font(.system(size: 12.5)).foregroundStyle(.secondary).lineLimit(1)
                 } else if let kind {
@@ -93,8 +102,10 @@ private struct ClipboardPopup: View {
                 }
                 HStack(spacing: 8) {
                     // 浮窗不是活动窗口，系统按钮会变灰；自己画琥珀色，始终醒目
-                    Button(action: onDownload) {
-                        Text(LinkKind.isWeChatChannelShare(first) ? L("查看方法") : links.count > 1 ? L("全部下载") : L("下载")).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Button(action: onAccept) {
+                        Text(hasBaiduShare ? L("查看下载方式") :
+                             isWeChatShare ? L("查看方法") : links.count > 1 ? L("全部下载") : L("下载"))
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                             .frame(minWidth: 72).padding(.horizontal, 12).frame(height: 30)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.tint))
                     }

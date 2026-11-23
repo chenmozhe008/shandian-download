@@ -15,6 +15,16 @@ enum LinkKind: Equatable {
         return path.count == 2 && path[0].lowercased() == "sph" && !path[1].isEmpty
     }
 
+    static func baiduShareURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host?.lowercased(), ["pan.baidu.com", "yun.baidu.com"].contains(host),
+              url.user == nil, url.password == nil else { return nil }
+        let path = "/" + url.path.lowercased().split(separator: "/").joined(separator: "/")
+        if path.hasPrefix("/s/") || ["/s", "/share/link", "/share/init", "/wap/link"].contains(path) { return url }
+        return nil
+    }
+
     static func of(_ raw: String) -> LinkKind? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = s.lowercased()
@@ -47,25 +57,46 @@ enum LinkKind: Equatable {
     static let fileExtensions: Set<String> = ["zip", "rar", "7z", "gz", "tgz", "bz2", "xz", "dmg", "pkg", "exe", "msi", "iso", "img", "apk", "ipa",
                                                "mp4", "mkv", "avi", "mov", "m4v", "ts", "flv", "wmv", "rmvb", "webm", "mp3", "flac", "wav", "m4a", "aac"]
 
-    /// 复制后值得弹浮窗的链接：磁力、ed2k、种子、视频网站、网盘直链，以及以常见文件扩展名结尾的直链。普通网页地址不弹
+    /// 复制后提示可下载的链接，以及需要引导的分享页。
     static func worthPopup(_ link: String) -> Bool {
-        if isWeChatChannelShare(link) { return true }
+        if isWeChatChannelShare(link) || baiduShareURL(link) != nil { return true }
         guard let kind = of(link) else { return false }
         if kind != .http { return true }
         guard let url = URL(string: link) else { return false }
         let host = url.host?.lowercased() ?? ""
-        if DownloadStore.panHosts.contains(where: { host.contains($0.0) }) { return true }
+        if host == "pcs.baidu.com" || host.hasSuffix(".pcs.baidu.com") { return true }
+        if DownloadStore.panHosts.contains(where: { domain, _ in domain != "baidu.com" && host.contains(domain) }) { return true }
         return fileExtensions.contains(url.pathExtension.lowercased())
     }
 
-    /// 从一段文字里找出所有能下的链接（粘贴一整段时用）
-    static func extract(from text: String) -> [String] {
+    static func pastedLinks(from text: String) -> [String] {
+        let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !input.contains(where: \.isWhitespace), of(input) != nil { return [input] }
+        if input.lowercased().hasSuffix(".torrent"), FileManager.default.fileExists(atPath: input) { return [input] }
+        return extract(from: input)
+    }
+
+    private static func extract(from text: String) -> [String] {
         let pattern = #"(magnet:\?[^\s"'<>]+|ed2k://[^\s"'<>]+|https?://[^\s"'<>]+)"#
         guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
         let ns = text as NSString
+        let matches = re.matches(in: text, range: NSRange(location: 0, length: ns.length))
         var seen = Set<String>()
-        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap {
-            let s = ns.substring(with: $0.range)
+        return matches.enumerated().compactMap { index, match in
+            var s = ns.substring(with: match.range)
+            if let url = baiduShareURL(s),
+               var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               !(parts.queryItems ?? []).contains(where: { $0.name == "pwd" }) {
+                let start = NSMaxRange(match.range)
+                let end = index + 1 < matches.count ? matches[index + 1].range.location : ns.length
+                let tail = ns.substring(with: NSRange(location: start, length: min(end - start, 120)))
+                if let pattern = try? NSRegularExpression(pattern: #"^\s*(?:提取码|访问码)\s*[:：]\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])"#),
+                   let code = pattern.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)),
+                   let range = Range(code.range(at: 1), in: tail) {
+                    parts.queryItems = (parts.queryItems ?? []) + [URLQueryItem(name: "pwd", value: String(tail[range]))]
+                    s = parts.string ?? s
+                }
+            }
             return seen.insert(s).inserted ? s : nil
         }
     }

@@ -9,7 +9,7 @@ enum ThunderGone: Equatable { case cancelled, deleted }
 
 /// 界面上的一条下载，内核任务和视频站任务统一成这一种
 struct Item: Identifiable, Equatable {
-    enum Source: Equatable { case engine(String), video(UUID), pending, thunder(String), cloud(String) }
+    enum Source: Equatable { case engine(String), video(UUID), archive(UUID), baidu(UUID), pending, thunder(String), cloud(String) }
     enum Status: Equatable { case resolving(Date), running, waiting, paused, done, failed(String) }
 
     var id: String
@@ -45,7 +45,24 @@ struct Item: Identifiable, Equatable {
     var thunderLocated = true   // 迅雷任务：找到迅雷写的任务文件夹了吗（没找到就量不到进度，别写成「等待迅雷开始」）
     var thunderGone: ThunderGone?  // 迅雷那条出了状况（被删掉 / 根本没建成）：标签上只写短词，说明放在悬停提示里
 
-    var progress: Double { total > 0 ? min(1, Double(downloaded) / Double(total)) : 0 }
+    struct ArchiveProgress: Equatable {
+        let saved: Int
+        let total: Int
+        let packing: Bool
+    }
+    var archiveProgress: ArchiveProgress?
+    var canPause: Bool {
+        switch source {
+        case .engine: true
+        case .archive: archiveProgress?.packing == false
+        default: false
+        }
+    }
+    var progress: Double {
+        if total > 0 { return min(1, Double(downloaded) / Double(total)) }
+        if let progress = archiveProgress, progress.total > 0 { return Double(progress.saved) / Double(progress.total) }
+        return 0
+    }
     var isResolvingState: Bool { if case .resolving = status { return true }; return false }
     var isActive: Bool { if case .done = status { return false }; return true }
 }
@@ -117,6 +134,8 @@ final class DownloadStore: ObservableObject {
     private var weChatTasks: [UUID: Task<Void, Never>] = [:]
     private let sleepGuard = SleepGuard()
     private var videoJobs: [VideoJob] = []
+    private let archives = ArchiveDownloads()
+    private let baiduDownloads = BaiduDownloads()
     private var pending: [Item] = []
     /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢，避免解析期间重启后丢失
     /// originLink：这条任务的原始链接（磁力 / 网页）。从迅雷收回时用本地种子建任务，但菜单里的
@@ -282,7 +301,7 @@ final class DownloadStore: ObservableObject {
     }
     func redownload(_ r: RemovedRecord) {
         guard !r.link.isEmpty else { notice = L("这条记录没有保存链接，无法重新下载"); return }
-        if LinkKind.isWeChatChannelShare(r.link) { request([r.link]); return }
+        if LinkKind.isWeChatChannelShare(r.link) || LinkKind.baiduShareURL(r.link) != nil { request([r.link]); return }
         removedRecords.removeAll { $0.id == r.id }; saveRemoved()
         request([r.link])
     }
@@ -664,6 +683,10 @@ final class DownloadStore: ObservableObject {
 
     init() {
         loadVideos()
+        archives.onChange = { [weak self] in self?.rebuild() }
+        archives.onNotice = { [weak self] text in self?.notice = text }
+        baiduDownloads.onChange = { [weak self] in self?.rebuild() }
+        baiduDownloads.onNotice = { [weak self] text in self?.notice = text }
         watchVolumes()
         Task { await boot() }
         NotificationCenter.default.addObserver(forName: PikPak.loginChanged, object: nil, queue: .main) { [weak self] _ in
@@ -717,6 +740,7 @@ final class DownloadStore: ObservableObject {
         for i in engineItems where i.isActive { floor[i.id] = max(i.downloaded, checkFloor[i.id] ?? 0) }
         UserDefaults.standard.set(floor, forKey: "progressAtQuit")
         videoRunner.cancelAll()
+        baiduDownloads.shutdown()
         weChatTasks.values.forEach { $0.cancel() }
         weChatTasks.removeAll()
         host.suspend()
@@ -853,6 +877,7 @@ final class DownloadStore: ObservableObject {
         checkThunderTasksAlive()
         followThunderLaunchState()
         applyDownloadSchedule()
+        baiduDownloads.refreshProgress()
         rebuild()
         if firstLoad { engineSeeded = true }
         if engineSeeded, !migratedOldCloudFolders {
@@ -898,7 +923,9 @@ final class DownloadStore: ObservableObject {
             e.originLabel = Self.handoffLabel(e, pulling: pulling.contains(e.id))
             return e
         }
-            + videos + thunderJobs.filter { !beingReclaimed.contains($0.id) }.map(Self.item(from:)) + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
+            + videos + archives.items + baiduDownloads.items
+            + thunderJobs.filter { !beingReclaimed.contains($0.id) }.map(Self.item(from:))
+            + cloudJobs.filter { $0.pulling == nil }.map(Self.item(from:))
         all.sort { $0.createdAt > $1.createdAt }
         // 总暂停后用户又在迅雷里点了开始：文件还在写就不再显示暂停
         if let held = thunderHeldAt, Date().timeIntervalSince(held) > 15, thunderJobs.contains(where: { !$0.done && $0.speed > 0 }) { thunderHeldAt = nil }
@@ -906,8 +933,11 @@ final class DownloadStore: ObservableObject {
         for k in all.indices {
             if case .thunder = all[k].source, thunderHeldAt != nil, all[k].isActive { all[k].status = .paused; all[k].speed = 0 }
             if case .thunder = all[k].source, all[k].isActive, !thunderRunning, !Self.isFailedStatus(all[k].status) { all[k].thunderClosed = true; all[k].speed = 0 }
-            if case .thunder = all[k].source { all[k].avgSpeed = all[k].speed }
-            else { all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0) }
+            switch all[k].source {
+            case .thunder: all[k].avgSpeed = all[k].speed
+            case .archive, .baidu: break // 使用各自传输层提供的实时速度
+            default: all[k].avgSpeed = Int64(smoothSpeed[all[k].id] ?? 0)
+            }
             // 国内热门资源常是迅雷用户之间传，BT 网络里几乎没人：慢了 3 分钟就建议交给迅雷
             let i = all[k]
             let isBT = i.origin == "磁力" || i.origin == "种子文件"
@@ -1055,7 +1085,7 @@ final class DownloadStore: ObservableObject {
 
     /// 粘贴、拖入、浏览器传来的都走这里；一段文字里有多个链接就逐个加
     func add(text: String) {
-        let links = LinkKind.of(text) != nil ? [text.trimmingCharacters(in: .whitespacesAndNewlines)] : LinkKind.extract(from: text)
+        let links = LinkKind.pastedLinks(from: text)
         guard !links.isEmpty else { notice = L("没有识别到可下载的链接"); return }
         request(links)
         section = .active
@@ -1120,102 +1150,63 @@ final class DownloadStore: ObservableObject {
 
     /// shandian://add 带 confirm=0：不弹确认框，按默认规则直接下
     func startWithoutAsking(_ links: [String]) {
-        if deferUntilEngineReady(links, then: { [weak self] in self?.startWithoutAsking(links) }) { return }
-        links.forEach { start(link: $0, showWindow: false) }
+        let downloads = handleBaiduShares(in: links)
+        if deferUntilEngineReady(downloads, then: { [weak self] in self?.startWithoutAsking(downloads) }) { return }
+        downloads.forEach { start(link: $0, showWindow: false) }
     }
 
-    struct ZipEntry: Sendable {
-        let url: URL
-        let name: String
-        let headers: [String: String]
-    }
-
-    /// 浏览器扩展多选打包下载：带真实 Referer / Cookie 拉取各文件并用 ditto 打成单个压缩包，只产生一个 .zip
-    func startZipBundle(archiveName: String, entries: [ZipEntry]) {
-        guard !entries.isEmpty else { return }
-        let safeArchiveBase = archiveName
-            .replacingOccurrences(of: #"[\\/:*?"<>|]"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseName = safeArchiveBase.isEmpty ? L("音频合集") : (safeArchiveBase.lowercased().hasSuffix(".zip") ? String(safeArchiveBase.dropLast(4)) : safeArchiveBase)
-        let dir = Prefs.lastDir(.http) ?? Folders.directory(for: .http)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        presentActiveWindow()
-        notice = String(localized: "正在打包下载「\(baseName).zip」（0/\(entries.count)）…")
-        Task {
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("shandian-zip-\(UUID().uuidString)", isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: tempDir) }
-            do {
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-            } catch {
-                notice = String(localized: "打包失败：\(error.localizedDescription)")
-                return
-            }
-            var usedNames = Set<String>()
-            var savedCount = 0
-            for (idx, entry) in entries.enumerated() {
-                var req = URLRequest(url: entry.url, timeoutInterval: 60)
-                for (k, v) in entry.headers { req.setValue(v, forHTTPHeaderField: k) }
-                do {
-                    let (data, resp) = try await URLSession.shared.data(for: req)
-                    if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) { continue }
-                    guard !data.isEmpty else { continue }
-                    let cleaned = entry.name
-                        .replacingOccurrences(of: #"[\\/:*?"<>|]"#, with: " ", options: .regularExpression)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    let fallback = entry.url.lastPathComponent.isEmpty ? "file-\(idx + 1)" : entry.url.lastPathComponent
-                    let rawName = cleaned.isEmpty ? fallback : cleaned
-                    let ext = (rawName as NSString).pathExtension
-                    let stem = ext.isEmpty ? rawName : (rawName as NSString).deletingPathExtension
-                    var finalName = rawName
-                    var seq = 2
-                    while usedNames.contains(finalName.lowercased()) {
-                        finalName = ext.isEmpty ? "\(stem) (\(seq))" : "\(stem) (\(seq)).\(ext)"
-                        seq += 1
-                    }
-                    usedNames.insert(finalName.lowercased())
-                    try data.write(to: tempDir.appendingPathComponent(finalName), options: .atomic)
-                    savedCount += 1
-                    notice = String(localized: "正在打包下载「\(baseName).zip」（\(savedCount)/\(entries.count)）…")
-                } catch {
-                    continue
-                }
-            }
-            guard savedCount > 0 else {
-                notice = L("打包失败：未能获取选中的文件")
-                return
-            }
-            var destURL = dir.appendingPathComponent("\(baseName).zip")
-            var dupSeq = 2
-            while FileManager.default.fileExists(atPath: destURL.path) {
-                destURL = dir.appendingPathComponent("\(baseName) (\(dupSeq)).zip")
-                dupSeq += 1
-            }
-            let srcPath = tempDir.path
-            let dstPath = destURL.path
-            let zipOK = await Task.detached(priority: .userInitiated) { () -> Bool in
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-                proc.arguments = ["-c", "-k", "--sequesterRsrc", srcPath, dstPath]
-                do {
-                    try proc.run()
-                    proc.waitUntilExit()
-                    return proc.terminationStatus == 0
-                } catch {
-                    return false
-                }
-            }.value
-            guard zipOK, FileManager.default.fileExists(atPath: destURL.path) else {
-                notice = L("打包失败：无法生成压缩包")
-                return
-            }
-            Self.markQuarantine(destURL, source: entries.first?.url.absoluteString ?? "")
-            if Prefs.doneSound { Self.playDoneSound() }
-            let doneText = String(localized: "已打包完成：\(destURL.lastPathComponent)")
-            noticeAction = NoticeAction(title: "在访达中显示", forText: doneText, run: {
-                NSWorkspace.shared.activateFileViewerSelecting([destURL])
-            })
-            notice = doneText
+    private func handleBaiduShares(in links: [String]) -> [String] {
+        var shares: [URL] = []
+        let downloads = links.filter { link in
+            guard let share = LinkKind.baiduShareURL(link) else { return true }
+            seenClipboard.insert(link)
+            if !shares.contains(share) { shares.append(share) }
+            return false
         }
+        guard !shares.isEmpty else { return downloads }
+        let executable = BaiduDownloads.executable
+        let alert = NSAlert()
+        alert.messageText = L("检测到百度网盘分享链接")
+        alert.informativeText = executable == nil
+            ? L("用闪电下载需要先安装百度官方 bdpan 工具并授权百度账号。也可以在百度网盘分享页选择文件下载。")
+            : L("用闪电下载会把本次分享的内容转存到已授权账号，再保存到本机。速度取决于百度网盘提供的通道。")
+        var codeField: NSTextField?
+        if shares.count == 1, let share = shares.first, executable != nil,
+           URLComponents(url: share, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "pwd" && !($0.value ?? "").isEmpty }) != true {
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+            field.placeholderString = L("提取码（如有）")
+            alert.accessoryView = field
+            codeField = field
+        }
+        alert.addButton(withTitle: executable == nil ? L("打开百度网盘分享页") : L("用闪电下载"))
+        alert.addButton(withTitle: executable == nil ? L("安装与授权说明") : L("打开百度网盘分享页"))
+        alert.addButton(withTitle: L("取消"))
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn, let executable {
+            let directory = Prefs.lastDir(.http) ?? Folders.directory(for: .http)
+            for share in shares {
+                var target = share
+                if let value = codeField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty,
+                   var parts = URLComponents(url: share, resolvingAgainstBaseURL: false) {
+                    parts.queryItems = (parts.queryItems ?? []).filter { $0.name != "pwd" } + [URLQueryItem(name: "pwd", value: value)]
+                    target = parts.url ?? share
+                }
+                baiduDownloads.start(share: target, directory: directory, executable: executable)
+            }
+            presentActiveWindow()
+        } else if response == .alertSecondButtonReturn, executable == nil {
+            NSWorkspace.shared.open(BaiduDownloads.setupURL)
+        } else if response == .alertFirstButtonReturn || response == .alertSecondButtonReturn {
+            for share in shares { NSWorkspace.shared.open(share) }
+        }
+        return downloads
+    }
+
+    func startZipBundle(archiveName: String, entries: [ArchiveDownloads.Entry]) {
+        archives.start(name: archiveName, directory: Prefs.lastDir(.http) ?? Folders.directory(for: .http),
+                       entries: entries)
+        presentActiveWindow()
     }
 
     /// 触发下载后把主窗口切到「下载中」并弹到最前，让用户立刻看到正在下载的画面
@@ -1237,7 +1228,7 @@ final class DownloadStore: ObservableObject {
             seenClipboard.insert(share)
             WeChatGuide.present(share: share)
         }
-        let otherLinks = links.filter { !LinkKind.isWeChatChannelShare($0) }
+        let otherLinks = handleBaiduShares(in: links.filter { !LinkKind.isWeChatChannelShare($0) })
         guard !otherLinks.isEmpty else { return }
         if deferUntilEngineReady(otherLinks, forceVideo: forceVideo, then: { [weak self] in
             self?.request(otherLinks, headers: headers, name: name, forceVideo: forceVideo)
@@ -1272,7 +1263,7 @@ final class DownloadStore: ObservableObject {
 
     /// 确认框里预读文件名、大小、种子文件列表；网页上的种子先取回
     func resolveForPanel(_ link: String, headers: [String: String]) async -> ResolvedResource? {
-        guard let kind = LinkKind.of(link) else { return nil }
+        guard LinkKind.baiduShareURL(link) == nil, let kind = LinkKind.of(link) else { return nil }
         var url = link
         if kind == .torrentFile {
             if link.lowercased().hasPrefix("http") {
@@ -1288,7 +1279,7 @@ final class DownloadStore: ObservableObject {
     /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
     /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
     func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil, showWindow: Bool = true) {
-        guard let detectedKind = LinkKind.of(link) else { return }
+        guard LinkKind.baiduShareURL(link) == nil, let detectedKind = LinkKind.of(link) else { return }
         let kind: LinkKind = forceVideo ? .videoSite : detectedKind
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); if showWindow { presentActiveWindow() }; return }
@@ -1392,6 +1383,11 @@ final class DownloadStore: ObservableObject {
     // MARK: 操作
 
     func togglePause(_ item: Item) {
+        if case .archive(let id) = item.source {
+            if item.status == .paused || Self.isFailedStatus(item.status) { archives.resume(id) }
+            else { archives.pause(id) }
+            return
+        }
         guard case .engine(let id) = item.source else { return }
         Task {
             if item.status == .paused || { if case .failed = item.status { return true }; return false }() {
@@ -1401,7 +1397,12 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    var allPaused: Bool { !items.contains { $0.status == .running || $0.status == .waiting } }
+    var allPaused: Bool {
+        !items.contains {
+            if case .baidu = $0.source { return false }
+            return $0.status == .running || $0.status == .waiting
+        }
+    }
 
     /// 交给迅雷的任务：迅雷没开就提示一次，打开后任务如果停着就自动继续（11-05 用户定）。
     /// 只看「没开 → 开了」这一下，用户之后在迅雷里手动暂停的不会被拉起来
@@ -1429,6 +1430,9 @@ final class DownloadStore: ObservableObject {
     func toggleAll() {
         Task {
             if allPaused {
+                for item in items where item.status == .paused {
+                    if case .archive(let id) = item.source { archives.resume(id) }
+                }
                 for item in engineItems where item.status == .paused && !protectedEngineIDs.contains(item.id) {
                     if case .engine(let id) = item.source { try? await host.client.resume(id) }
                 }
@@ -1437,6 +1441,9 @@ final class DownloadStore: ObservableObject {
                     notice = await ThunderBridge.setAllTasks(paused: false) ? L("已全部继续，迅雷里之前暂停的任务也会一起开始") : L("闪电的任务已继续；迅雷没能自动开始，请到迅雷点「全部开始」")
                 }
             } else {
+                for item in items where item.status == .running {
+                    if case .archive(let id) = item.source { archives.pause(id) }
+                }
                 try? await host.client.pauseAll()
                 if hasActiveThunderJob {
                     if await ThunderBridge.setAllTasks(paused: true) {
@@ -1479,6 +1486,12 @@ final class DownloadStore: ObservableObject {
                 if moveFiles, let f = file { Self.trash(f) }
                 await poll()
             }
+        case .archive(let id):
+            archives.remove(id)
+            if moveFiles, let f = file { Self.trash(f) }
+        case .baidu(let id):
+            baiduDownloads.remove(id)
+            if moveFiles, let f = file { Self.trash(f) }
         case .video(let id):
             videoRunner.cancel(id)
             weChatTasks.removeValue(forKey: id)?.cancel()
@@ -2379,10 +2392,10 @@ final class DownloadStore: ObservableObject {
 
     /// 一段文字里还没提示过、也不在列表中的链接
     func newClipboardLinks(in text: String) -> [String] {
-        let s = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard s.count < 20000 else { return [] }
-        let found = LinkKind.of(s) != nil ? [s] : LinkKind.extract(from: s)
-        return found.filter { l in !seenClipboard.contains(l) && !items.contains { $0.linkKey == Self.linkKey(l) } }
+        guard text.count < 20000 else { return [] }
+        return LinkKind.pastedLinks(from: text).filter { link in
+            !seenClipboard.contains(link) && (LinkKind.baiduShareURL(link) != nil || !items.contains { $0.linkKey == Self.linkKey(link) })
+        }
     }
 
     func markSeen(_ links: [String]) { links.forEach { seenClipboard.insert($0) } }
@@ -2511,7 +2524,10 @@ final class DownloadStore: ObservableObject {
     }
 
     func retry(_ item: Item) {
+        if LinkKind.baiduShareURL(item.link) != nil { request([item.link]); return }
         switch item.source {
+        case .archive(let id): archives.resume(id)
+        case .baidu(let id): baiduDownloads.retry(id)
         case .video(let id):
             // 原地重新开始；先删再 add 会被去重挡掉，任务直接消失
             guard let i = videoJobs.firstIndex(where: { $0.id == id }) else { return }

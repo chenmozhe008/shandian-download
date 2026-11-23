@@ -288,9 +288,16 @@ private struct Banners: View {
     @ObservedObject var store: DownloadStore
     var body: some View {
         VStack(spacing: 8) {
-            if let links = store.clipboardLinks {
-                bar(icon: "doc.on.clipboard", text: links.count > 1 ? String(localized: "剪贴板中有 \(links.count) 个链接") : LinkKind.isWeChatChannelShare(links[0]) ? L("检测到视频号分享链接") : L("剪贴板中有链接：") + DownloadStore.displayName(links[0]), tint: Theme.tint) {
-                    Button(links.count == 1 && LinkKind.isWeChatChannelShare(links[0]) ? L("查看方法") : L("下载")) { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
+            if let links = store.clipboardLinks, let first = links.first {
+                let hasBaiduShare = links.contains { LinkKind.baiduShareURL($0) != nil }
+                let isWeChatShare = LinkKind.isWeChatChannelShare(first)
+                let text = links.count > 1 ? String(localized: "剪贴板中有 \(links.count) 个链接") :
+                    hasBaiduShare ? L("检测到百度网盘分享链接") :
+                    isWeChatShare ? L("检测到视频号分享链接") : L("剪贴板中有链接：") + DownloadStore.displayName(first)
+                let action = hasBaiduShare ? L("查看下载方式") :
+                    links.count == 1 && isWeChatShare ? L("查看方法") : L("下载")
+                bar(icon: "doc.on.clipboard", text: text, tint: Theme.tint) {
+                    Button(action) { store.acceptClipboard() }.buttonStyle(.borderedProminent).tint(Theme.tint).controlSize(.small)
                     Button("忽略") { store.clipboardLinks = nil }.buttonStyle(.plain).foregroundStyle(Theme.sub).font(.system(size: 12))
                 }
             }
@@ -343,7 +350,8 @@ private struct ActivePage: View {
                 EmptyState(store: store)
             } else {
                 SpeedHero(store: store).frame(height: 156).padding(.top, 8).padding(.bottom, 20)
-                Text(items.allSatisfy(\.isFailed) ? L("未完成") : L("进行中")).font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
+                Text(items.allSatisfy(\.isFailed) ? L("未完成") : L("进行中"))
+                    .font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
@@ -539,13 +547,16 @@ struct TaskRow: View {
                                    gone: item.thunderGone)
                     } else { Text(L(item.originLabel ?? item.origin)) }
                     Text(sizeText)
+                    if let archive = item.archiveProgress {
+                        Text("已下载 \(archive.saved)/\(archive.total) 个文件")
+                    }
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.sub).lineLimit(1)
                 .frame(height: 18)
                 ProgressBar(value: item.cloudProgress.map { Double($0) / 100 } ?? item.progress, dim: item.status == .paused || item.isResolving || item.checking,
                             busy: item.videoStage == .preparing,
-                            finishing: item.videoStage == .merging || item.videoStage == .converting)
+                            finishing: item.videoStage == .merging || item.videoStage == .converting || item.archiveProgress?.packing == true)
                     .padding(.top, 7)
             }
             VStack(alignment: .trailing, spacing: 3) {
@@ -587,7 +598,7 @@ struct TaskRow: View {
                         CircleIconButton(symbol: "arrow.up.forward.app", help: L("打开迅雷查看这条任务")) { store.openThunder() }
                     }
                 }
-                if case .engine = item.source {
+                if item.canPause {
                     CircleIconButton(symbol: item.status == .paused || item.isFailed ? "play.fill" : "pause.fill",
                                      help: item.status == .paused ? L("继续下载") : item.isFailed ? L("重新开始") : L("暂停下载")) { store.togglePause(item) }
                 } else if item.isFailed {
@@ -622,7 +633,9 @@ struct TaskRow: View {
     private var selected: Bool { store.selectedID == item.id }
 
     private var sizeText: String {
-        if item.total == 0 { return "" }
+        if item.total == 0 {
+            return (item.isBaidu || item.archiveProgress != nil) && item.downloaded > 0 ? item.downloaded.bytesText : ""
+        }
         if item.thunderDiskEstimate { return String(localized: "占用约 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
         if item.fromThunder, item.checking { return String(localized: "已取回 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
         if item.fromThunder, item.isActive { return String(localized: "已选文件 \(item.downloaded.bytesText) / \(item.total.bytesText)") }
@@ -630,6 +643,9 @@ struct TaskRow: View {
     }
     private var primary: String {
         switch item.status {
+        case .running where item.archiveProgress?.packing == true: L("正在生成压缩包")
+        case .running where item.isBaidu && item.downloaded == 0: L("正在准备下载")
+        case .running where item.isBaidu && item.avgSpeed == 0: L("正在等待数据")
         case .running where item.videoStage == .preparing: L("正在解析")
         case .running where item.videoStage == .merging: L("正在合并")
         case .running where item.videoStage == .converting: L("正在转换")
@@ -655,6 +671,10 @@ struct TaskRow: View {
         case .running where item.verificationFailed: L("请重新检查已下载文件")
         case .running where item.checking: item.fromThunder ? L("取完自动继续下载") : L("正在检查已下载的文件")
         case .running where item.waitingLastPiece: L("漏了最后一小块，正在补")
+        case .running where item.archiveProgress?.packing == true: ""
+        case .running where item.isBaidu:
+            item.total > 0 ? "\(Int(item.progress * 100))%" : item.downloaded > 0 ? L("正在下载") : ""
+        case .running where item.archiveProgress != nil && item.total == 0 && item.avgSpeed > 0: ""
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: L("合并视频和音频")
         case .running where item.videoStage == .converting: L("转换为 M4A")
@@ -673,6 +693,7 @@ private extension Item {
     var isResolving: Bool { if case .resolving = status { return true }; return false }
     var isFailed: Bool { if case .failed = status { return true }; return false }
     var isThunder: Bool { if case .thunder = source { return true }; return false }
+    var isBaidu: Bool { if case .baidu = source { return true }; return false }
     /// 下载中的 BT 电影可以边下边播
     var canStream: Bool {
         guard case .engine = source, isActive, !isFailed, category == .movie else { return false }
@@ -781,7 +802,7 @@ private struct ItemMenu: View {
             Button("在访达中显示") { store.reveal(item) }
             if item.isFailed {
                 Button("重试") { store.retry(item) }
-            } else if case .engine = item.source, item.isActive {
+            } else if item.canPause, item.isActive {
                 Button(item.status == .paused ? L("继续") : L("暂停")) { store.togglePause(item) }
             }
             if item.canStream { Button("边下边播") { store.playWhileDownloading(item) } }
@@ -949,7 +970,8 @@ private struct CategoryPage: View {
 private struct NewDownloadSheet: View {
     @ObservedObject var store: DownloadStore
     var body: some View {
-        let links = LinkKind.extract(from: store.newLinksText)
+        let links = LinkKind.pastedLinks(from: store.newLinksText)
+        let hasBaiduShare = links.contains { LinkKind.baiduShareURL($0) != nil }
         VStack(alignment: .leading, spacing: 14) {
             Text("新建下载").font(.system(size: 15, weight: .semibold))
             TextEditor(text: $store.newLinksText)
@@ -960,7 +982,7 @@ private struct NewDownloadSheet: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.faint))
                 .overlay(alignment: .topLeading) {
                     if store.newLinksText.isEmpty {
-                        Text("粘贴磁力、网盘直链或视频网页链接，一行一个").font(.system(size: 12.5)).foregroundStyle(Theme.sub)
+                        Text(L("粘贴磁力、网盘分享、直链或视频网页链接")).font(.system(size: 12.5)).foregroundStyle(Theme.sub)
                             .padding(.horizontal, 13).padding(.vertical, 8).allowsHitTesting(false)
                     }
                 }
@@ -968,11 +990,14 @@ private struct NewDownloadSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(links.prefix(5), id: \.self) { l in
                         let kind = LinkKind.of(l)
+                        let baiduShare = LinkKind.baiduShareURL(l) != nil
                         HStack(spacing: 8) {
-                            Text(label(kind)).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.sub).frame(width: 64, alignment: .leading)
-                            Text(DownloadStore.displayName(l)).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                            Text(baiduShare ? L("网盘分享") : label(kind)).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.sub).frame(width: 64, alignment: .leading)
+                            Text(baiduShare ? L("百度网盘分享文件") : DownloadStore.displayName(l)).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                             Spacer()
-                            Text("存到 " + folderName(kind)).font(.system(size: 11)).foregroundStyle(Theme.sub)
+                            if !baiduShare {
+                                Text("存到 " + folderName(kind)).font(.system(size: 11)).foregroundStyle(Theme.sub)
+                            }
                         }
                     }
                     if links.count > 5 { Text("等 \(links.count) 个链接").font(.system(size: 11)).foregroundStyle(Theme.sub) }
@@ -982,7 +1007,7 @@ private struct NewDownloadSheet: View {
                 Spacer()
                 Button("取消") { store.showNewSheet = false }.keyboardShortcut(.cancelAction)
                 // 开着确认框时下一步是确认框（选位置、种子文件、视频画质）
-                Button(NewTaskPanels.ask ? L("下一步") : links.count > 1 ? String(localized: "下载 \(links.count) 项") : L("下载")) { store.submitNewSheet() }
+                Button(NewTaskPanels.ask || hasBaiduShare ? L("下一步") : links.count > 1 ? String(localized: "下载 \(links.count) 项") : L("下载")) { store.submitNewSheet() }
                     .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).tint(Theme.tint)
                     .disabled(links.isEmpty)
             }
@@ -990,7 +1015,7 @@ private struct NewDownloadSheet: View {
         .padding(20)
         .frame(width: 520)
         .onAppear {
-            if store.newLinksText.isEmpty, let s = NSPasteboard.general.string(forType: .string), !LinkKind.extract(from: s).isEmpty {
+            if store.newLinksText.isEmpty, let s = NSPasteboard.general.string(forType: .string), !LinkKind.pastedLinks(from: s).isEmpty {
                 store.newLinksText = s
             }
         }

@@ -9,7 +9,7 @@
 Free, open-source, and built with SwiftUI. One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection —<br>
 fast multi-connection downloads, with automatic route switching when BitTorrent stalls
 
-Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels · Web audio & video detection
+Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
 [简体中文](README.md) | English
 
@@ -24,7 +24,7 @@ Magnet · Torrent · ed2k · Direct links · Cloud drives · YouTube, Bilibili, 
 
 </div>
 
-Shandian Download Manager (闪电全能下载) is an open-source download manager for the Mac. It brings magnet links, torrents, ed2k, HTTP/HTTPS files, cloud-drive direct links, video platforms, and web audio/video detection together in a single native window. Copy a link and press ⌘V to start; the link type is detected automatically. With the companion Chrome / Edge extension, browser downloads are taken over automatically and playing web media can be captured, previewed, and downloaded in bulk.
+Shandian Download Manager (闪电全能下载) is an open-source Mac app for magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms. Copy a link and press ⌘V to add it. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and download original audio and video attachments from Qingque Docs in bulk.
 
 The app is written in SwiftUI and supports both Simplified Chinese and English. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
@@ -32,7 +32,9 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 
 - **All your downloads in one place**: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites managed in a single window, with clipboard detection and automatic browser download takeover
 - **Fast multi-connection engine**: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and domain-aware proxy routing
-- **Capture playing web audio & video**: Turn on “Detect Media on This Page” in the extension, play briefly to capture the full file, preview with an interactive waveform, keep original item names, or pack multiple items into a single `.zip` archive
+- **Bulk web downloads and ZIP packaging**. Add selected file links from the current page in one action. Scan, detect and preview web media, then pack selected downloadable files into one ZIP and follow its progress in the app
+- **Original media attachments from Qingque Docs**. Scan an open document with the full extension and find accessible audio and video attachments, including items outside the visible part of the page, with their original names and extensions
+- **Baidu Netdisk share downloads**. Paste a share URL and access code. After initial authorization, save files locally with Shandian without installing the Baidu Netdisk desktop client
 - **Automatic route switching for stalled torrents**: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back to your folder and clean up temporary copies
 - **Native Mac workflow & AI integration**: Pure SwiftUI with play-while-downloading, scheduled hours, and per-category save folders; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
 
@@ -46,10 +48,15 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 | Douban movie trailers | Paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
 | Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or pack multiple items into a ZIP |
+| Web attachment links, including accessible links in Feishu Docs | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
+| Original audio and video attachments in Qingque Docs | Open the document, scan the current page in the full extension, then download individual files or select multiple files for one ZIP |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
-| Baidu Netdisk and other cloud drives | Obtain a direct link with the [LinkSwift](https://greasyfork.org/scripts/583582-linkswift) userscript (installed separately), then send it to Shandian |
+| Baidu Netdisk shares | Paste a share link and an access code if needed. Choose “Download with Shandian” after setting up the [official bdpan tool](https://github.com/baidu-netdisk/bdpan-storage), or open the share page |
+| Cloud storage direct links | Obtain a direct link with [LinkSwift](https://github.com/hmjz100/LinkSwift) and send it to Shandian |
 
 Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
+
+For Baidu Netdisk shares, bdpan saves a copy in your authorized account's app data folder before downloading it. Follow Baidu's setup and authorization instructions the first time. Shandian shows bytes transferred, speed, and percentage when a total size is available. Cloud storage, permissions and transfer speed depend on Baidu Netdisk. Baidu blocks saving your own shares back to the same account. In that case, open the official share page or find the original in Netdisk.
 
 ## Performance
 
@@ -131,6 +138,7 @@ There are two versions, both for Chrome and Edge. Pick one:
 | Douyin, Xiaohongshu, Xinpianchang and other videos | ✓ | — |
 | WeChat Channels | ✓ | — |
 | Web audio & video detection, preview and ZIP download | ✓ | — |
+| Scan original audio and video attachments in Qingque Docs and download as ZIP | ✓ | — |
 | Grab links from a page in bulk | ✓ | — |
 | Links that require sign-in | ✓ | May not work |
 | Browser permissions | All sites, cookies and downloads | Context menu, downloads, local settings and connecting to the app only |
@@ -150,6 +158,10 @@ Right-click a supported file link and choose **发送到闪电 / Send to Shandia
 Once installed, the window shows **已连接** (Connected).
 
 **Detect web audio & video**: Open the extension on a media page, click **Detect Media on This Page**, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or pack multiple items into a single `.zip` archive.
+
+**Download web files in bulk**. On Feishu Docs or another web page, choose **Scan Page for Download Links**, select accessible file links and add them together. Results depend on the links the page exposes and the permissions of the current account.
+
+**Download Qingque Docs media in bulk**. Open an accessible document and choose **Scan Current Page**. The extension can list up to 100 original audio and video attachments per scan, with individual downloads or a ZIP for the items you select. The ZIP task shows completed file count and transfer speed, and resumes or retries using files it has already verified.
 
 ## For AI Tools (MCP)
 

@@ -188,15 +188,16 @@ final class Gateway: @unchecked Sendable {
         }
         if r.path == "/extension/zip" {
             guard let rawItems = obj["items"] as? [[String: Any]], rawItems.count >= 2, rawItems.count <= 100 else { return (400, json(["ok": false])) }
-            var entries: [DownloadStore.ZipEntry] = []
+            var entries: [ArchiveDownloads.Entry] = []
             for item in rawItems {
                 guard let rawUrl = item["url"] as? String, rawUrl.utf8.count <= 8192,
                       let url = URL(string: rawUrl), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { continue }
                 let name = String((item["name"] as? String ?? url.lastPathComponent).prefix(120))
                 let headers = item["headers"] as? [String: String] ?? [:]
-                entries.append(DownloadStore.ZipEntry(url: url, name: name, headers: headers))
+                let expectedBytes = (item["expectedBytes"] as? Int64).flatMap { $0 > 0 ? $0 : nil }
+                entries.append(ArchiveDownloads.Entry(url: url, name: name, headers: headers, expectedBytes: expectedBytes))
             }
-            guard !entries.isEmpty else { return (400, json(["ok": false])) }
+            guard entries.count == rawItems.count else { return (400, json(["ok": false])) }
             let rawArchive = String((obj["archiveName"] as? String ?? L("音频合集")).prefix(100))
             await MainActor.run { store?.startZipBundle(archiveName: rawArchive, entries: entries) }
             return (200, json(["ok": true]))

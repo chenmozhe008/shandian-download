@@ -11,6 +11,7 @@ async function main() {
     (host === "movie.douban.com" && /^\/trailer\/\d+\/?$/.test(url.pathname));
   const isWebPage = url && ["http:", "https:"].includes(url.protocol);
   const page = document.getElementById("page");
+  let primaryMedia = null;
   if (host === "yuanbao.tencent.com") {
     const toggle = document.getElementById("wechat-toggle");
     const panel = document.getElementById("wechat");
@@ -56,7 +57,9 @@ async function main() {
     }
     btn.onclick = async () => {
       btn.disabled = true; btn.textContent = T("正在交给闪电全能下载…");
-      const r = await chrome.runtime.sendMessage({ type: "downloadPage", tabId: tab.id, requireVideo: !onVideoSite });
+      const r = await chrome.runtime.sendMessage(primaryMedia
+        ? { type: "downloadMedia", tabId: tab.id, item: primaryMedia }
+        : { type: "downloadPage", tabId: tab.id, requireVideo: !onVideoSite });
       btn.textContent = r?.ok ? T("已交给闪电全能下载") : (onVideoSite ? T("未能添加视频") : T("未能添加音视频"));
       page.querySelector("#hint").textContent = r?.ok ? T("在闪电全能下载里查看任务状态。") : r?.noVideo ? (onVideoSite ? T("没有找到可直接下载的视频，请先播放视频后重试。部分网站不支持此方式。") : T("没有找到正在播放的音视频。请先播放，或点击「侦测本页面音视频」后再试。")) : T("没能交给闪电全能下载，请确认应用已打开后重试。");
       if (!r?.ok) btn.disabled = false;
@@ -109,13 +112,16 @@ async function main() {
       }
     };
     const btn = page.querySelector("#dl");
-    const updateMainButtonForMedia = (items) => {
-      if (onVideoSite || !items?.length) return;
+    const updateMainButtonForMedia = (items, latestFirst) => {
+      if (onVideoSite) return;
       const mediaList = items.filter((x) => x.kind === "音频" || x.kind === "视频");
-      const latest = mediaList[0];
-      if (!latest) return;
-      if (latest.kind === "音频") btn.textContent = mediaList.length > 1 ? T("下载最新音频") : T("下载这条音频");
-      else if (latest.kind === "视频") btn.textContent = mediaList.length > 1 ? T("下载最新视频") : T("下载这个视频");
+      primaryMedia = mediaList[0] || null;
+      if (!primaryMedia) btn.textContent = T("下载当前音视频");
+      else if (primaryMedia.kind === "音频") {
+        btn.textContent = T(mediaList.length === 1 ? "下载这条音频" : latestFirst ? "下载最新音频" : "下载第一条音频");
+      } else {
+        btn.textContent = T(mediaList.length === 1 ? "下载这个视频" : latestFirst ? "下载最新视频" : "下载第一个视频");
+      }
     };
     const formatSize = (bytes) => {
       if (!bytes || bytes <= 0) return "";
@@ -124,7 +130,7 @@ async function main() {
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
     const cleanFilePart = (s, fallback) => (s || "").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 70) || fallback;
-    const renderMediaItems = (items) => {
+    const renderMediaItems = (items, latestFirst = false) => {
       if (!results.replaceChildren || !document.createElement) return;
       stopPreview();
       results.replaceChildren();
@@ -158,7 +164,7 @@ async function main() {
         nameEl.title = displayName;
         const metaEl = document.createElement("div"); metaEl.className = "media-meta";
         const parts = [];
-        if (items.length > 1) parts.push(idx === 0 ? `#1 ${T("最新")}` : `#${idx + 1}`);
+        if (items.length > 1) parts.push(latestFirst && idx === 0 ? `#1 ${T("最新")}` : `#${idx + 1}`);
         parts.push(T(item.kind), item.ext.toUpperCase());
         if (item.size > 0) parts.push(formatSize(item.size));
         metaEl.textContent = parts.join(" · ");
@@ -339,6 +345,7 @@ async function main() {
         capturedCount = 0;
         stopPreview();
         results.replaceChildren();
+        updateMainButtonForMedia([], false);
         if (mediaBatchBar) mediaBatchBar.hidden = true;
         page.querySelector("#hint").textContent = T("已停止侦测并清空记录。");
       } catch (_) {
@@ -354,18 +361,17 @@ async function main() {
     setCaptureLabel();
     if (capturing && capturedCount > 0) {
       const ordered = [...captured.items].reverse();
-      updateMainButtonForMedia(ordered);
-      renderMediaItems(ordered);
+      updateMainButtonForMedia(ordered, true);
+      renderMediaItems(ordered, true);
       page.querySelector("#hint").textContent = T("已捕获 {n} 条音视频（最新在最前），播放片刻即可下载完整文件。", { n: capturedCount });
     } else if (!onVideoSite && results.replaceChildren && document.createElement) {
       try {
         const scanned = await chrome.runtime.sendMessage({ type: "scanMedia", tabId: tab.id });
         const mediaItems = (scanned?.items || []).filter((x) => x.kind === "音频" || x.kind === "视频");
         if (mediaItems.length) {
-          const ordered = [...mediaItems].reverse();
-          updateMainButtonForMedia(ordered);
-          renderMediaItems(ordered);
-          page.querySelector("#hint").textContent = T("已发现 {n} 条音视频（最新在最前），点击右侧按钮可试听或下载。", { n: mediaItems.length });
+          updateMainButtonForMedia(mediaItems, false);
+          renderMediaItems(mediaItems);
+          page.querySelector("#hint").textContent = T("已发现 {n} 条音视频，按页面顺序显示。", { n: mediaItems.length });
         }
       } catch (_) {}
     }
@@ -399,13 +405,13 @@ async function main() {
     scan.onclick = async () => {
       if (stopConfirm) stopConfirm.hidden = true;
       scan.disabled = true; scan.textContent = T("正在扫描…"); stopPreview(); results.replaceChildren(); document.body.classList.remove("batch-mode"); document.getElementById("batch-actions").hidden = true; if (mediaBatchBar) mediaBatchBar.hidden = true;
+      updateMainButtonForMedia([], false);
       try {
         const response = await chrome.runtime.sendMessage({ type: "scanMedia", tabId: tab.id });
         const items = response?.items || [];
         page.querySelector("#hint").textContent = items.length ? T("已发现 {n} 条音视频或字幕，点击右侧按钮下载。", { n: items.length }) + (items.some(item => ["m3u8", "mpd"].includes(item.ext)) ? T("部分分片流需登录或受版权保护，可能无法下载。") : "") : T("未扫描到音视频或字幕，请先播放后重试，或开启「侦测本页面音视频」。");
-        const ordered = [...items].reverse();
-        updateMainButtonForMedia(ordered);
-        renderMediaItems(ordered);
+        updateMainButtonForMedia(items, false);
+        renderMediaItems(items);
       } catch (_) { page.querySelector("#hint").textContent = T("读取页面失败，请刷新页面后重试。"); }
       finally { scan.disabled = false; scan.textContent = T("重新扫描"); }
     };

@@ -3,11 +3,16 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('browser-extension/popup.js', 'utf8');
 async function run(url, reply) {
-  const elements = Object.fromEntries(['title', 'dl', 'hint', 'takeover', 'scan', 'capture', 'capture-note', 'results', 'batch-actions', 'wechat', 'wechat-toggle', 'wechat-link', 'wechat-download'].map(id => [id, { textContent: '', style: {} }]));
+  const element = () => ({
+    textContent: '', style: {}, children: [],
+    appendChild(child) { this.children.push(child); },
+    replaceChildren() { this.children = []; }
+  });
+  const elements = Object.fromEntries(['title', 'dl', 'hint', 'takeover', 'scan', 'capture', 'capture-note', 'results', 'batch-actions', 'wechat', 'wechat-toggle', 'wechat-link', 'wechat-download'].map(id => [id, element()]));
   let request;
-  const chrome = { tabs: { query: async () => [{ id: 5, url, title: '页面标题' }] }, runtime: { sendMessage: async msg => { request = msg; return reply; } }, storage: { local: { get: async () => ({}) } } };
+  const chrome = { tabs: { query: async () => [{ id: 5, url, title: '页面标题' }] }, runtime: { sendMessage: async msg => { request = msg; return typeof reply === 'function' ? reply(msg) : reply; } }, storage: { local: { get: async () => ({}) } } };
   const page = { querySelector: key => elements[key.slice(1)] };
-  const document = { getElementById: id => id === 'page' ? page : elements[id] };
+  const document = { getElementById: id => id === 'page' ? page : elements[id], createElement: element, body: { classList: { remove() {} } } };
   vm.runInNewContext(source, { chrome, document, URL, setTimeout() {}, window: {} });
   await new Promise(resolve => setImmediate(resolve));
   return { elements, click: async () => { await elements.dl.onclick(); return request; } };
@@ -36,5 +41,20 @@ async function run(url, reply) {
   p.elements['wechat-link'].value = 'https://example.com/sph/test';
   await p.elements['wechat-download'].onclick();
   assert.match(p.elements.hint.textContent, /完整的/);
+  const first = { url: 'https://example.com/first.mp4', title: '第一段', kind: '视频', ext: 'mp4' };
+  const second = { url: 'https://example.com/second.mp4', title: '第二段', kind: '视频', ext: 'mp4' };
+  const items = [first, second];
+  const labels = popup => popup.elements.results.children.map(card => card.children[0].children[0].children.map(child => child.textContent));
+  p = await run('https://example.com/article', ({ type }) => type === 'scanMedia' ? { items } : { ok: true });
+  assert.deepEqual(labels(p).map(([name]) => name), ['第一段', '第二段']);
+  assert.doesNotMatch(labels(p)[0][1], /最新/);
+  assert.equal((await p.click()).item, first);
+  p = await run('https://example.com/article', ({ type }) => type === 'captureStatus' ? { active: true, items } : type === 'scanMedia' ? { items } : { ok: true });
+  assert.deepEqual(labels(p).map(([name]) => name), ['第二段', '第一段']);
+  assert.match(labels(p)[0][1], /最新/);
+  assert.equal((await p.click()).item, second);
+  await p.elements.scan.onclick();
+  assert.deepEqual(labels(p).map(([name]) => name), ['第一段', '第二段']);
+  assert.equal((await p.click()).item, first);
   console.log('扩展弹窗测试通过：豆瓣、普通网页无视频、浏览器内部页面');
 })().catch(error => { console.error(error); process.exitCode = 1; });

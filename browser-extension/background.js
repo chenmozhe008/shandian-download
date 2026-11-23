@@ -1,5 +1,5 @@
 var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values?.[key]));  // 测试环境没有 i18n.js
-importScripts("i18n.js", "network-capture.js");
+importScripts("i18n.js", "network-capture.js", "qingque-media.js");
 
 // 闪电全能下载浏览器扩展：把浏览器里的下载交给本机的闪电全能下载（127.0.0.1:6800）。
 // App 没开时什么都不拦，浏览器照常下载；App 只认本扩展的来源（manifest 里的 key 固定了扩展 ID），不需要填密钥。
@@ -7,6 +7,15 @@ importScripts("i18n.js", "network-capture.js");
 const APP = "http://127.0.0.1:6800/extension/add";
 const PING = "http://127.0.0.1:6800/extension/ping";
 const STATUS = "http://127.0.0.1:6800/extension/status";
+
+const isQingqueAttachment = item => item?.source === "qingque-attachment";
+
+function mediaDownloadName(item) {
+  const readableName = typeof isReadableFilename === "function" && isReadableFilename(item.filename) ? item.filename : "";
+  const stem = (item.trackTitle || readableName || item.title || item.kind)
+    .replace(/[\\/:*?"<>|\r\n]/g, " ").trim().slice(0, 80) || item.kind;
+  return `${stem}.${item.ext}`;
+}
 
 // 告诉 App 扩展已装好（设置页显示「已连接」）。扩展版本不匹配时不能反复
 // 调用 reload：浏览器可能加载的是另一份目录，重载也不会改变其版本。
@@ -186,8 +195,15 @@ function collectPageMedia() {
   return result.slice(0, 100);
 }
 
-async function scanPageMedia(tabId) {
+async function scanPageMedia(tabId, pageURL = "") {
   try {
+    if (/^https:\/\/docs\.qingque\.cn\/d\/home\//.test(pageURL) && typeof collectQingqueMedia === "function") {
+      const [frame] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: collectQingqueMedia
+      }).catch(() => []);
+      if (frame?.result?.length) return frame.result;
+    }
     let frames;
     try {
       frames = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: collectPageMedia });
@@ -493,7 +509,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.type === "scanMedia") {
-    Promise.all([scanPageMedia(msg.tabId), capturedForTab(msg.tabId)]).then(([items, captured]) => {
+    Promise.all([
+      chrome.tabs.get(msg.tabId).then(tab => scanPageMedia(tab.id, tab.url)),
+      capturedForTab(msg.tabId)
+    ]).then(([items, captured]) => {
+      if (items.some(isQingqueAttachment)) return reply({ items, captureActive: captured.active });
       const seen = new Set(items.map(x => x.url));
       reply({ items: [...items, ...captured.items.filter(x => !seen.has(x.url))], captureActive: captured.active });
     }).catch(() => reply({ items: [] }));
@@ -569,13 +589,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     const valid = rawItems.filter((item) => item && /^https?:/i.test(item.url) && ["视频", "音频", "字幕"].includes(item.kind) && /^[a-z0-9]{2,5}$/.test(item.ext));
     if (valid.length < 2) { reply({ ok: false }); return; }
     (async () => {
-      const clean = (text) => (text || "").replace(/[\\/:*?"<>|]/g, " ").trim();
       const payloadItems = [];
       for (const item of valid) {
-        const readableName = typeof isReadableFilename === "function" && isReadableFilename(item.filename) ? item.filename : "";
-        const stem = clean(item.trackTitle || readableName || item.title || item.kind).slice(0, 80) || item.kind;
         const headers = await headersFor(item.url, item.referrer);
-        payloadItems.push({ url: item.url, name: `${stem}.${item.ext}`, headers });
+        const entry = { url: item.url, name: mediaDownloadName(item), headers };
+        if (isQingqueAttachment(item) && Number.isSafeInteger(item.size) && item.size > 0) entry.expectedBytes = item.size;
+        payloadItems.push(entry);
       }
       const post = () => fetch("http://127.0.0.1:6800/extension/zip", {
         method: "POST",
@@ -594,11 +613,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === "downloadMedia") {
     const item = msg.item;
     if (!item || !/^https?:/i.test(item.url) || !["视频", "音频", "字幕"].includes(item.kind) || !/^[a-z0-9]{2,5}$/.test(item.ext)) { reply({ ok: false }); return; }
-    const clean = text => text.replace(/[\\/:*?"<>|]/g, " ").trim();
-    const readableName = typeof isReadableFilename === "function" && isReadableFilename(item.filename) ? item.filename : "";
-    const stem = clean(item.trackTitle || readableName || item.title || item.kind).slice(0, 80) || item.kind;
     const stream = item.stream === true || ["m3u8", "mpd"].includes(item.ext);
-    const name = stream ? undefined : stem + "." + item.ext;
+    const name = stream ? undefined : mediaDownloadName(item);
     sendToApp(item.url, item.referrer, name, msg.tabId, stream ? "stream" : undefined).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
     return true;
   }
