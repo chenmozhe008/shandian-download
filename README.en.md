@@ -9,7 +9,7 @@
 Free, open-source, and built with SwiftUI. One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection —<br>
 fast multi-connection downloads, with automatic route switching when BitTorrent stalls
 
-Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
+Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
 [简体中文](README.md) | English
 
@@ -50,6 +50,8 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 | Direct file links, including accessible MP4, MP3 and ZIP links in Feishu Docs | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
 | Baidu Netdisk shares | Paste a share link and an access code if needed. Choose “Download with Shandian” after setting up the [official bdpan tool](https://github.com/baidu-netdisk/bdpan-storage), or open the share page |
+| Feishu document audio and video | Paste the document link into Shandian or choose Pack Feishu Document Media in the full extension. Requires Feishu's official lark-cli and authorization |
+| Tencent Docs | The full extension scans for accessible file links and detects playable media exposed by the page. Results depend on the document and account permissions |
 | Cloud storage direct links | Obtain a direct link with [LinkSwift](https://github.com/hmjz100/LinkSwift) and send it to Shandian |
 | Document audio and video | Scan the current page in the full extension, then download files individually or select multiple files for one ZIP. See Document audio and video downloads below |
 
@@ -161,6 +163,10 @@ Once installed, the window shows <strong>已连接</strong> (Connected).
 <strong>Download web files in bulk</strong>. On Feishu Docs or another web page, choose <strong>Scan Page for Download Links</strong> and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use <strong>Detect Media on This Page</strong> for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
 
 #### Document audio and video downloads
+
+For Feishu documents and wiki pages, choose Pack Feishu Document Media to find original attachments, including media the player has yet to load. Install [Feishu's official lark-cli](https://github.com/larksuite/cli) and authorize an account with access to the document and download permissions. You can also paste the document link directly into Shandian.
+
+For Tencent Docs, choose Scan Current Page or Detect Media on This Page for media the browser can read, or Scan Page for Download Links for supported direct file links.
 
 For example, open an accessible Qingque Docs document and choose Scan Current Page in the full extension. It lists up to 100 original audio and video attachments per scan, including items outside the visible area. Save individual files with their original names or select several for one ZIP. The ZIP task shows completed file count and speed, and can reuse verified files when you resume or retry.
 

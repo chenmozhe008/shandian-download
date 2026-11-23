@@ -107,6 +107,7 @@ const SHANDIAN_EN = {
   "正在扫描…": "Scanning…",
   "重新扫描": "Scan Again",
   "扫描当前页面": "Scan Current Page",
+  "打包飞书文档音视频": "Pack Feishu Document Media",
   "已发现 {n} 条音视频或字幕，点击右侧按钮下载。": "Found {n} items. Click Download on the right. ",
   "未扫描到音视频或字幕，请先播放后重试，或开启「侦测本页面音视频」。": "No media or subtitles found. Play first and retry, or turn on “Detect Media on This Page”.",
   "开启后播放音频或视频即可自动捕获，仅作用于当前标签页，5 分钟后自动停止": "Turn on and play audio or video to capture automatically. Current tab only; stops after 5 minutes",

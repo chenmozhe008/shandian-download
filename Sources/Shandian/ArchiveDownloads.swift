@@ -8,6 +8,7 @@ final class ArchiveDownloads {
         let name: String
         let headers: [String: String]
         let expectedBytes: Int64?
+        var stableID: String? = nil
     }
 
     private enum State: String, Codable { case running, paused, packing, failed, done }
@@ -83,7 +84,7 @@ final class ArchiveDownloads {
         let title = Self.safeName(name) ?? L("音频合集")
         let archive = title.lowercased().hasSuffix(".zip") ? title : title + ".zip"
         // 用摘要找回同一批任务。请求头和源链接只保留在内存中。
-        let key = incoming.map { "\($0.url.absoluteString)\n\($0.name)\n\($0.expectedBytes ?? 0)" }.joined(separator: "\n")
+        let key = incoming.map { "\($0.stableID ?? $0.url.absoluteString)\n\($0.name)\n\($0.expectedBytes ?? 0)" }.joined(separator: "\n")
         let signature = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         if let record = records.first(where: { $0.signature == signature && $0.title == archive && $0.state != .done }) {
             entries[record.id] = incoming

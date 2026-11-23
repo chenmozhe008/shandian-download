@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct MainView: View {
     @ObservedObject var store: DownloadStore
+    @State private var isFullScreen = false
 
     var body: some View {
         // 系统原生分栏：侧栏玻璃、红绿灯位置、工具栏都由系统排，和访达一致
@@ -21,10 +22,16 @@ struct MainView: View {
                     .ignoresSafeArea()
                 }
                 .navigationTitle(L(store.section.title))
-                .toolbar { ToolbarItems(store: store) }
+                .toolbar { ToolbarItems(store: store, isFullScreen: isFullScreen) }
                 .searchable(text: $store.search, placement: .toolbar, prompt: L("搜索"))
         }
         .tint(Theme.tint)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+            if (notification.object as? NSWindow)?.identifier?.rawValue == "main" { isFullScreen = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            if (notification.object as? NSWindow)?.identifier?.rawValue == "main" { isFullScreen = false }
+        }
         .onDrop(of: [.fileURL, .url, .text], isTargeted: nil) { providers in
             for p in providers {
                 if p.canLoadObject(ofClass: URL.self) {
@@ -253,9 +260,18 @@ private struct UpdateBadge: View {
 
 private struct ToolbarItems: ToolbarContent {
     @ObservedObject var store: DownloadStore
+    let isFullScreen: Bool
     @AppStorage("completedRowLayout") private var completedRowLayout = true
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            if isFullScreen {
+                Button {
+                    AppDelegate.exitMainFullScreen(NSApp.keyWindow)
+                } label: {
+                    Label(L("退出全屏"), systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+                .help(L("退出全屏（Esc）"))
+            }
             if store.section != .active {
                 Button { completedRowLayout.toggle() } label: {
                     Label(completedRowLayout ? L("切换为卡片排列") : L("切换为逐行排列"),

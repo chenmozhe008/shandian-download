@@ -91,6 +91,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// 明确同意退出：不写这个时，脚本发来的「退出」（osascript quit）会被 SwiftUI 回成「用户已取消」，菜单退出不受影响（10-28 查到）
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { .terminateNow }
 
+    @MainActor
+    @discardableResult
+    static func exitMainFullScreen(_ window: NSWindow?, isRepeat: Bool = false) -> Bool {
+        guard let window, window.identifier?.rawValue == "main", window.styleMask.contains(.fullScreen),
+              window.attachedSheet == nil, NSApp.modalWindow == nil else { return false }
+        if !isRepeat { window.toggleFullScreen(nil) }
+        return true
+    }
+
     /// 窗口里任何地方按 ⌘V 都能下载；焦点在输入框（搜索、新建下载）时照常粘贴文字
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginLaunch.migrate()
@@ -99,6 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         DownloadStore.registerNotificationActions()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty,
+               MainActor.assumeIsolated({ Self.exitMainFullScreen(event.window ?? NSApp.keyWindow, isRepeat: event.isARepeat) }) {
+                return nil
+            }
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                   event.charactersIgnoringModifiers == "v",
                   !(event.window?.firstResponder is NSTextView),

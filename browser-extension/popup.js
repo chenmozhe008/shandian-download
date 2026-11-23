@@ -67,6 +67,22 @@ async function main() {
     };
   }
   const scan = document.getElementById("scan");
+  const documentMedia = document.getElementById("document-media");
+  if (documentMedia && url?.protocol === "https:" && (host === "feishu.cn" || host.endsWith(".feishu.cn")) &&
+      /^\/(wiki|docx)\/[a-z0-9]+\/?$/i.test(url.pathname)) {
+    documentMedia.hidden = false;
+    documentMedia.onclick = async () => {
+      documentMedia.disabled = true;
+      try {
+        const result = await chrome.runtime.sendMessage({ type: "downloadLinks", tabId: tab.id, urls: [url.href] });
+        page.querySelector("#hint").textContent = result?.ok
+          ? T("已交给闪电全能下载，请在应用中查看进度。")
+          : T("没能交给闪电全能下载，请确认应用已打开后重试。");
+      } catch (_) {
+        page.querySelector("#hint").textContent = T("没能交给闪电全能下载，请确认应用已打开后重试。");
+      } finally { documentMedia.disabled = false; }
+    };
+  }
   const capture = document.getElementById("capture");
   const stopConfirm = document.getElementById("stop-confirm");
   const stopConfirmText = document.getElementById("stop-confirm-text");

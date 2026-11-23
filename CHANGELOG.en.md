@@ -1,5 +1,11 @@
 # What's New
 
+## 0.22.2 · 2026-11-23
+
+- Package original audio and video from Feishu documents in one ZIP. Choose Pack Feishu Document Media in the full Chrome or Edge extension, or paste a Feishu document link into Shandian. Install the official Feishu lark-cli and authorize an account with download access first. Shandian validates downloaded file sizes and reports permission failures.
+- Press Esc or use the Exit Full Screen toolbar button in the main window to restore the window and its standard controls.
+- The bundled full browser extension is now version 1.11.35. Reload it once on your browser's extensions page after upgrading.
+
 ## 0.22.1 · 2026-11-23
 
 - Scan a web page for downloadable links and add selected files together. Select downloadable audio and video to save them in one ZIP. The app shows the completed file count, download speed, and archive creation status. Retrying can reuse downloaded files that passed validation.

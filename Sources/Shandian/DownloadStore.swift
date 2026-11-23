@@ -135,6 +135,7 @@ final class DownloadStore: ObservableObject {
     private let sleepGuard = SleepGuard()
     private var videoJobs: [VideoJob] = []
     private let archives = ArchiveDownloads()
+    private var readingFeishuDocuments: Set<URL> = []
     private let baiduDownloads = BaiduDownloads()
     private var pending: [Item] = []
     /// 还在解析（找种子信息）的磁力 / 种子，存盘：解析可能要很久，期间重启 App 不能丢，避免解析期间重启后丢失
@@ -1150,7 +1151,7 @@ final class DownloadStore: ObservableObject {
 
     /// shandian://add 带 confirm=0：不弹确认框，按默认规则直接下
     func startWithoutAsking(_ links: [String]) {
-        let downloads = handleBaiduShares(in: links)
+        let downloads = handleFeishuDocuments(in: handleBaiduShares(in: links))
         if deferUntilEngineReady(downloads, then: { [weak self] in self?.startWithoutAsking(downloads) }) { return }
         downloads.forEach { start(link: $0, showWindow: false) }
     }
@@ -1209,6 +1210,49 @@ final class DownloadStore: ObservableObject {
         presentActiveWindow()
     }
 
+    private func handleFeishuDocuments(in links: [String]) -> [String] {
+        links.filter { link in
+            guard let document = FeishuMedia.documentURL(link) else { return true }
+            seenClipboard.insert(link)
+            guard !readingFeishuDocuments.contains(document) else { return false }
+            let executable = FeishuMedia.executable
+            let alert = NSAlert()
+            alert.messageText = L("下载飞书文档音视频")
+            alert.informativeText = executable == nil
+                ? L("请先安装飞书官方 lark-cli 并授权能访问此文档的飞书账号。")
+                : L("闪电通过已授权的飞书账号读取这篇文档，将有下载权限的原始音视频附件保存为一个 ZIP。")
+            alert.addButton(withTitle: executable == nil ? L("安装与授权说明") : L("打包下载"))
+            alert.addButton(withTitle: L("打开飞书文档"))
+            alert.addButton(withTitle: L("取消"))
+            NSApp.activate(ignoringOtherApps: true)
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                if let executable { downloadFeishuMedia(document, executable: executable) }
+                else { NSWorkspace.shared.open(FeishuMedia.setupURL) }
+            case .alertSecondButtonReturn: NSWorkspace.shared.open(document)
+            default: break
+            }
+            return false
+        }
+    }
+
+    private func downloadFeishuMedia(_ document: URL, executable: URL) {
+        readingFeishuDocuments.insert(document)
+        notice = L("正在读取飞书文档音视频…")
+        presentActiveWindow()
+        Task {
+            defer { readingFeishuDocuments.remove(document) }
+            do {
+                let bundle = try await Task.detached(priority: .userInitiated) {
+                    try FeishuMedia.prepare(document, executable: executable)
+                }.value
+                startZipBundle(archiveName: bundle.name, entries: bundle.entries)
+            } catch {
+                notice = (error as? FeishuMedia.Failure)?.localizedDescription ?? FeishuMedia.Failure.cli.localizedDescription
+            }
+        }
+    }
+
     /// 触发下载后把主窗口切到「下载中」并弹到最前，让用户立刻看到正在下载的画面
     func presentActiveWindow() {
         section = .active
@@ -1228,7 +1272,7 @@ final class DownloadStore: ObservableObject {
             seenClipboard.insert(share)
             WeChatGuide.present(share: share)
         }
-        let otherLinks = handleBaiduShares(in: links.filter { !LinkKind.isWeChatChannelShare($0) })
+        let otherLinks = handleFeishuDocuments(in: handleBaiduShares(in: links.filter { !LinkKind.isWeChatChannelShare($0) }))
         guard !otherLinks.isEmpty else { return }
         if deferUntilEngineReady(otherLinks, forceVideo: forceVideo, then: { [weak self] in
             self?.request(otherLinks, headers: headers, name: name, forceVideo: forceVideo)
@@ -1279,7 +1323,8 @@ final class DownloadStore: ObservableObject {
     /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
     /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
     func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil, showWindow: Bool = true) {
-        guard LinkKind.baiduShareURL(link) == nil, let detectedKind = LinkKind.of(link) else { return }
+        guard LinkKind.baiduShareURL(link) == nil, FeishuMedia.documentURL(link) == nil,
+              let detectedKind = LinkKind.of(link) else { return }
         let kind: LinkKind = forceVideo ? .videoSite : detectedKind
         let key = Self.linkKey(link)
         if let existing = items.first(where: { $0.linkKey == key && $0.id != replacingThunderID }) { reveal(existing: existing); if showWindow { presentActiveWindow() }; return }
