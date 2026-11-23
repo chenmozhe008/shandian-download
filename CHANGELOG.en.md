@@ -1,12 +1,11 @@
 # What's New
 
-## 0.22.0 · 2026-11-23
+## 0.22.1 · 2026-11-23
 
-- **Bulk media downloads from Qingque Docs**. Scan the open document with the full Chrome or Edge extension to list original audio and video attachments available to your browser session, including items you have yet to scroll to. Save files with their original names or select several to download as one ZIP.
-- **Bulk downloads from web pages**. Scan the current page for downloadable links and add selected items together. On Feishu Docs and similar pages, use this for accessible attachment links. You can also pack supported audio and video found by scanning or detection into a ZIP. Results depend on which resources the page exposes and what your account can download.
-- **ZIP task progress**. The app shows the number of files downloaded, transfer speed, and when it is creating the archive. Resuming or retrying reuses downloaded files that passed validation.
-- **Baidu Netdisk share downloads**. Paste the share URL and access code, then use Shandian to save the files locally after installing and authorizing Baidu's official `bdpan` tool. The Baidu Netdisk desktop client is optional. The app shows transferred bytes, speed, and percentage when the total size is available. It also offers the official share page and explains common link errors, including attempted transfers of your own shares. Transfers and speeds are subject to Baidu Netdisk.
-- The bundled full browser extension is now `1.11.34`. Reload it once on your browser's extensions page after upgrading.
+- Scan a web page for downloadable links and add selected files together. Select downloadable audio and video to save them in one ZIP. The app shows the completed file count, download speed, and archive creation status. Retrying can reuse downloaded files that passed validation.
+- Paste a Baidu Netdisk share URL and access code to download in Shandian. Install and authorize Baidu's official bdpan tool once, then save files locally without the Baidu Netdisk desktop app. Shandian shows transferred bytes, speed, and percentage when the total size is available. You can also open the official share page, and the app explains common share errors. Baidu Netdisk controls transfer permissions and speed.
+- Download audio and video from documents individually or as a ZIP. For example, in Qingque Docs the full Chrome or Edge extension lists accessible original media attachments, including items outside the visible area. On Feishu Docs and similar sites, the general web tools can find accessible direct links and media exposed to your account.
+- The bundled full browser extension is now version 1.11.34. Reload it once on your browser's extensions page after upgrading.
 
 ## 0.21.2 · 2026-11-22
 
