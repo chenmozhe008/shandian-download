@@ -48,7 +48,7 @@ The app is written in SwiftUI and supports both Simplified Chinese and English. 
 | Douban movie trailers | Paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
 | Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or pack multiple items into a ZIP |
-| Web attachment links, including accessible links in Feishu Docs | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
+| Direct file links, including accessible MP4, MP3 and ZIP links in Feishu Docs | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
 | Original audio and video attachments in Qingque Docs | Open the document, scan the current page in the full extension, then download individual files or select multiple files for one ZIP |
 | Douyin, Xiaohongshu, Xinpianchang | Open the video page in the browser and send it via the full extension |
 | Baidu Netdisk shares | Paste a share link and an access code if needed. Choose “Download with Shandian” after setting up the [official bdpan tool](https://github.com/baidu-netdisk/bdpan-storage), or open the share page |
@@ -159,7 +159,7 @@ Once installed, the window shows **已连接** (Connected).
 
 **Detect web audio & video**: Open the extension on a media page, click **Detect Media on This Page**, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or pack multiple items into a single `.zip` archive.
 
-**Download web files in bulk**. On Feishu Docs or another web page, choose **Scan Page for Download Links**, select accessible file links and add them together. Results depend on the links the page exposes and the permissions of the current account.
+**Download web files in bulk**. On Feishu Docs or another web page, choose **Scan Page for Download Links** and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use **Detect Media on This Page** for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
 
 **Download Qingque Docs media in bulk**. Open an accessible document and choose **Scan Current Page**. The extension can list up to 100 original audio and video attachments per scan, with individual downloads or a ZIP for the items you select. The ZIP task shows completed file count and transfer speed, and resumes or retries using files it has already verified.
 
