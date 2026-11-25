@@ -77,7 +77,7 @@ windows/
 
 | 位置 | 放什么 |
 |---|---|
-| `%APPDATA%\com.shandian.windows` | 用户配置：设置、任务列表、下载历史、更新记录。绿色版的 `BrowserExtension` 也在这儿，浏览器记的是这个路径 |
+| `%APPDATA%\com.shandian.windows` | 用户配置：设置、任务列表、下载历史、更新记录。便携版的 `BrowserExtension` 也在这儿，浏览器记的是这个路径 |
 | `%LOCALAPPDATA%\com.shandian.windows` | 这台机器专用：`bin`（yt-dlp、ffmpeg）、`engine`（内核任务库、token）、`auth`（Cookie、PikPak、NAS 凭据）、`state`（恢复和接力记录）、`cache`（缩略图、处理临时文件）、`logs`，以及原位保留的 WebView 数据 |
 
 分类数据统一通过 `migrate::local_path` 访问。启动时先迁移再加载各模块；旧文件占用时回退旧路径，下次启动重试。分类目录已有文件时保留它，并把旧版本移入同类目录的 `legacy/`。`bin`、`engine`、`EBWebView*` 的位置保持不变。
@@ -165,9 +165,9 @@ python windows/installer/sign_nsis_release.py output/windows/0.1.74 --edition pl
 
 也可以用 `bash windows/installer/build.sh signed`。先设置 `SHANDIAN_OUT` 为正式版的 `plain` 目录，`SHANDIAN_SIGNED_DEST` 为独立输出文件。自定义工具路径可用 `SHANDIAN_SIGNTOOL` 和 `SHANDIAN_MAKENSIS`。
 
-#### 绿色 ZIP
+#### 便携版
 
-正式包构建完成后，运行 `python windows/installer/make_portable.py output/windows/<版本>` 生成普通版绿色 ZIP。完整解压后直接运行主程序。要清除当前 Windows 用户的闪电设置、任务记录、账号和缓存，从托盘退出闪电，再运行 ZIP 中的「清除闪电数据.exe」确认。绿色版与安装版共用这些数据。默认下载目录保留，程序目录可在清理后手动删除。
+正式包构建完成后，运行 `python windows/installer/make_portable.py output/windows/<版本>` 生成便携版。完整解压后直接运行主程序。要清除当前 Windows 用户的闪电设置、任务记录、账号和缓存，从托盘退出闪电，再运行 ZIP 中的「清除闪电数据.exe」确认。便携版与安装版共用这些数据。默认下载目录保留，程序目录可在清理后手动删除。
 
 #### 历史本地打包入口
 
@@ -180,7 +180,7 @@ bash windows/installer/build.sh        # 产物：C:\ShandianBuild\out\闪电全
 - `installer/app`：界面和安装、卸载逻辑（Tauri）。安装时把自己复制成 `uninstall.exe`。依赖旁边的 `WebView2Loader.dll`
 - `installer/stub`：用户拿到的单文件外壳，只用标准库，把界面程序、dll、程序文件解到临时目录再启动，退出后清掉
 - **安装方式**：仅为我（`%LOCALAPPDATA%\\Programs`，HKCU）或所有用户（Program Files，公共桌面，HKLM）。所有用户是点了安装才弹 UAC：以管理员再起一份接着装，原来那份藏起来等它结束，因为外壳要等它退出才清临时目录。装完经资源管理器启动主程序，不让它带管理员权限。这种安装主程序不能一键更新，要运行新安装包
-- **浏览器扩展**：安装版从 `<安装目录>\\BrowserExtension` 加载，更新时原位替换。绿色版的文件夹可能被挪走，才同步到 `%APPDATA%` 再加载（`gateway::install`）。浏览器不允许程序静默安装，完成页勾选后显示步骤页，由用户加载
+- **浏览器扩展**：安装版从 `<安装目录>\\BrowserExtension` 加载，更新时原位替换。便携版的文件夹可能被挪走，才同步到 `%APPDATA%` 再加载（`gateway::install`）。浏览器不允许程序静默安装，完成页勾选后显示步骤页，由用户加载
 - **窗口**：不透明，圆角和细边框交给 DWM。别用 `transparent(true)` 加页面圆角，也别用 `resizable(false)`：后者会留一圈 6px 白边，固定大小要靠最小/最大尺寸
 - **清单**：`installer/app.manifest` 必须声明 `asInvoker`，否则文件名带 setup/install 时 Windows 会强行要管理员
 - **卸载只删**：`install-manifest.txt` 里的文件、固定的注册表项、用户勾选的数据目录。开机启动和协议关联要指向安装目录才删；数据目录里的 `downloads` 不删

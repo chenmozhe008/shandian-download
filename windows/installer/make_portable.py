@@ -32,10 +32,10 @@ def package_portable(release: Path) -> Path:
     if destination.exists():
         raise ValueError(f"Portable output already exists: {destination}")
     guide = (
-        f"闪电全能下载 Windows {version} 普通版绿色 ZIP\n\n"
+        f"闪电全能下载 Windows {version} 便携版\n\n"
         f"完整解压到一个目录，再运行「{APP}」。若闪电已在运行，请先从托盘退出旧实例。\n"
         f"需要清理时，退出闪电后双击「{CLEANUP}」。这会清除当前 Windows 用户的闪电设置、任务记录、账号信息和缓存。"
-        "安装版与绿色版共用这些数据，已下载的文件会保留。最后可删除整个解压目录。\n"
+        "安装版与便携版共用这些数据，已下载的文件会保留。最后可删除整个解压目录。\n"
     )
     with TemporaryDirectory(prefix=".portable-", dir=release) as temp:
         stage = Path(temp) / name

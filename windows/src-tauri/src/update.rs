@@ -458,7 +458,7 @@ pub fn cleanup_old_backups() {
     let Ok(exe) = std::env::current_exe() else { return };
     let Some(dir) = exe.parent() else { return };
     let Ok(rd) = std::fs::read_dir(dir) else { return };
-    // 只删自己留下的：绿色版可能放在用户自己的文件夹里，别的 .old 不是我们的
+    // 只删自己留下的：便携版可能放在用户自己的文件夹里，别的 .old 不是我们的
     let exe_name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let ours = [exe_name.as_str(), "gopeed.exe", "WebView2Loader.dll"];
     for e in rd.flatten() {
