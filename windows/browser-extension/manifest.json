@@ -1,0 +1,156 @@
+{
+  "manifest_version": 3,
+  "name": "闪电全能下载",
+  "version": "1.15.96",
+  "version_name": "0.2.11",
+  "description": "浏览器里的下载交给闪电全能下载；右键链接可直接用闪电全能下载。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjLx3XnL5YY26qyffqyVmlu/M30PNMw3Laz+Cq+WQmyCpORklWSfw2TTWe3/gI9S3LNVXF5bWfywZI1FsWVDH+p6zzWySIMvQFWJlim+HXjfpwEDkSmhV7jcY0evhtEFKKxdI2F1g755tEAICApxVQ8qa31i7exGEI8U4B+AbFbpqKfc4XbkMesWaaTl3p83HLNPSJzWuKEAz9cAONk3Mt3yYOP3fY0V69ajZDdaD+r7jVXhHvrM0cjGJAnfDIUAhzKdStdlCRcJdqXqUglykJy8XBZ/caFvWieb7qPD3GNkFLRHzeArydp8YfOj9yxYtdEeoVEYyzTxRJTU/f7KHGQIDAQAB",
+  "permissions": [
+    "downloads",
+    "contextMenus",
+    "cookies",
+    "storage",
+    "tabs",
+    "alarms",
+    "scripting",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "optional_permissions": [
+    "webRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*", "*://*.bilibili.com/*"],
+      "css": ["segments.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "channel-open.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "feedback.js",
+        "hover.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://pan.baidu.com/*"
+      ],
+      "js": [
+        "feedback.js",
+        "baidu-page.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://pan.quark.cn/*",
+        "https://drive.uc.cn/*",
+        "https://www.alipan.com/drive*",
+        "https://www.aliyundrive.com/drive*",
+        "https://www.alipan.com/s/*",
+        "https://www.aliyundrive.com/s/*"
+      ],
+      "js": [
+        "feedback.js",
+        "quark-page.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.douyin.com/*"
+      ],
+      "js": [
+        "douyin-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://*.123pan.com/*",
+        "https://*.123pan.cn/*",
+        "https://*.123684.com/*",
+        "https://*.123865.com/*",
+        "https://*.123952.com/*",
+        "https://*.123912.com/*",
+        "https://*.123957.com/*",
+        "https://cloud.189.cn/*",
+        "https://yun.139.com/*",
+        "https://caiyun.139.com/*",
+        "https://pan.xunlei.com/*",
+        "https://www.guangyapan.com/*",
+        "https://guangyapan.com/*"
+      ],
+      "js": [
+        "feedback.js",
+        "cloud-sites.js",
+        "extra-cloud-page.js",
+        "cloud-account-page.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://mypikpak.com/*",
+        "https://pan.quark.cn/*",
+        "https://drive.uc.cn/*",
+        "https://115.com/*",
+        "https://www.115.com/*",
+        "https://115cdn.com/*",
+        "https://www.115cdn.com/*"
+      ],
+      "js": [
+        "cloud-sites.js",
+        "cloud-account-page.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "闪电全能下载",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "24": "icons/icon24.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "24": "icons/icon24.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "sandbox": {
+    "pages": [
+      "pixabay-flow-host.html"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';",
+    "sandbox": "sandbox allow-scripts allow-forms; script-src 'self'; child-src 'self';"
+  }
+}

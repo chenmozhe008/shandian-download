@@ -1,0 +1,16 @@
+[package]
+name = "shandian-stub"
+version = "0.2.11"
+edition = "2021"
+description = "闪电全能下载 安装包"
+
+[dependencies]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[workspace]

@@ -1,0 +1,3251 @@
+diff --git a/go.mod b/go.mod
+index 7b27ae9..0c4c7c8 100644
+--- a/go.mod
++++ b/go.mod
+@@ -17,6 +17,7 @@ require (
+ 	github.com/matoous/go-nanoid/v2 v2.0.0
+ 	github.com/mattn/go-ieproxy v0.0.12
+ 	github.com/mholt/archives v0.1.5
++	github.com/monkeyWie/goed2k v0.0.0-20260317100435-7a7575cf2447
+ 	github.com/pkg/errors v0.9.1
+ 	github.com/rs/dnscache v0.0.0-20230804202142-fc85eb664529
+ 	github.com/rs/zerolog v1.31.0
+@@ -45,7 +46,6 @@ require (
+ 	github.com/klauspost/pgzip v1.2.6 // indirect
+ 	github.com/mikelolasagasti/xz v1.0.1 // indirect
+ 	github.com/minio/minlz v1.0.1 // indirect
+-	github.com/monkeyWie/goed2k v0.0.0-20260317100435-7a7575cf2447 // indirect
+ 	github.com/nwaples/rardecode/v2 v2.2.0 // indirect
+ 	github.com/onsi/ginkgo/v2 v2.23.4 // indirect
+ 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+@@ -73,7 +73,7 @@ require (
+ 	github.com/anacrolix/chansync v0.7.0 // indirect
+ 	github.com/anacrolix/dht/v2 v2.23.0 // indirect
+ 	github.com/anacrolix/envpprof v1.5.0 // indirect
+-	github.com/anacrolix/generics v0.2.0 // indirect
++	github.com/anacrolix/generics v0.2.0
+ 	github.com/anacrolix/go-libutp v1.3.2 // indirect
+ 	github.com/anacrolix/log v0.17.1-0.20251118025802-918f1157b7bb // indirect
+ 	github.com/anacrolix/missinggo v1.3.0 // indirect
+@@ -153,7 +153,7 @@ require (
+ 	golang.org/x/net v0.48.0 // indirect
+ 	golang.org/x/sys v0.40.0 // indirect
+ 	golang.org/x/text v0.33.0
+-	golang.org/x/time v0.14.0 // indirect
++	golang.org/x/time v0.14.0
+ 	golang.org/x/tools v0.40.0 // indirect
+ 	gopkg.in/warnings.v0 v0.1.2 // indirect
+ 	lukechampine.com/blake3 v1.4.1 // indirect
+diff --git a/internal/protocol/bt/fetcher.go b/internal/protocol/bt/fetcher.go
+index d9202dd..038df87 100644
+--- a/internal/protocol/bt/fetcher.go
++++ b/internal/protocol/bt/fetcher.go
+@@ -15,9 +15,11 @@ import (
+ 
+ 	"github.com/GopeedLab/gopeed/internal/controller"
+ 	"github.com/GopeedLab/gopeed/internal/fetcher"
++	"github.com/GopeedLab/gopeed/internal/shandian"
+ 	"github.com/GopeedLab/gopeed/pkg/base"
+ 	"github.com/GopeedLab/gopeed/pkg/protocol/bt"
+ 	"github.com/GopeedLab/gopeed/pkg/util"
++	g "github.com/anacrolix/generics"
+ 	"github.com/anacrolix/torrent"
+ 	"github.com/anacrolix/torrent/metainfo"
+ 	"github.com/anacrolix/torrent/storage"
+@@ -42,8 +44,14 @@ type Fetcher struct {
+ 	torrentReady    atomic.Bool
+ 	torrentUpload   atomic.Bool
+ 	torrentDropCtx  context.Context
++	streaming       atomic.Bool
+ 	torrentDropFunc func()
+ 	uploadDoneCh    chan any
++	// 闪电下载：App 要求先把磁盘上已有的数据校验一遍（从迅雷收回），Start 时先校验再放行下载
++	verifyExisting bool
++	verifyState    atomic.Int32 // 0: idle, 1: checking, 2: failed, 3: complete
++	wantDownload   atomic.Bool
++	downloadLock   sync.Mutex
+ }
+ 
+ func (f *Fetcher) Setup(ctl *controller.Controller) {
+@@ -77,6 +85,7 @@ func (f *Fetcher) initClient() (err error) {
+ 	cfg.ExtendedHandshakeClientVersion = fmt.Sprintf("Gopeed %s", base.Version)
+ 	cfg.ListenPort = f.config.ListenPort
+ 	cfg.HTTPProxy = f.ctl.GetProxy(f.meta.Req.Proxy)
++	cfg.DownloadRateLimiter = shandian.Limiter // 闪电下载：全局限速
+ 	dnsResolver := &DnsCacheResolver{RefreshTimeout: 5 * time.Minute}
+ 	cfg.TrackerDialContext = dnsResolver.DialContext
+ 	client, err = torrent.NewClient(cfg)
+@@ -105,6 +114,7 @@ func (f *Fetcher) Resolve(req *base.Request, opts *base.Options) error {
+ }
+ 
+ func (f *Fetcher) Start() (err error) {
++	f.wantDownload.Store(true)
+ 	if !f.torrentReady.Load() {
+ 		if err = f.addTorrent(f.meta.Req, false); err != nil {
+ 			return
+@@ -122,20 +132,184 @@ func (f *Fetcher) Start() (err error) {
+ 		}
+ 		f.data.Progress = make(fetcher.Progress, len(f.meta.Opts.SelectFiles))
+ 	}
+-	if len(f.meta.Opts.SelectFiles) == len(files) {
+-		f.torrent.DownloadAll()
+-	} else {
+-		for _, selectIndex := range f.meta.Opts.SelectFiles {
+-			file := files[selectIndex]
+-			file.Download()
+-		}
++	// Keep piece priorities unset while the initial disk check is running.
++	// The torrent library otherwise builds an inconsistent request order while
++	// pieces are being rehashed and downloads are disallowed.
++	if f.verifyExisting {
++		f.verifyExisting = false
++		f.beginVerification()
++		return
++	}
++	if f.verifyState.Load() == 1 {
++		return
+ 	}
+-	f.torrent.AllowDataDownload()
++	f.markSelectedForDownload()
++	f.downloadLock.Lock()
++	if f.wantDownload.Load() && f.verifyState.Load() != 1 && f.verifyState.Load() != 2 {
++		f.torrent.AllowDataDownload()
++	}
++	f.downloadLock.Unlock()
+ 	return
+ }
+ 
+-func (f *Fetcher) Pause() (err error) {
++func (f *Fetcher) markSelectedForDownload() {
++	files := f.torrent.Files()
++	for _, index := range f.meta.Opts.SelectFiles {
++		files[index].Download()
++	}
++}
++
++// VerificationState exposes actual completion of the asynchronous disk check.
++func (f *Fetcher) VerificationState() string {
++	switch f.verifyState.Load() {
++	case 1:
++		return "checking"
++	case 2:
++		return "failed"
++	case 3:
++		return "complete"
++	default:
++		return ""
++	}
++}
++
++func (f *Fetcher) beginVerification() {
++	f.downloadLock.Lock()
++	defer f.downloadLock.Unlock()
++	if !f.verifyState.CompareAndSwap(0, 1) && !f.verifyState.CompareAndSwap(2, 1) && !f.verifyState.CompareAndSwap(3, 1) {
++		return
++	}
++	for _, file := range f.torrent.Files() {
++		file.Cancel()
++	}
+ 	f.torrent.DisallowDataDownload()
++	go func() {
++		if err := f.verifySelectedPieces(); err != nil {
++			f.verifyState.Store(2)
++			return
++		}
++		f.downloadLock.Lock()
++		f.verifyState.Store(3)
++		if f.wantDownload.Load() {
++			f.markSelectedForDownload()
++			f.torrent.AllowDataDownload()
++		}
++		f.downloadLock.Unlock()
++	}()
++}
++
++// verifySelectedPieces checks each piece intersecting the selected files exactly once,
++// including shared boundary pieces. Unselected files do not need a full scan.
++func (f *Fetcher) verifySelectedPieces() error {
++	files := f.torrent.Files()
++	selected := f.meta.Opts.SelectFiles
++	if len(selected) == 0 {
++		return f.torrent.VerifyDataContext(f.torrentDropCtx)
++	}
++	pieces := make(map[int]struct{})
++	for _, index := range selected {
++		if index < 0 || index >= len(files) {
++			return fmt.Errorf("invalid selected file index %d", index)
++		}
++		for piece := files[index].BeginPieceIndex(); piece < files[index].EndPieceIndex(); piece++ {
++			pieces[piece] = struct{}{}
++		}
++	}
++	for piece := 0; piece < f.torrent.NumPieces(); piece++ {
++		if _, ok := pieces[piece]; !ok {
++			continue
++		}
++		if err := f.torrent.Piece(piece).VerifyDataContext(f.torrentDropCtx); err != nil {
++			return fmt.Errorf("verifying piece %d: %w", piece, err)
++		}
++	}
++	return nil
++}
++
++// Stream 闪电下载：边下边播。按播放顺序优先下最大的那个文件（从头往后，外加文件末尾 8 MB，
++// mp4 的索引常在末尾），靠 anacrolix 的 Reader 预读驱动下载顺序；读到的数据丢弃，文件照常写盘
++func (f *Fetcher) Stream() error {
++	if !f.torrentReady.Load() {
++		return fmt.Errorf("torrent not ready")
++	}
++	files := f.torrent.Files()
++	var target *torrent.File
++	for _, i := range f.meta.Opts.SelectFiles {
++		if i < len(files) && (target == nil || files[i].Length() > target.Length()) {
++			target = files[i]
++		}
++	}
++	if target == nil {
++		return fmt.Errorf("no file")
++	}
++	if !f.streaming.CompareAndSwap(false, true) {
++		return nil
++	}
++	ctx := f.torrentDropCtx
++	go func() {
++		tail := target.NewReader()
++		defer tail.Close()
++		if _, err := tail.Seek(max(0, target.Length()-8<<20), io.SeekStart); err == nil {
++			_, _ = io.Copy(io.Discard, &ctxReader{ctx, tail})
++		}
++	}()
++	go func() {
++		defer f.streaming.Store(false)
++		r := target.NewReader()
++		defer r.Close()
++		r.SetReadahead(48 << 20)
++		r.SetResponsive()
++		_, _ = io.Copy(io.Discard, &ctxReader{ctx, r})
++	}()
++	return nil
++}
++
++// PlayReader 边下边送：最大的那个选中文件的读取器，读到哪儿就优先下哪儿（拖进度条也是），读不到就等
++func (f *Fetcher) PlayReader(ctx context.Context) (io.ReadSeekCloser, string, error) {
++	if !f.torrentReady.Load() {
++		return nil, "", fmt.Errorf("torrent not ready")
++	}
++	files := f.torrent.Files()
++	var target *torrent.File
++	for _, i := range f.meta.Opts.SelectFiles {
++		if i < len(files) && (target == nil || files[i].Length() > target.Length()) {
++			target = files[i]
++		}
++	}
++	if target == nil {
++		return nil, "", fmt.Errorf("no file")
++	}
++	r := target.NewReader()
++	r.SetResponsive()
++	r.SetReadahead(16 << 20)
++	return &ctxReadSeeker{ctx, r}, filepath.Base(target.DisplayPath()), nil
++}
++
++type ctxReadSeeker struct {
++	ctx context.Context
++	r   torrent.Reader
++}
++
++func (c *ctxReadSeeker) Read(p []byte) (int, error)                { return c.r.ReadContext(c.ctx, p) }
++func (c *ctxReadSeeker) Seek(off int64, whence int) (int64, error) { return c.r.Seek(off, whence) }
++func (c *ctxReadSeeker) Close() error                              { return c.r.Close() }
++
++type ctxReader struct {
++	ctx context.Context
++	r   torrent.Reader
++}
++
++func (c *ctxReader) Read(p []byte) (int, error) { return c.r.ReadContext(c.ctx, p) }
++
++func (f *Fetcher) Pause() (err error) {
++	f.downloadLock.Lock()
++	defer f.downloadLock.Unlock()
++	f.wantDownload.Store(false)
++	// Verification already blocked downloads; changing torrent priorities concurrently
++	// with piece hashing can violate the upstream request-order invariant.
++	if f.verifyState.Load() != 1 {
++		f.torrent.DisallowDataDownload()
++	}
+ 	return
+ }
+ 
+@@ -282,6 +456,11 @@ func (f *Fetcher) Patch(req *base.Request, opts *base.Options) error {
+ 		f.data.Progress = make(fetcher.Progress, len(validSelectFiles))
+ 	}
+ 
++	// 闪电下载：App 要求重新校验磁盘上已有的数据（换内核后进度丢了、或从迅雷收回后想重新对一遍）
++	if wantedVerify(opts) && f.torrentReady.Load() {
++		f.beginVerification()
++	}
++
+ 	return nil
+ }
+ 
+@@ -446,12 +625,27 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 			return
+ 		}
+ 	}
++	// Metadata may be resolved before the task starts; don't start data transfer
++	// until Start has applied the requested disk verification.
++	spec.DisallowDataDownload = true
+ 	spec.Storage = storage.NewFileOpts(storage.NewFileClientOpts{
+ 		ClientBaseDir: cfg.DataDir,
+ 		TorrentDirMaker: func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
+ 			return f.meta.Opts.Path
+ 		},
++		// 闪电下载：块完成记录落盘 + 不用 .part 文件。anacrolix 用 .part 时启动会把没下完的文件的块全标成未完成
++		// （storage/file-torrent.go setCompletionFromPartFiles），落盘的记录等于白存，重启还是整片重下/重校验
++		PieceCompletion: shandian.PieceCompletion(),
++		UsePartFiles:    g.Some(false),
+ 	})
++	// 闪电下载：同一个种子之前被「解析」过的话，那个副本还挂在客户端里、存储位置是默认下载目录；
++	// 直接 Add 会复用它，文件写错地方。先拿走它的种子信息（磁力不用重新找元数据），再丢掉副本
++	if old, ok := client.Torrent(spec.InfoHash); ok && old != f.torrent {
++		if old.Info() != nil && len(spec.InfoBytes) == 0 {
++			spec.InfoBytes = old.Metainfo().InfoBytes
++		}
++		old.Drop()
++	}
+ 	f.torrent, _, err = client.AddTorrentSpec(spec)
+ 	if err != nil {
+ 		return
+@@ -484,11 +678,25 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 	}
+ 	<-f.torrent.GotInfo()
+ 	f.torrentReady.Store(true)
++	f.verifyExisting = wantedVerify(f.meta.Opts)
+ 
+ 	go f.doUpload(fromUpload)
+ 	return
+ }
+ 
++// wantedVerify App 在 opts.extra 里要求先校验磁盘上已有的数据吗（只有「从迅雷收回」会要）
++func wantedVerify(opts *base.Options) bool {
++	if opts == nil || opts.Extra == nil {
++		return false
++	}
++	m, ok := opts.Extra.(map[string]any)
++	if !ok {
++		return false
++	}
++	v, _ := m["shandianVerifyExisting"].(bool)
++	return v
++}
++
+ func (f *Fetcher) seedRadio() float64 {
+ 	var bytesRead int64
+ 	if f.Meta().Res != nil {
+diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
+index a9ed14a..87c251f 100644
+--- a/internal/protocol/http/fetcher.go
++++ b/internal/protocol/http/fetcher.go
+@@ -351,6 +351,20 @@ func (f *Fetcher) Resolve(req *base.Request, opts *base.Options) error {
+ 		f.setState(stateError)
+ 		return err
+ 	}
++	// shandian: 有的 CDN（新片厂 xpccdn）对不带 Range 的 GET 回 403、带 Range: bytes=0- 才回 206，
++	// 回 403 时带上它重试一次（206 整段的响应体照样能复用）。不一律带：有的服务器不认开放式 Range
++	if resp.StatusCode == http.StatusForbidden && httpReq.Header.Get(base.HttpHeaderRange) == "" {
++		resp.Body.Close()
++		if httpReq, err = f.buildRequest(context.TODO(), req); err != nil {
++			f.setState(stateError)
++			return err
++		}
++		httpReq.Header.Set(base.HttpHeaderRange, "bytes=0-")
++		if resp, err = client.Do(httpReq); err != nil {
++			f.setState(stateError)
++			return err
++		}
++	}
+ 	// Record connection time as baseline for fast-fail timeout
+ 	f.updateMaxConnTime(time.Since(connStartTime))
+ 
+@@ -382,6 +396,15 @@ func (f *Fetcher) Resolve(req *base.Request, opts *base.Options) error {
+ 		}
+ 	}
+ 
++	// shandian: 206 时总大小以 Content-Range 的 /total 为准
++	if resp.StatusCode == base.HttpCodePartialContent {
++		if i := strings.LastIndex(contentRange, "/"); i >= 0 {
++			if total, err := strconv.ParseInt(contentRange[i+1:], 10, 64); err == nil {
++				res.Size = total
++			}
++		}
++	}
++
+ 	// Parse last modified time
+ 	var lastModifiedTime *time.Time
+ 	lastModified := resp.Header.Get(base.HttpHeaderLastModified)
+@@ -673,6 +696,13 @@ func (f *Fetcher) doStart() error {
+ 
+ 	// Initialize slow start controller
+ 	maxConns := f.meta.Opts.Extra.(*fhttp.OptsExtra).Connections
++	// shandian: 每段至少 20 MB（同 aria2 的 min-split-size）：小文件只用 1 个连接。
++	// 一张几 MB 的图开 8 个连接，限流的服务器（如维基）直接 429，分段也快不了多少
++	if size := f.meta.Res.Size; size > 0 {
++		if byChunk := int(size / shandianMinSplit); byChunk < maxConns {
++			maxConns = max(byChunk, 1)
++		}
++	}
+ 	f.slowStart = newSlowStartController(maxConns)
+ 
+ 	// Create main context
+@@ -889,6 +919,12 @@ func (f *Fetcher) expandConnections() {
+ 	}
+ }
+ 
++// shandian: 每个连接至少分到这么多（小于 2 倍的文件不分段）
++const shandianMinSplit = 20 << 20
++
++// shandian: 429/5xx 连续这么久一个字节没拿到就放弃这个连接（变量方便测试改小）
++var shandianExemptGiveUp = 3 * time.Minute
++
+ func (f *Fetcher) runConnection(conn *connection) {
+ 	defer f.wg.Done()
+ 
+@@ -902,8 +938,13 @@ func (f *Fetcher) runConnection(conn *connection) {
+ 
+ 	retries := 0
+ 	conn.retryTimes = 0
++	// shandian: 429/5xx 原版不计失败、每 5 秒重试且永不放弃，调度循环又在等这批连接有结果，任务就永远「下载中」。
++	// 改成指数退避（2→4→…→30 秒），连续 3 分钟一个字节没拿到才放弃（计为失败，任务正常报错）
++	var exemptSince time.Time
++	exemptTries := 0
+ 
+ 	for {
++		downloadedBefore := conn.Downloaded
+ 		// Rebuild client with updated fast-fail timeout on retries
+ 		if retries > 0 {
+ 			client = f.buildFastFailClient()
+@@ -935,6 +976,45 @@ func (f *Fetcher) runConnection(conn *connection) {
+ 			conn.lastErr = err
+ 		}
+ 
++		if conn.Downloaded > downloadedBefore {
++			exemptSince, exemptTries = time.Time{}, 0
++		}
++		if re := extractRequestError(err); re != nil && isFailureExemptHTTPCode(re.Code) {
++			if re.Code == 429 && f.slowStart != nil {
++				f.slowStart.mu.Lock()
++				f.slowStart.paused = true // 服务器嫌请求多，不再加开连接
++				f.slowStart.mu.Unlock()
++			}
++			if exemptSince.IsZero() {
++				exemptSince = time.Now()
++			}
++			if time.Since(exemptSince) > shandianExemptGiveUp {
++				f.connMu.Lock()
++				conn.State = connFailed
++				conn.failed = true
++				conn.retryTimes = 3
++				f.connMu.Unlock()
++				if f.slowStart != nil {
++					f.slowStart.onConnectFailed()
++				}
++				return
++			}
++			f.connMu.Lock()
++			conn.State = connFailed
++			f.connMu.Unlock()
++			delay := time.Duration(1<<min(exemptTries+1, 5)) * time.Second // 2,4,8,16,30 秒
++			if delay > 30*time.Second {
++				delay = 30 * time.Second
++			}
++			exemptTries++
++			select {
++			case <-conn.ctx.Done():
++				return
++			case <-time.After(delay):
++			}
++			continue
++		}
++
+ 		if shouldCountHTTPFailure(err) {
+ 			if re := extractRequestError(err); re != nil && re.Code == 403 {
+ 				f.connMu.Lock()
+diff --git a/internal/protocol/http/shandian_test.go b/internal/protocol/http/shandian_test.go
+new file mode 100644
+index 0000000..d769291
+--- /dev/null
++++ b/internal/protocol/http/shandian_test.go
+@@ -0,0 +1,87 @@
++package http
++
++import (
++	"net"
++	"net/http"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/GopeedLab/gopeed/internal/test"
++)
++
++// 闪电下载补丁的测试
++
++// 新片厂 xpccdn：不带 Range 回 403，带 Range 才 206
++func TestShandian_Range403(t *testing.T) {
++	fs := test.StartTestFileServer() // 生成测试文件；Close 时会删掉它
++	defer fs.Close()
++	ln, _ := net.Listen("tcp", "127.0.0.1:0")
++	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if !strings.HasPrefix(r.Header.Get("Range"), "bytes=") {
++			w.WriteHeader(403)
++			return
++		}
++		http.ServeFile(w, r, test.BuildFile)
++	}))
++	defer ln.Close()
++	downloadNormal(ln, 4, t)
++}
++
++// 下载中途服务器一直回 429：不能永远「下载中」，要在放弃时限后报错
++func TestShandian_Persistent429Fails(t *testing.T) {
++	old := shandianExemptGiveUp
++	shandianExemptGiveUp = 5 * time.Second
++	defer func() { shandianExemptGiveUp = old }()
++	fs := test.StartTestFileServer()
++	defer fs.Close()
++	var n atomic.Int32
++	ln, _ := net.Listen("tcp", "127.0.0.1:0")
++	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if n.Add(1) > 1 { // 只有解析那一下正常，之后一律 429
++			w.WriteHeader(429)
++			return
++		}
++		http.ServeFile(w, r, test.BuildFile)
++	}))
++	defer ln.Close()
++	f := downloadReady(ln, 4, t)
++	// 解析的响应体也会被用来下载，掐掉它模拟中途断开
++	f.(*Fetcher).resolveRespLock.Lock()
++	if f.(*Fetcher).resolveResp != nil {
++		f.(*Fetcher).resolveResp.Body.Close()
++	}
++	f.(*Fetcher).resolveRespLock.Unlock()
++	if err := f.Start(); err != nil {
++		t.Fatal(err)
++	}
++	done := make(chan error, 1)
++	go func() { done <- f.Wait() }()
++	select {
++	case err := <-done:
++		if err == nil {
++			t.Fatal("一直 429 却报告完成")
++		}
++	case <-time.After(60 * time.Second):
++		t.Fatal("一直 429 时任务卡住不报错")
++	}
++}
++
++// 偶尔 429（像维基限流，约一半请求被拒）：退避重试后应能下完
++func TestShandian_Intermittent429Completes(t *testing.T) {
++	fs := test.StartTestFileServer()
++	defer fs.Close()
++	var n atomic.Int32
++	ln, _ := net.Listen("tcp", "127.0.0.1:0")
++	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if n.Add(1)%2 == 0 {
++			w.WriteHeader(429)
++			return
++		}
++		http.ServeFile(w, r, test.BuildFile)
++	}))
++	defer ln.Close()
++	downloadNormal(ln, 8, t)
++}
++
+diff --git a/internal/protocol/http/timeout_reader.go b/internal/protocol/http/timeout_reader.go
+index f23e16e..31cac86 100644
+--- a/internal/protocol/http/timeout_reader.go
++++ b/internal/protocol/http/timeout_reader.go
+@@ -4,6 +4,8 @@ import (
+ 	"context"
+ 	"io"
+ 	"time"
++
++	"github.com/GopeedLab/gopeed/internal/shandian"
+ )
+ 
+ type TimeoutReader struct {
+@@ -33,6 +35,7 @@ func (tr *TimeoutReader) Read(p []byte) (n int, err error) {
+ 
+ 	select {
+ 	case <-done:
++		shandian.Wait(bytesRead) // 闪电下载：全局限速
+ 		return bytesRead, readErr
+ 	case <-ctx.Done():
+ 		return 0, ctx.Err()
+diff --git a/internal/shandian/shandian.go b/internal/shandian/shandian.go
+new file mode 100644
+index 0000000..496faca
+--- /dev/null
++++ b/internal/shandian/shandian.go
+@@ -0,0 +1,78 @@
++// Package shandian 是闪电下载对 Gopeed v1.9.3 的补丁：
++//   - BT 块完成记录落盘（原版用 .part 文件时只记内存，内核一重启就整片重新校验）
++//   - 全局下载限速（BT 和 HTTP 共用一个限速器，配置 extra.shandianDownloadLimit，单位 KB/s，0 为不限）
++package shandian
++
++import (
++	"context"
++	"crypto/sha256"
++	"encoding/hex"
++	"os"
++	"path/filepath"
++	"sync"
++
++	"github.com/anacrolix/torrent/storage"
++	"golang.org/x/time/rate"
++)
++
++// Limiter 全局下载限速器，默认不限
++var Limiter = rate.NewLimiter(rate.Inf, 1<<20)
++
++func SetDownloadLimit(kbps int) {
++	if kbps <= 0 {
++		Limiter.SetLimit(rate.Inf)
++		return
++	}
++	bps := kbps * 1024
++	Limiter.SetBurst(max(bps, 256<<10))
++	Limiter.SetLimit(rate.Limit(bps))
++}
++
++// ApplyExtra 从下载配置的 extra 里读限速
++func ApplyExtra(extra map[string]any) {
++	v, _ := extra["shandianDownloadLimit"].(float64)
++	SetDownloadLimit(int(v))
++}
++
++// Wait 读到 n 字节后按限速等待；不限速时立刻返回
++func Wait(n int) {
++	if n <= 0 || Limiter.Limit() == rate.Inf {
++		return
++	}
++	for n > 0 {
++		c := min(n, Limiter.Burst())
++		_ = Limiter.WaitN(context.Background(), c)
++		n -= c
++	}
++}
++
++var (
++	pcOnce sync.Once
++	pc     storage.PieceCompletion
++)
++
++// 所有种子共用一个落盘的块完成记录；包一层不让单个种子关闭时把它关掉
++type sharedCompletion struct{ storage.PieceCompletion }
++
++func (sharedCompletion) Close() error { return nil }
++
++// PieceCompletion 放在内核工作目录的 data/piece-completion 下（App 把工作目录设为内核目录）
++func PieceCompletion() storage.PieceCompletion {
++	pcOnce.Do(func() {
++		dir, _ := os.Getwd()
++		d := filepath.Join(dir, "data", "piece-completion")
++		_ = os.MkdirAll(d, 0o700)
++		if c, err := storage.NewBoltPieceCompletion(d); err == nil {
++			pc = sharedCompletion{c}
++		} else {
++			pc = storage.NewMapPieceCompletion()
++		}
++	})
++	return pc
++}
++
++// PlayKey 播放地址里的密钥：token 和任务 id 派生，不同任务不同，泄露也拿不到 token
++func PlayKey(token, id string) string {
++	sum := sha256.Sum256([]byte("shandian-play:" + token + ":" + id))
++	return hex.EncodeToString(sum[:])[:24]
++}
+diff --git a/pkg/download/downloader.go b/pkg/download/downloader.go
+--- a/pkg/download/downloader.go
++++ b/pkg/download/downloader.go
+@@ -1,8 +1,11 @@
+ package download
+ 
+ import (
++	"context"
+ 	"errors"
+ 	"fmt"
++	"github.com/GopeedLab/gopeed/internal/shandian"
++	"io"
+ 	"math"
+ 	gohttp "net/http"
+ 	"net/url"
+@@ -154,6 +157,7 @@
+ 	}
+ 	if exist {
+ 		d.cfg.DownloaderStoreConfig = &cfg
++		shandian.ApplyExtra(cfg.Extra)
+ 	} else {
+ 		d.cfg.DownloaderStoreConfig = &base.DownloaderStoreConfig{
+ 			FirstLoad: true,
+@@ -478,6 +482,17 @@
+ 		taskIds = append(taskIds, taskId)
+ 	}
+ 	return taskIds, nil
++}
++
++// DropResolve shandian: 丢掉一次解析的结果（关连接、停预下载、删临时文件）
++func (d *Downloader) DropResolve(rrId string) {
++	d.fetcherMapLock.Lock()
++	f, ok := d.fetcherCache[rrId]
++	delete(d.fetcherCache, rrId)
++	d.fetcherMapLock.Unlock()
++	if ok {
++		go f.Close()
++	}
+ }
+ 
+ func (d *Downloader) Create(rrId string) (taskId string, err error) {
+@@ -873,6 +888,55 @@
+ 	}
+ }
+ 
++// PlayReader 闪电下载：边下边送的读取器（只对 BT 任务）
++func (d *Downloader) PlayReader(ctx context.Context, id string) (io.ReadSeekCloser, string, time.Time, error) {
++	task := d.GetTask(id)
++	if task == nil {
++		return nil, "", time.Time{}, ErrTaskNotFound
++	}
++	p, ok := task.fetcher.(interface {
++		PlayReader(context.Context) (io.ReadSeekCloser, string, error)
++	})
++	if !ok || task.fetcher == nil {
++		return nil, "", time.Time{}, fmt.Errorf("not supported")
++	}
++	rs, name, err := p.PlayReader(ctx)
++	return rs, name, task.CreatedAt, err
++}
++
++// ReorderWait 闪电下载：按给定顺序排等待队列（拖动排序）。没列出的排在后面，保持原有先后；
++// 正在跑的任务不受影响
++func (d *Downloader) ReorderWait(ids []string) {
++	d.lock.Lock()
++	defer d.lock.Unlock()
++	rank := make(map[string]int, len(ids))
++	for i, id := range ids {
++		rank[id] = i
++	}
++	pos := func(t *Task) int {
++		if r, ok := rank[t.ID]; ok {
++			return r
++		}
++		return len(ids)
++	}
++	sort.SliceStable(d.waitTasks, func(i, j int) bool {
++		return pos(d.waitTasks[i]) < pos(d.waitTasks[j])
++	})
++}
++
++// Stream 闪电下载：边下边播（只对 BT 任务）
++func (d *Downloader) Stream(id string) error {
++	task := d.GetTask(id)
++	if task == nil {
++		return ErrTaskNotFound
++	}
++	s, ok := task.fetcher.(interface{ Stream() error })
++	if !ok || task.fetcher == nil {
++		return fmt.Errorf("not supported")
++	}
++	return s.Stream()
++}
++
+ func (d *Downloader) GetTask(id string) *Task {
+ 	d.lock.Lock()
+ 	defer d.lock.Unlock()
+@@ -951,6 +1015,7 @@
+ 
+ func (d *Downloader) PutConfig(v *base.DownloaderStoreConfig) error {
+ 	d.cfg.DownloaderStoreConfig = v
++	shandian.ApplyExtra(v.Extra)
+ 	return d.storage.Put(bucketConfig, "config", v)
+ }
+ 
+@@ -975,8 +1040,11 @@
+ 		return
+ 	}
+ 
++	watchReleased := false
+ 	defer func() {
+-		d.watchedTasks.Delete(task.ID)
++		if !watchReleased {
++			d.watchedTasks.Delete(task.ID)
++		}
+ 	}()
+ 
+ 	// wait task upload done
+@@ -1002,6 +1070,9 @@
+ 	}
+ 
+ 	err := task.fetcher.Wait()
++	// 先释放旧一轮的监听，再发布终态；否则立刻继续可能被旧监听挡掉。
++	d.watchedTasks.Delete(task.ID)
++	watchReleased = true
+ 	if err != nil {
+ 		d.doOnError(task, err)
+ 		return
+@@ -1092,6 +1163,9 @@
+ 
+ func (d *Downloader) doOnError(task *Task, err error) {
+ 	d.Logger.Warn().Err(err).Msgf("task download failed, task id: %s", task.ID)
++	if err != nil {
++		task.ShandianError = err.Error()
++	}
+ 	task.updateStatus(base.DownloadStatusError)
+ 	d.triggerOnError(task, err)
+ 	if task.Status == base.DownloadStatusError {
+@@ -1108,15 +1182,31 @@
+ 			return err
+ 		}
+ 	}
+-	go d.watch(task)
++	if !strings.HasPrefix(task.Meta.Req.URL, "shandian-multi:") {
++		go d.watch(task)
++	}
+ 	return nil
++}
++
++// 暂停的多文件任务可能只查看 stats 后就退出，恢复不能消费掉持久化分段存档。
++func (d *Downloader) loadFetcherState(task *Task, v any) error {
++	if task.Meta != nil && task.Meta.Req != nil && strings.HasPrefix(task.Meta.Req.URL, "shandian-multi:") {
++		found, err := d.storage.Get(bucketSave, task.ID, v)
++		if err != nil {
++			return err
++		}
++		if !found && task.Status != base.DownloadStatusDone && task.Progress != nil && task.Progress.Downloaded > 0 {
++			return fmt.Errorf("多文件分段存档缺失，已停止恢复以保护原文件")
++		}
++		return nil
++	}
++	return d.storage.Pop(bucketSave, task.ID, v)
+ }
+ 
+ func (d *Downloader) restoreFetcher(task *Task) error {
+ 	v, f := task.fetcherManager.Restore()
+ 	if v != nil {
+-		err := d.storage.Pop(bucketSave, task.ID, v)
+-		if err != nil {
++		if err := d.loadFetcherState(task, v); err != nil {
+ 			return err
+ 		}
+ 	}
+@@ -1176,7 +1266,9 @@
+ 		err = d.doStart(task)
+ 	}()
+ 
+-	go d.watch(task)
++	if !strings.HasPrefix(task.Meta.Req.URL, "shandian-multi:") {
++		go d.watch(task)
++	}
+ 	return
+ }
+ 
+@@ -1291,6 +1383,10 @@
+ 		if err := task.fetcher.Start(); err != nil {
+ 			return err
+ 		}
++		// MultiFetcher.Start 会清理上一轮结果，必须在这之后才监听新一轮。
++		if strings.HasPrefix(task.Meta.Req.URL, "shandian-multi:") {
++			go d.watch(task)
++		}
+ 		if err := d.saveTask(task); err != nil {
+ 			return err
+ 		}
+diff --git a/pkg/download/model.go b/pkg/download/model.go
+index bbb57ad..c351411 100644
+--- a/pkg/download/model.go
++++ b/pkg/download/model.go
+@@ -30,6 +30,8 @@ type Task struct {
+ 	IsCreated bool                 `json:"isCreated"`
+ 	CreatedAt time.Time            `json:"createdAt"`
+ 	UpdatedAt time.Time            `json:"updatedAt"`
++	// shandian: 最近一次失败的原因（原版只写日志），闪电下载据此给出提示
++	ShandianError string `json:"shandianError,omitempty"`
+ 
+ 	fetcherManager fetcher.FetcherManager
+ 	fetcher        fetcher.Fetcher
+@@ -87,10 +89,17 @@ func (t *Task) MarshalJSON() ([]byte, error) {
+ 	type rawTaskType Task
+ 	jsonTask := struct {
+ 		rawTaskType
+-		Name string `json:"name"`
++		Name         string `json:"name"`
++		Verification string `json:"shandianVerification,omitempty"`
+ 	}{
+ 		rawTaskType(*t),
+ 		t.Name(),
++		func() string {
++			if f, ok := t.fetcher.(interface{ VerificationState() string }); ok {
++				return f.VerificationState()
++			}
++			return ""
++		}(),
+ 	}
+ 	return json.Marshal(jsonTask)
+ }
+diff --git a/pkg/rest/api.go b/pkg/rest/api.go
+index 6c72bfb..9e6a016 100644
+--- a/pkg/rest/api.go
++++ b/pkg/rest/api.go
+@@ -9,6 +9,7 @@ import (
+ 	"github.com/GopeedLab/gopeed/pkg/base"
+ 	"github.com/GopeedLab/gopeed/pkg/download"
+ 	"github.com/GopeedLab/gopeed/pkg/rest/model"
++	"github.com/GopeedLab/gopeed/internal/shandian"
+ 	"github.com/gorilla/mux"
+ )
+ 
+@@ -31,6 +32,11 @@ func Resolve(w http.ResponseWriter, r *http.Request) {
+ 			WriteJson(w, model.NewErrorResult(err.Error()))
+ 			return
+ 		}
++		// shandian: ?probe=1 只要名字和大小（新建任务确认框）。原版解析会把 HTTP 文件在后台整个预下载到临时目录、
++		// 结果一直留在缓存里等 rid；闪电下载新建任务不用 rid，等于每个文件下两遍。探测完立刻关掉
++		if r.URL.Query().Get("probe") == "1" {
++			Downloader.DropResolve(rr.ID)
++		}
+ 		WriteJson(w, model.NewOkResult(rr))
+ 	}
+ }
+@@ -110,6 +116,35 @@ func PauseTask(w http.ResponseWriter, r *http.Request) {
+ 	WriteJson(w, model.NewNilResult())
+ }
+ 
++// apiToken 启动时记下，播放地址校验用
++var apiToken string
++
++// PlayTask 闪电下载：边下边送。播放器要哪段就先下哪段再送过去（拖进度条也一样），没下到的地方等到了再返回
++func PlayTask(w http.ResponseWriter, r *http.Request) {
++	vars := mux.Vars(r)
++	if vars["key"] != shandian.PlayKey(apiToken, vars["id"]) {
++		w.WriteHeader(http.StatusForbidden)
++		return
++	}
++	rs, name, modTime, err := Downloader.PlayReader(r.Context(), vars["id"])
++	if err != nil {
++		w.WriteHeader(http.StatusNotFound)
++		return
++	}
++	defer rs.Close()
++	http.ServeContent(w, r, name, modTime, rs)
++}
++
++// StreamTask 闪电下载：边下边播
++func StreamTask(w http.ResponseWriter, r *http.Request) {
++	vars := mux.Vars(r)
++	if err := Downloader.Stream(vars["id"]); err != nil {
++		WriteJson(w, model.NewErrorResult(err.Error()))
++		return
++	}
++	WriteJson(w, model.NewNilResult())
++}
++
+ func PauseTasks(w http.ResponseWriter, r *http.Request) {
+ 	filter, errResult := parseFilter(r)
+ 	if errResult != nil {
+diff --git a/pkg/rest/server.go b/pkg/rest/server.go
+index a863a90..168b13d 100644
+--- a/pkg/rest/server.go
++++ b/pkg/rest/server.go
+@@ -127,6 +127,8 @@ func BuildServer(startCfg *model.StartConfig) (*http.Server, net.Listener, error
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/pause").HandlerFunc(PauseTask)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/pause").HandlerFunc(PauseTasks)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/continue").HandlerFunc(ContinueTask)
++	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/stream").HandlerFunc(StreamTask)
++	r.Methods(http.MethodGet, http.MethodHead).Path("/play/{id}/{key}/{name}").HandlerFunc(PlayTask)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/continue").HandlerFunc(ContinueTasks)
+ 	r.Methods(http.MethodDelete).Path("/api/v1/tasks/{id}").HandlerFunc(DeleteTask)
+ 	r.Methods(http.MethodDelete).Path("/api/v1/tasks").HandlerFunc(DeleteTasks)
+@@ -147,6 +149,7 @@ func BuildServer(startCfg *model.StartConfig) (*http.Server, net.Listener, error
+ 	r.Path("/api/v1/proxy").HandlerFunc(DoProxy)
+ 
+ 	enableApiToken := startCfg.ApiToken != ""
++	apiToken = startCfg.ApiToken // 闪电下载：播放密钥用
+ 	enableWebAuth := startCfg.WebEnable && startCfg.WebAuth != nil
+ 	if startCfg.WebEnable {
+ 		if enableWebAuth {
+@@ -181,6 +184,11 @@ func BuildServer(startCfg *model.StartConfig) (*http.Server, net.Listener, error
+ 
+ 		r.Use(func(h http.Handler) http.Handler {
+ 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				// 闪电下载：播放地址给播放器用，播放器带不了请求头；用每个任务单独的播放密钥（由 token 派生），不暴露 token
++				if strings.HasPrefix(r.URL.Path, "/play/") {
++					h.ServeHTTP(w, r)
++					return
++				}
+ 				if enableApiToken {
+ 					apiTokenHeader := r.Header["X-Api-Token"]
+ 					// If api token header is set, only check api token ignore basic auth
+--- a/pkg/rest/api.go
++++ b/pkg/rest/api.go
+@@ -136,6 +136,17 @@
+ }
+ 
+ // StreamTask 闪电下载：边下边播
++func OrderTasks(w http.ResponseWriter, r *http.Request) {
++	var req struct {
++		IDs []string `json:"ids"`
++	}
++	if !ReadJson(r, w, &req) {
++		return
++	}
++	Downloader.ReorderWait(req.IDs)
++	WriteJson(w, model.NewNilResult())
++}
++
+ func StreamTask(w http.ResponseWriter, r *http.Request) {
+ 	vars := mux.Vars(r)
+ 	if err := Downloader.Stream(vars["id"]); err != nil {
+--- a/pkg/rest/server.go
++++ b/pkg/rest/server.go
+@@ -127,6 +127,7 @@
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/pause").HandlerFunc(PauseTask)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/pause").HandlerFunc(PauseTasks)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/continue").HandlerFunc(ContinueTask)
++	r.Methods(http.MethodPut).Path("/api/v1/tasks/order").HandlerFunc(OrderTasks)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/{id}/stream").HandlerFunc(StreamTask)
+ 	r.Methods(http.MethodGet, http.MethodHead).Path("/play/{id}/{key}/{name}").HandlerFunc(PlayTask)
+ 	r.Methods(http.MethodPut).Path("/api/v1/tasks/continue").HandlerFunc(ContinueTasks)
+diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
+--- a/internal/protocol/http/fetcher.go
++++ b/internal/protocol/http/fetcher.go
+@@ -346,7 +346,17 @@
+ 	// Send normal HTTP request (no Range header)
+ 	// Track connection time for adaptive timeout in download phase
+ 	connStartTime := time.Now()
++	// shandian: 解析只请求一次，服务器断开（EOF）任务就直接失败；下载阶段是有重试的。
++	// 网盘直链一次建十几条时经常碰到，这里同样重试几次
+ 	resp, err := client.Do(httpReq)
++	for attempt := 0; err != nil && attempt < len(shandianResolveRetry); attempt++ {
++		time.Sleep(shandianResolveRetry[attempt])
++		if httpReq, err = f.buildRequest(context.TODO(), req); err != nil {
++			f.setState(stateError)
++			return err
++		}
++		resp, err = client.Do(httpReq)
++	}
+ 	if err != nil {
+ 		f.setState(stateError)
+ 		return err
+@@ -919,6 +929,9 @@
+ 	}
+ }
+ 
++// shandian: 解析失败后的重试间隔（变量方便测试）
++var shandianResolveRetry = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
++
+ // shandian: 每个连接至少分到这么多（小于 2 倍的文件不分段）
+ const shandianMinSplit = 20 << 20
+ 
+diff --git a/internal/protocol/http/shandian_test.go b/internal/protocol/http/shandian_test.go
+--- a/internal/protocol/http/shandian_test.go
++++ b/internal/protocol/http/shandian_test.go
+@@ -1,6 +1,8 @@
+ package http
+ 
+ import (
++	nethttp "net/http"
++	"net/http/httptest"
+ 	"net"
+ 	"net/http"
+ 	"strings"
+@@ -9,6 +11,7 @@
+ 	"time"
+ 
+ 	"github.com/GopeedLab/gopeed/internal/test"
++	"github.com/GopeedLab/gopeed/pkg/base"
+ )
+ 
+ // 闪电下载补丁的测试
+@@ -85,3 +88,29 @@
+ 	downloadNormal(ln, 8, t)
+ }
+ 
++// 服务器前两次直接断开（客户端看到 EOF），第三次正常：解析要成功
++func TestShandianResolveRetriesOnEOF(t *testing.T) {
++	old := shandianResolveRetry
++	shandianResolveRetry = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
++	defer func() { shandianResolveRetry = old }()
++	var hits int32
++	srv := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
++		if atomic.AddInt32(&hits, 1) <= 2 {
++			conn, _, err := w.(nethttp.Hijacker).Hijack()
++			if err == nil {
++				conn.Close()
++			}
++			return
++		}
++		w.Header().Set("Content-Length", "2")
++		w.Write([]byte("ok"))
++	}))
++	defer srv.Close()
++	f := buildFetcher()
++	if err := f.Resolve(&base.Request{URL: srv.URL + "/a.bin"}, &base.Options{}); err != nil {
++		t.Fatalf("应当重试成功: %v", err)
++	}
++	if atomic.LoadInt32(&hits) < 3 {
++		t.Fatalf("请求次数 %d", hits)
++	}
++}
+diff --git a/internal/protocol/http/shandian_multi.go b/internal/protocol/http/shandian_multi.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/http/shandian_multi.go
+@@ -0,0 +1,768 @@
++package http
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	nethttp "net/http"
++	"net/url"
++	"path"
++	"regexp"
++	"slices"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/GopeedLab/gopeed/internal/controller"
++	"github.com/GopeedLab/gopeed/internal/fetcher"
++	"github.com/GopeedLab/gopeed/pkg/base"
++	fhttp "github.com/GopeedLab/gopeed/pkg/protocol/http"
++	"github.com/GopeedLab/gopeed/pkg/util"
++)
++
++// shandian: 多文件 HTTP 任务。网盘文件夹是一个文件一条直链，这里把它们做成内核里的一条任务，
++// 像 BT 任务一样有一个文件夹和文件列表。每个文件由一个普通 HTTP Fetcher 下载。
++// 链接形如 shandian-multi:<文件夹名>，文件列表在 req.extra.files。
++
++const MultiScheme = "shandian-multi"
++
++var (
++	// 不用固定间隔：一个文件结束就立刻开下一个。同时下载数按服务器的反应调整：
++	// 从 8 个开始，每成功一个加 1，最多 16 个；失败一次减半，最少 2 个
++	shandianMultiStart = 8
++	shandianMultiMax   = 16
++	shandianMultiMin   = 2
++	// 网盘直链先过一道跳转（百度 d.pcs 实测每次约 2.7 秒，同时 3 个就开始断开），
++	// 跳转后的下载服务器同时 16 个也没事。所以只限制解析这一步，传输不受它影响
++	shandianMultiResolving = 2
++	shandianMultiRetry     = []time.Duration{2 * time.Second, 5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second}
++)
++
++type MultiFile struct {
++	URL    string            `json:"url"`
++	Name   string            `json:"name"`
++	Header map[string]string `json:"header"`
++}
++
++type MultiReqExtra struct {
++	Files []*MultiFile `json:"files"`
++}
++
++// MultiFileStats 文件面板用的每个文件进度（GET /tasks/{id}/stats）
++type MultiFileStats struct {
++	Name       string `json:"name"`
++	Size       int64  `json:"size"`
++	Downloaded int64  `json:"downloaded"`
++	Status     string `json:"status"` // wait running done error
++	Error      string `json:"error,omitempty"`
++	// 排查慢的原因：这个文件花了多久（毫秒）、失败重试了几次、最后一次的错误
++	Millis int64 `json:"millis"`
++	// 分段：排队等解析名额、解析、传输（毫秒）
++	QueueMs    int64  `json:"queueMs"`
++	ResolveMs  int64  `json:"resolveMs"`
++	TransferMs int64  `json:"transferMs"`
++	Tries      int    `json:"tries"`
++	RetryLimit int    `json:"retryLimit"`
++	LastError  string `json:"lastError,omitempty"`
++}
++
++type MultiStats struct {
++	Files []*MultiFileStats `json:"files"`
++}
++
++type multiItem struct {
++	child      *Fetcher
++	busy       bool // 正在解析或下载，占一个名额
++	started    bool // 子任务已 Start，协程在等它结束；暂停后要由 Start 接着下
++	resolved   bool
++	done       bool
++	failed     bool // 自动重试用完了，等用户点继续
++	errText    string
++	tries      int
++	retryAt    time.Time
++	downloaded int64 // 已完成文件的字节数
++	restored   *fetcherData
++	skip       bool // 用户没选这个文件
++	startedAt  time.Time
++	millis     int64
++	queueMs    int64
++	resolveMs  int64
++	transferMs int64
++}
++
++type MultiFetcher struct {
++	ctl    *controller.Controller
++	meta   *fetcher.FetcherMeta
++	doneCh chan error
++
++	mu      sync.Mutex
++	items   []*multiItem
++	running bool
++	stopCh  chan struct{}
++	loopWg  sync.WaitGroup
++	wakeCh  chan struct{}
++	limit   int           // 当前允许同时下载的文件数
++	gate    chan struct{} // 同时解析的名额
++}
++
++func (m *MultiFetcher) Setup(ctl *controller.Controller) {
++	m.ctl = ctl
++	m.doneCh = make(chan error, 1)
++	m.wakeCh = make(chan struct{}, 1)
++	m.gate = make(chan struct{}, shandianMultiResolving)
++	if m.meta == nil {
++		m.meta = &fetcher.FetcherMeta{}
++	}
++}
++
++func (m *MultiFetcher) Resolve(req *base.Request, opts *base.Options) error {
++	if err := base.ParseReqExtra[MultiReqExtra](req); err != nil {
++		return err
++	}
++	extra, _ := req.Extra.(*MultiReqExtra)
++	if extra == nil || len(extra.Files) == 0 {
++		return errors.New("multi task has no files")
++	}
++	if opts == nil {
++		opts = &base.Options{}
++	}
++	name := strings.TrimPrefix(strings.TrimPrefix(req.URL, MultiScheme+":"), "//")
++	res := &base.Resource{Name: util.SafeFilename(name), Range: true}
++	m.items = nil
++	for _, f := range extra.Files {
++		sub, fname := multiSplitName(f.Name)
++		if fname == "" {
++			fname = (&FetcherManager{}).ParseName(f.URL)
++		}
++		res.Files = append(res.Files, &base.FileInfo{Name: fname, Path: sub, Req: multiChildReq(f, req)})
++		m.items = append(m.items, &multiItem{})
++	}
++	m.meta.Req = req
++	m.meta.Opts = opts
++	m.meta.Res = res
++	return nil
++}
++
++// 名字可以带子文件夹（a/b/c.mkv），保留网盘里的结构。每一段单独清理，.. 这类不能跳出任务文件夹
++func multiSplitName(name string) (sub, file string) {
++	var parts []string
++	for _, p := range strings.FieldsFunc(name, func(r rune) bool { return r == '/' || r == '\\' }) {
++		p = util.SafeFilename(strings.TrimSpace(p))
++		if p != "" && p != "." && p != ".." {
++			parts = append(parts, p)
++		}
++	}
++	if len(parts) == 0 {
++		return "", ""
++	}
++	return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1]
++}
++
++func multiChildReq(f *MultiFile, parent *base.Request) *base.Request {
++	r := &base.Request{URL: f.URL, Proxy: parent.Proxy, Labels: parent.Labels}
++	if len(f.Header) > 0 {
++		r.Extra = &fhttp.ReqExtra{Header: f.Header}
++	}
++	return r
++}
++
++func (m *MultiFetcher) childOpts(i int) *base.Options {
++	file := m.meta.Res.Files[i]
++	return &base.Options{Name: file.Name, Path: path.Join(m.meta.FolderPath(), file.Path)}
++}
++
++func (m *MultiFetcher) Start() error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if m.running {
++		return nil
++	}
++	m.padItems()
++	// 再次开始（继续、重试）：上一轮的结果作废，失败的文件重新有几次机会
++	select {
++	case <-m.doneCh:
++	default:
++	}
++	for _, it := range m.items {
++		if it.failed {
++			it.failed = false
++			it.tries = 0
++			it.errText = ""
++		}
++		it.retryAt = time.Time{}
++		// 暂停前已开始的文件：协程还在 Wait，这里接着下
++		if it.busy && it.started && it.child != nil && !it.skip {
++			if err := it.child.Start(); err != nil {
++				it.errText = err.Error()
++			}
++		}
++	}
++	m.limit = shandianMultiStart
++	m.running = true
++	m.stopCh = make(chan struct{})
++	m.loopWg.Add(1)
++	go m.loop(m.stopCh)
++	return nil
++}
++
++func (m *MultiFetcher) wake() {
++	select {
++	case m.wakeCh <- struct{}{}:
++	default:
++	}
++}
++
++func (m *MultiFetcher) loop(stop chan struct{}) {
++	defer m.loopWg.Done()
++	tick := time.NewTicker(50 * time.Millisecond)
++	defer tick.Stop()
++	for {
++		if m.schedule() {
++			return
++		}
++		select {
++		case <-stop:
++			return
++		case <-m.wakeCh:
++		case <-tick.C:
++		}
++	}
++}
++
++// 返回 true 表示这一轮结束了
++func (m *MultiFetcher) schedule() bool {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if !m.running {
++		return true
++	}
++	busy, pending, ok, bad := 0, 0, 0, 0
++	for _, it := range m.items {
++		switch {
++		case it.skip:
++		case it.done:
++			ok++
++		case it.failed:
++			bad++
++		case it.busy:
++			busy++
++		default:
++			pending++
++		}
++	}
++	if busy == 0 && pending == 0 {
++		m.running = false
++		var err error
++		if bad > 0 {
++			err = fmt.Errorf("已完成 %d/%d，%d 个文件失败。点击继续重新获取地址并续传", ok, len(m.items), bad)
++		}
++		m.doneCh <- err
++		return true
++	}
++	now := time.Now()
++	for i, it := range m.items {
++		if busy >= m.limit {
++			break
++		}
++		if it.skip || it.done || it.failed || it.busy || now.Before(it.retryAt) {
++			continue
++		}
++		it.busy = true
++		if it.startedAt.IsZero() {
++			it.startedAt = now
++		}
++		busy++
++		go m.runItem(i, it)
++	}
++	return false
++}
++
++func (m *MultiFetcher) newChild(i int, it *multiItem) *Fetcher {
++	c := (&FetcherManager{}).Build().(*Fetcher)
++	file := m.meta.Res.Files[i]
++	if it.restored != nil {
++		c.connections = it.restored.Connections
++		c.redirectURL = it.restored.RedirectURL
++		// Setup 看到 Res 就当作已解析
++		c.meta = &fetcher.FetcherMeta{Req: file.Req, Opts: m.childOpts(i), Res: &base.Resource{
++			Range: len(it.restored.Connections) > 0 && it.restored.Connections[0].Chunk != nil,
++			Size:  file.Size,
++			Files: []*base.FileInfo{{Name: file.Name, Size: file.Size}},
++		}}
++		base.ParseReqExtra[fhttp.ReqExtra](c.meta.Req)
++		base.ParseOptExtra[fhttp.OptsExtra](c.meta.Opts)
++		if c.meta.Opts.Extra == nil {
++			c.meta.Opts.Extra = &fhttp.OptsExtra{}
++		}
++		if e := c.meta.Opts.Extra.(*fhttp.OptsExtra); e.Connections <= 0 {
++			e.Connections = len(it.restored.Connections)
++		}
++		it.resolved = true
++		it.restored = nil
++	}
++	c.Setup(m.ctl)
++	return c
++}
++
++func (m *MultiFetcher) runItem(i int, it *multiItem) {
++	m.mu.Lock()
++	c := it.child
++	if c == nil {
++		c = m.newChild(i, it)
++		it.child = c
++	}
++	needResolve := !it.resolved
++	m.mu.Unlock()
++
++	var err error
++	if needResolve {
++		req := *m.meta.Res.Files[i].Req
++		q := time.Now()
++		m.gate <- struct{}{}
++		r := time.Now()
++		if multiHasGate(req.URL) {
++			// 只有跳转这一步占名额，拿到下载服务器地址就放开
++			if loc := m.followGate(c, &req); loc != "" {
++				req.URL = loc
++			}
++			<-m.gate
++			err = c.Resolve(&req, m.childOpts(i))
++		} else {
++			err = c.Resolve(&req, m.childOpts(i))
++			<-m.gate
++		}
++		it.queueMs += r.Sub(q).Milliseconds()
++		it.resolveMs += time.Since(r).Milliseconds()
++		if err == nil {
++			m.mu.Lock()
++			it.resolved = true
++			if s := c.meta.Res.Size; s > 0 {
++				m.meta.Res.Files[i].Size = s
++				m.updateSize()
++			}
++			m.mu.Unlock()
++		}
++	}
++	if err == nil {
++		// Start 和是否在运行要在同一把锁里判断，否则会在 Pause 之后才开始
++		m.mu.Lock()
++		if !m.running {
++			// 解析期间用户暂停了：放掉连接，下次重新解析。这个 Fetcher 不能再 Start：
++			// Pause 删了预下载的临时文件，但计数还在，会把这段当成已下载，文件里留下空洞
++			it.busy = false
++			it.resolved = false
++			it.child = nil
++			m.mu.Unlock()
++			c.Pause()
++			return
++		}
++		err = c.Start()
++		it.started = err == nil
++		m.mu.Unlock()
++	}
++	if err == nil {
++		// Pause 不会让 Wait 返回，这个协程一直等到这个文件真的结束。
++		// 所以暂停期间 busy 保持为 true，继续时由 Start 接着下
++		x := time.Now()
++		err = c.Wait()
++		it.transferMs += time.Since(x).Milliseconds()
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	it.busy = false
++	it.started = false
++	if err == nil {
++		it.done = true
++		it.millis = time.Since(it.startedAt).Milliseconds()
++		it.downloaded = c.meta.Res.Size
++		if it.downloaded <= 0 {
++			it.downloaded = c.Progress().TotalDownloaded()
++		}
++		m.meta.Res.Files[i].Size = it.downloaded
++		m.updateSize()
++		it.child = nil
++		m.limit = min(m.limit+1, shandianMultiMax)
++		m.wake()
++		return
++	}
++	it.errText = err.Error()
++	// 解析失败已经由名额管着；只有传输阶段失败才说明下载服务器受不了
++	if it.resolved {
++		m.limit = max(m.limit/2, shandianMultiMin)
++	}
++	if !it.resolved {
++		it.child = nil // 没解析成功的 Fetcher 不能复用
++	}
++	if multiRetryable(err) && it.tries < len(shandianMultiRetry) {
++		it.retryAt = time.Now().Add(shandianMultiRetry[it.tries])
++		it.tries++
++	} else {
++		it.failed = true
++	}
++	m.wake()
++}
++
++// 文件大小要等轮到它才知道。还不知道的按已知文件的平均大小估算，否则进度条会提前到 100%
++func (m *MultiFetcher) updateSize() {
++	var known, count, total int64
++	sel := m.meta.Opts.SelectFiles
++	for i, f := range m.meta.Res.Files {
++		if len(sel) > 0 && !slices.Contains(sel, i) {
++			continue
++		}
++		total++
++		if f.Size > 0 {
++			known += f.Size
++			count++
++		}
++	}
++	if count == 0 {
++		return
++	}
++	m.meta.Res.Size = known / count * total
++	if count == total {
++		m.meta.Res.Size = known
++	}
++}
++
++// 百度直链先到 d.pcs，它很慢且不耐并发，跳转后的 baidupcs.com 没有这个限制
++func multiHasGate(raw string) bool {
++	u, err := url.Parse(raw)
++	return err == nil && (u.Hostname() == "pcs.baidu.com" || strings.HasSuffix(u.Hostname(), ".pcs.baidu.com"))
++}
++
++// 只走跳转那一步，返回下载服务器地址。失败返回空，由 Resolve 按原链接再走一遍
++func (m *MultiFetcher) followGate(c *Fetcher, req *base.Request) string {
++	if err := base.ParseReqExtra[fhttp.ReqExtra](req); err != nil {
++		return ""
++	}
++	c.meta.Req = req
++	client := c.buildClient()
++	client.CheckRedirect = func(*nethttp.Request, []*nethttp.Request) error { return nethttp.ErrUseLastResponse }
++	for attempt := 0; attempt < 4; attempt++ {
++		if attempt > 0 {
++			time.Sleep(time.Duration(attempt) * time.Second)
++		}
++		r, err := c.buildRequest(context.TODO(), req)
++		if err != nil {
++			return ""
++		}
++		resp, err := client.Do(r)
++		if err != nil {
++			continue
++		}
++		resp.Body.Close()
++		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
++			if loc, err := resp.Location(); err == nil {
++				return loc.String()
++			}
++		}
++		return ""
++	}
++	return ""
++}
++
++// 选中文件有变化。没选的不下、不算进总大小；已下的部分留着，再选上时接着下
++func (m *MultiFetcher) Patch(req *base.Request, opts *base.Options) error {
++	if req != nil && req.Extra != nil {
++		if err := m.refreshLinks(req); err != nil {
++			return err
++		}
++	}
++	if opts == nil || opts.SelectFiles == nil || m.meta.Res == nil {
++		return nil
++	}
++	m.mu.Lock()
++	m.padItems()
++	valid := make([]int, 0, len(opts.SelectFiles))
++	for _, i := range opts.SelectFiles {
++		if i >= 0 && i < len(m.items) {
++			valid = append(valid, i)
++		}
++	}
++	m.meta.Opts.SelectFiles = valid
++	var stop []*Fetcher
++	for i, it := range m.items {
++		want := slices.Contains(valid, i)
++		if !want && !it.skip {
++			it.skip = true
++			if it.busy && it.started && it.child != nil && m.running {
++				stop = append(stop, it.child)
++			}
++		} else if want && it.skip {
++			it.skip = false
++			if it.busy && it.started && it.child != nil && m.running {
++				if err := it.child.Start(); err != nil {
++					it.errText = err.Error()
++				}
++			}
++		}
++	}
++	m.updateSize()
++	m.mu.Unlock()
++	for _, c := range stop {
++		c.Pause()
++	}
++	m.wake()
++	return nil
++}
++
++// 只替换原文件地址，不重建 child 或 connections；因此已下载分段保持原样。
++func (m *MultiFetcher) refreshLinks(req *base.Request) error {
++	if err := base.ParseReqExtra[MultiReqExtra](req); err != nil {
++		return err
++	}
++	updates, ok := req.Extra.(*MultiReqExtra)
++	if !ok || len(updates.Files) == 0 {
++		return errors.New("没有新下载地址")
++	}
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if m.running {
++		return errors.New("请先暂停任务再更新下载地址")
++	}
++	if m.meta == nil || m.meta.Req == nil || m.meta.Res == nil {
++		return errors.New("原任务信息不完整")
++	}
++	current, ok := m.meta.Req.Extra.(*MultiReqExtra)
++	if !ok {
++		return errors.New("原文件信息不存在")
++	}
++	if len(current.Files) != len(m.meta.Res.Files) {
++		return errors.New("原文件信息不完整")
++	}
++	m.padItems()
++	indices := make(map[string]int)
++	for i, f := range current.Files {
++		if _, exists := indices[f.Name]; exists {
++			return errors.New("原文件名重复，不能安全匹配")
++		}
++		indices[f.Name] = i
++	}
++	seen := make(map[string]bool)
++	// 整批先验证，任何不匹配都不改动原任务。
++	for _, f := range updates.Files {
++		i, exists := indices[f.Name]
++		if !exists || seen[f.Name] {
++			return errors.New("新地址的文件名与原任务不匹配")
++		}
++		seen[f.Name] = true
++		old, _ := url.Parse(current.Files[i].URL)
++		fresh, err := url.Parse(f.URL)
++		if err != nil || old == nil || fresh.Host == "" || (fresh.Scheme != "http" && fresh.Scheme != "https") || old.EscapedPath() != fresh.EscapedPath() {
++			return errors.New("新旧地址不是同一资源，已保留原进度")
++		}
++	}
++	for _, f := range updates.Files {
++		i := indices[f.Name]
++		it := m.items[i]
++		if it.done {
++			continue
++		}
++		replacement := multiChildReq(f, m.meta.Req)
++		if it.child != nil {
++			if err := it.child.Patch(replacement, nil); err != nil {
++				return err
++			}
++		}
++		if it.restored != nil {
++			it.restored.RedirectURL = ""
++		}
++		current.Files[i] = f
++		m.meta.Res.Files[i].Req = replacement
++		it.failed = false
++		it.tries = 0
++		it.retryAt = time.Time{}
++		it.errText = ""
++	}
++	return nil
++}
++
++func (m *MultiFetcher) padItems() {
++	for m.meta.Res != nil && len(m.items) < len(m.meta.Res.Files) {
++		m.items = append(m.items, &multiItem{})
++	}
++	sel := m.meta.Opts.SelectFiles
++	for i, it := range m.items {
++		it.skip = len(sel) > 0 && !slices.Contains(sel, i)
++	}
++}
++
++func (m *MultiFetcher) Pause() error {
++	m.mu.Lock()
++	if m.running {
++		m.running = false
++		close(m.stopCh)
++	}
++	children := make([]*Fetcher, 0)
++	for _, it := range m.items {
++		if it.busy && it.started && it.child != nil && !it.skip {
++			children = append(children, it.child)
++		}
++	}
++	m.mu.Unlock()
++	m.loopWg.Wait()
++	var wg sync.WaitGroup
++	for _, c := range children {
++		wg.Add(1)
++		go func(c *Fetcher) {
++			defer wg.Done()
++			c.Pause()
++		}(c)
++	}
++	wg.Wait()
++	return nil
++}
++
++func (m *MultiFetcher) Close() error { return m.Pause() }
++
++func (m *MultiFetcher) Meta() *fetcher.FetcherMeta { return m.meta }
++
++func (m *MultiFetcher) itemDownloaded(it *multiItem) int64 {
++	if it.done {
++		return it.downloaded
++	}
++	if it.child != nil {
++		return it.child.Progress().TotalDownloaded()
++	}
++	if it.restored != nil {
++		var n int64
++		for _, c := range it.restored.Connections {
++			n += c.Downloaded
++		}
++		return n
++	}
++	return 0
++}
++
++func (m *MultiFetcher) Stats() any {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	out := &MultiStats{}
++	if m.meta.Res == nil {
++		return out
++	}
++	for i, it := range m.items {
++		s := &MultiFileStats{Name: path.Join(m.meta.Res.Files[i].Path, m.meta.Res.Files[i].Name), Size: m.meta.Res.Files[i].Size, Downloaded: m.itemDownloaded(it), Status: "wait", Millis: it.millis, QueueMs: it.queueMs, ResolveMs: it.resolveMs, TransferMs: it.transferMs, Tries: it.tries, RetryLimit: len(shandianMultiRetry), LastError: multiSafeError(it.errText)}
++		switch {
++		case it.done:
++			s.Status = "done"
++		case it.failed:
++			s.Status = "error"
++			s.Error = multiSafeError(it.errText)
++		case it.busy && m.running:
++			s.Status = "running"
++		case m.running && !it.skip && !it.retryAt.IsZero():
++			s.Status = "retrying"
++		}
++		out.Files = append(out.Files, s)
++	}
++	return out
++}
++
++// 报错里常带完整链接和令牌，不往外给
++var multiErrorURL = regexp.MustCompile(`https?://[^\s"'<>]+`)
++
++func multiSafeError(s string) string {
++	return multiErrorURL.ReplaceAllString(s, "<下载地址>")
++}
++
++var multiTerminalStatus = regexp.MustCompile(`(?:status=|code:\s*)(400|401|403|404|410)\b`)
++
++func multiRetryable(err error) bool {
++	if err != nil && multiTerminalStatus.MatchString(err.Error()) {
++		return false
++	}
++	if e := extractRequestError(err); e != nil {
++		switch e.Code {
++		case 400, 401, 403, 404, 410:
++			return false
++		}
++	}
++	return true
++}
++
++func (m *MultiFetcher) Progress() fetcher.Progress {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	p := make(fetcher.Progress, 0, len(m.items))
++	for _, it := range m.items {
++		if !it.skip {
++			p = append(p, m.itemDownloaded(it))
++		}
++	}
++	return p
++}
++
++func (m *MultiFetcher) Wait() error { return <-m.doneCh }
++
++// ---------- 管理器 ----------
++
++type multiItemData struct {
++	Done       bool
++	Resolved   bool
++	Downloaded int64
++	Millis     int64
++	Tries      int
++	LastError  string
++	Data       *fetcherData
++}
++
++type multiData struct {
++	Items []*multiItemData
++}
++
++type MultiFetcherManager struct{ FetcherManager }
++
++// Name 与 http 相同：配置（连接数、UA）共用一份，子任务要用
++func (fm *MultiFetcherManager) Name() string { return "http" }
++
++func (fm *MultiFetcherManager) Filters() []*fetcher.SchemeFilter {
++	return []*fetcher.SchemeFilter{{Type: fetcher.FilterTypeUrl, Pattern: MultiScheme}}
++}
++
++func (fm *MultiFetcherManager) Build() fetcher.Fetcher { return &MultiFetcher{} }
++
++func (fm *MultiFetcherManager) ParseName(u string) string {
++	return strings.TrimPrefix(strings.TrimPrefix(u, MultiScheme+":"), "//")
++}
++
++// AutoRename 关闭：重名由 App 在建任务前问用户
++func (fm *MultiFetcherManager) AutoRename() bool { return false }
++
++func (fm *MultiFetcherManager) Store(f fetcher.Fetcher) (any, error) {
++	m := f.(*MultiFetcher)
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	out := &multiData{}
++	for _, it := range m.items {
++		d := &multiItemData{Done: it.done, Resolved: it.resolved, Downloaded: it.downloaded, Millis: it.millis, Tries: it.tries, LastError: multiSafeError(it.errText)}
++		if it.child != nil && it.resolved {
++			it.child.redirectLock.Lock()
++			d.Data = &fetcherData{Connections: it.child.connections, RedirectURL: it.child.redirectURL}
++			it.child.redirectLock.Unlock()
++		} else if it.restored != nil {
++			d.Data = it.restored
++		}
++		out.Items = append(out.Items, d)
++	}
++	return out, nil
++}
++
++func (fm *MultiFetcherManager) Restore() (any, func(meta *fetcher.FetcherMeta, v any) fetcher.Fetcher) {
++	return &multiData{}, func(meta *fetcher.FetcherMeta, v any) fetcher.Fetcher {
++		d := v.(*multiData)
++		m := &MultiFetcher{meta: meta}
++		base.ParseReqExtra[MultiReqExtra](meta.Req)
++		for _, x := range d.Items {
++			it := &multiItem{done: x.Done, downloaded: x.Downloaded, millis: x.Millis, tries: x.Tries, errText: x.LastError}
++			// 还没建立连接就暂停的，没有进度可接，重新解析
++			if !x.Done && x.Resolved && x.Data != nil && len(x.Data.Connections) > 0 {
++				it.restored = x.Data
++				it.resolved = false // newChild 恢复后置为 true
++			}
++			m.items = append(m.items, it)
++		}
++		return m
++	}
++}
+diff --git a/internal/protocol/http/shandian_multi_test.go b/internal/protocol/http/shandian_multi_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/http/shandian_multi_test.go
+@@ -0,0 +1,471 @@
++package http
++
++import (
++	"bytes"
++	"encoding/json"
++	"fmt"
++	"io"
++	nethttp "net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/GopeedLab/gopeed/internal/controller"
++	"github.com/GopeedLab/gopeed/internal/fetcher"
++	"github.com/GopeedLab/gopeed/pkg/base"
++)
++
++func multiFast(t *testing.T) {
++	r := shandianMultiRetry
++	shandianMultiRetry = []time.Duration{time.Millisecond, time.Millisecond}
++	t.Cleanup(func() { shandianMultiRetry = r })
++}
++
++func multiCtl() *controller.Controller {
++	ctl := controller.NewController()
++	ctl.GetConfig = func(v any) {
++		*(v.(**config)) = &config{Connections: 2}
++	}
++	return ctl
++}
++
++func multiStart(t *testing.T, dir string, files []*MultiFile) *MultiFetcher {
++	t.Helper()
++	m := (&MultiFetcherManager{}).Build().(*MultiFetcher)
++	m.Setup(multiCtl())
++	req := &base.Request{URL: MultiScheme + ":夹", Extra: &MultiReqExtra{Files: files}}
++	if err := m.Resolve(req, &base.Options{Path: dir}); err != nil {
++		t.Fatal(err)
++	}
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	return m
++}
++
++func multiWait(t *testing.T, m *MultiFetcher) error {
++	t.Helper()
++	ch := make(chan error, 1)
++	go func() { ch <- m.Wait() }()
++	select {
++	case err := <-ch:
++		return err
++	case <-time.After(30 * time.Second):
++		t.Fatal("超时")
++		return nil
++	}
++}
++
++func multiBody(path string) []byte {
++	return bytes.Repeat([]byte(path[len(path)-1:]), 300*1024)
++}
++
++func multiServer(fail func(path string, hit int32) bool) *httptest.Server {
++	var hits [256]int32
++	return httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
++		n := atomic.AddInt32(&hits[r.URL.Path[len(r.URL.Path)-1]], 1)
++		if fail != nil && fail(r.URL.Path, n) {
++			if conn, _, err := w.(nethttp.Hijacker).Hijack(); err == nil {
++				conn.Close()
++			}
++			return
++		}
++		nethttp.ServeContent(w, r, "x.bin", time.Time{}, bytes.NewReader(multiBody(r.URL.Path)))
++	}))
++}
++
++func multiFiles(url string, n int) []*MultiFile {
++	var out []*MultiFile
++	for i := 0; i < n; i++ {
++		out = append(out, &MultiFile{URL: fmt.Sprintf("%s/f%c", url, 'a'+i), Name: fmt.Sprintf("文件%c.bin", 'a'+i)})
++	}
++	return out
++}
++
++func multiCheck(t *testing.T, dir string, n int) {
++	t.Helper()
++	for i := 0; i < n; i++ {
++		c := byte('a' + i)
++		got, err := os.ReadFile(filepath.Join(dir, "夹", fmt.Sprintf("文件%c.bin", c)))
++		if err != nil || !bytes.Equal(got, multiBody(string(c))) {
++			t.Fatalf("文件 %c 内容不对，长度 %d: %v", c, len(got), err)
++		}
++	}
++}
++
++func TestShandianMulti_AllFilesInOneFolder(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 7))
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 7)
++	if want := int64(7 * 300 * 1024); m.Meta().Res.Size != want || m.Progress().TotalDownloaded() != want {
++		t.Fatalf("大小 %d 进度 %d", m.Meta().Res.Size, m.Progress().TotalDownloaded())
++	}
++}
++
++// 某个文件前几次都断开：自动重试后整个任务成功
++func TestShandianMulti_RetriesFailedFile(t *testing.T) {
++	multiFast(t)
++	old := shandianResolveRetry
++	shandianResolveRetry = []time.Duration{time.Millisecond}
++	defer func() { shandianResolveRetry = old }()
++	srv := multiServer(func(p string, hit int32) bool { return strings.HasSuffix(p, "b") && hit <= 3 })
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 3))
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 3)
++}
++
++// 一个文件一直失败：其余下完，任务报错且不带链接；服务恢复后继续，只补失败的
++func TestShandianMulti_FailThenContinue(t *testing.T) {
++	multiFast(t)
++	old := shandianResolveRetry
++	shandianResolveRetry = []time.Duration{time.Millisecond}
++	defer func() { shandianResolveRetry = old }()
++	var broken atomic.Bool
++	broken.Store(true)
++	srv := multiServer(func(p string, hit int32) bool { return strings.HasSuffix(p, "b") && broken.Load() })
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 3))
++	err := multiWait(t, m)
++	if err == nil || !strings.Contains(err.Error(), "已完成 2/3") {
++		t.Fatalf("err = %v", err)
++	}
++	st := m.Stats().(*MultiStats).Files[1]
++	if st.Status != "error" || strings.Contains(st.Error, "127.0.0.1") {
++		t.Fatalf("文件状态 %+v", st)
++	}
++	broken.Store(false)
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 3)
++}
++
++// 暂停后继续：同一个进程内要下完且内容正确
++func TestShandianMulti_PauseResume(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 5))
++	time.Sleep(20 * time.Millisecond)
++	if err := m.Pause(); err != nil {
++		t.Fatal(err)
++	}
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 5)
++}
++
++// 暂停、存盘（JSON 往返）、恢复（相当于重启内核）：要下完且内容正确
++func TestShandianMulti_Restore(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 5))
++	time.Sleep(20 * time.Millisecond)
++	if err := m.Pause(); err != nil {
++		t.Fatal(err)
++	}
++	fm := &MultiFetcherManager{}
++	data, err := fm.Store(m)
++	if err != nil {
++		t.Fatal(err)
++	}
++	raw, err := json.Marshal(data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	metaRaw, _ := json.Marshal(&fetcher.FetcherMeta{Req: m.meta.Req, Res: m.meta.Res, Opts: m.meta.Opts})
++	var meta fetcher.FetcherMeta
++	if err := json.Unmarshal(metaRaw, &meta); err != nil {
++		t.Fatal(err)
++	}
++	v, restore := fm.Restore()
++	if err := json.Unmarshal(raw, v); err != nil {
++		t.Fatal(err)
++	}
++	r := restore(&meta, v).(*MultiFetcher)
++	r.Setup(multiCtl())
++	if err := r.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, r); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 5)
++}
++
++// 只选一部分文件：没选的不下，总大小只算选中的；之后再选上能接着下完
++func TestShandianMulti_SelectFiles(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	m := (&MultiFetcherManager{}).Build().(*MultiFetcher)
++	m.Setup(multiCtl())
++	req := &base.Request{URL: MultiScheme + ":夹", Extra: &MultiReqExtra{Files: multiFiles(srv.URL, 4)}}
++	if err := m.Resolve(req, &base.Options{Path: dir, SelectFiles: []int{0, 2}}); err != nil {
++		t.Fatal(err)
++	}
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := os.Stat(filepath.Join(dir, "夹", "文件b.bin")); err == nil {
++		t.Fatal("没选的文件不该下载")
++	}
++	if want := int64(2 * 300 * 1024); m.Meta().Res.Size != want || m.Progress().TotalDownloaded() != want {
++		t.Fatalf("大小 %d 进度 %d", m.Meta().Res.Size, m.Progress().TotalDownloaded())
++	}
++	if err := m.Patch(nil, &base.Options{SelectFiles: []int{0, 1, 2, 3}}); err != nil {
++		t.Fatal(err)
++	}
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	multiCheck(t, dir, 4)
++}
++
++// 下载中取消一个正在下的文件：任务要能结束
++func TestShandianMulti_DeselectWhileRunning(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 6))
++	if err := m.Patch(nil, &base.Options{SelectFiles: []int{0, 1}}); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++}
++
++// 名字带子文件夹：按结构存放，.. 不能跳出任务文件夹
++func TestShandianMulti_SubFolders(t *testing.T) {
++	multiFast(t)
++	srv := multiServer(nil)
++	defer srv.Close()
++	dir := t.TempDir()
++	files := []*MultiFile{
++		{URL: srv.URL + "/fa", Name: "子/孙/a.bin"},
++		{URL: srv.URL + "/fb", Name: "../../b.bin"},
++	}
++	m := multiStart(t, dir, files)
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	for _, p := range []string{"夹/子/孙/a.bin", "夹/b.bin"} {
++		if st, err := os.Stat(filepath.Join(dir, p)); err != nil || st.Size() != 300*1024 {
++			t.Fatalf("%s: %v", p, err)
++		}
++	}
++}
++
++func TestShandianMulti_RetryPolicyAndSafeError(t *testing.T) {
++	for _, code := range []int{400, 401, 403, 404, 410} {
++		if multiRetryable(NewRequestError(code)) {
++			t.Fatalf("retry permanent %d", code)
++		}
++	}
++	for _, code := range []int{408, 429, 500, 503} {
++		if !multiRetryable(NewRequestError(code)) {
++			t.Fatalf("skip transient %d", code)
++		}
++	}
++	msg := multiSafeError(`Get "https://example.invalid/file?secret=hidden": EOF`)
++	if strings.Contains(msg, "secret") || !strings.Contains(msg, "EOF") {
++		t.Fatal(msg)
++	}
++	if got := multiSafeError("http request fail, code:403"); !strings.Contains(got, "403") {
++		t.Fatal(got)
++	}
++}
++
++func TestShandianMulti_RetryNeverRedownloadsCompleted(t *testing.T) {
++	multiFast(t)
++	old := shandianResolveRetry
++	shandianResolveRetry = []time.Duration{time.Millisecond}
++	defer func() { shandianResolveRetry = old }()
++	var broken atomic.Bool
++	broken.Store(true)
++	var completedHits atomic.Int32
++	srv := multiServer(func(p string, hit int32) bool {
++		if strings.HasSuffix(p, "a") {
++			completedHits.Add(1)
++		}
++		return strings.HasSuffix(p, "b") && broken.Load()
++	})
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 2))
++	if err := multiWait(t, m); err == nil {
++		t.Fatal("expected one failure")
++	}
++	before := completedHits.Load()
++	broken.Store(false)
++	if err := m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	if completedHits.Load() != before {
++		t.Fatal("completed file was downloaded again")
++	}
++	multiCheck(t, dir, 2)
++}
++
++func TestShandianMulti_RecoversAfterFourthFailure(t *testing.T) {
++	saved, resolve := shandianMultiRetry, shandianResolveRetry
++	shandianMultiRetry = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond}
++	shandianResolveRetry = nil
++	defer func() { shandianMultiRetry = saved; shandianResolveRetry = resolve }()
++	srv := multiServer(func(p string, hit int32) bool { return strings.HasSuffix(p, "b") && hit <= 4 })
++	defer srv.Close()
++	dir := t.TempDir()
++	m := multiStart(t, dir, multiFiles(srv.URL, 2))
++	if err := multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	if m.Stats().(*MultiStats).Files[1].Tries < 4 {
++		t.Fatal("did not exercise extended retries")
++	}
++	multiCheck(t, dir, 2)
++}
++
++func TestShandianMulti_PermissionFailureIsNotRetried(t *testing.T) {
++	multiFast(t)
++	srv := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) { w.WriteHeader(403) }))
++	defer srv.Close()
++	m := multiStart(t, t.TempDir(), multiFiles(srv.URL, 1))
++	if err := multiWait(t, m); err == nil {
++		t.Fatal("expected permission error")
++	}
++	f := m.Stats().(*MultiStats).Files[0]
++	if f.Tries != 0 || !strings.Contains(f.Error, "403") {
++		t.Fatalf("permission outcome: %+v", f)
++	}
++}
++
++type resumeCutReader struct {
++	*bytes.Reader
++	left int
++}
++
++func (r *resumeCutReader) Read(p []byte) (int, error) {
++	if r.left <= 0 {
++		return 0, io.ErrUnexpectedEOF
++	}
++	if len(p) > r.left {
++		p = p[:r.left]
++	}
++	n, e := r.Reader.Read(p)
++	r.left -= n
++	return n, e
++}
++func TestShandianMulti_RefreshLinksKeepsPartialChunks(t *testing.T) {
++	multiFast(t)
++	old := shandianResolveRetry
++	shandianResolveRetry = []time.Duration{time.Millisecond}
++	defer func() { shandianResolveRetry = old }()
++	body := bytes.Repeat([]byte("resume-content"), 2*1024*1024)
++	var resumed atomic.Bool
++	var oldGets atomic.Int32
++	srv := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
++		w.Header().Set("Content-Type", "application/octet-stream")
++		if r.URL.Query().Get("token") == "new" {
++			var offset int64
++			fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-", &offset)
++			if offset > 0 {
++				resumed.Store(true)
++			}
++			nethttp.ServeContent(w, r, "video.bin", time.Time{}, bytes.NewReader(body))
++			return
++		}
++		if r.Method == "GET" && oldGets.Add(1) > 3 {
++			w.WriteHeader(403)
++			return
++		}
++		nethttp.ServeContent(w, r, "video.bin", time.Time{}, &resumeCutReader{Reader: bytes.NewReader(body), left: 128 * 1024})
++	}))
++	defer srv.Close()
++	dir := t.TempDir()
++	oldURL := srv.URL + "/video?token=old"
++	m := multiStart(t, dir, []*MultiFile{{URL: oldURL, Name: "video.bin"}})
++	defer func() { m.Pause() }()
++	if err := multiWait(t, m); err == nil {
++		t.Fatal("expected expired transfer")
++	}
++	before := m.Stats().(*MultiStats).Files[0].Downloaded
++	if before <= 0 {
++		t.Fatal("test did not retain partial data")
++	}
++	// 模拟重启后的磁盘状态恢复，再更新 URL，必须仍保留每段位置。
++	fm := &MultiFetcherManager{}
++	saved, err := fm.Store(m)
++	if err != nil {
++		t.Fatal(err)
++	}
++	encoded, _ := json.Marshal(saved)
++	data, restore := fm.Restore()
++	if err = json.Unmarshal(encoded, data); err != nil {
++		t.Fatal(err)
++	}
++	restored := restore(m.Meta(), data).(*MultiFetcher)
++	restored.Setup(multiCtl())
++	m = restored
++	if err = m.Patch(&base.Request{Extra: &MultiReqExtra{Files: []*MultiFile{{URL: srv.URL + "/wrong", Name: "video.bin"}}}}, nil); err == nil {
++		t.Fatal("accepted different resource")
++	}
++	if got := m.Stats().(*MultiStats).Files[0].Downloaded; got != before {
++		t.Fatalf("progress changed before validation: %d != %d", got, before)
++	}
++	if err = m.Patch(&base.Request{Extra: &MultiReqExtra{Files: []*MultiFile{{URL: srv.URL + "/video?token=new", Name: "video.bin"}}}}, nil); err != nil {
++		t.Fatal(err)
++	}
++	if got := m.Stats().(*MultiStats).Files[0].Downloaded; got != before {
++		t.Fatalf("progress lost after patch: %d != %d", got, before)
++	}
++	if err = m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if err = multiWait(t, m); err != nil {
++		t.Fatal(err)
++	}
++	if !resumed.Load() {
++		t.Fatal("new address did not receive a resumed Range")
++	}
++	got, err := os.ReadFile(filepath.Join(dir, "夹", "video.bin"))
++	if err != nil || !bytes.Equal(got, body) {
++		t.Fatal("resumed file differs from original")
++	}
++}
+diff --git a/pkg/download/model.go b/pkg/download/model.go
+index c351411..98b28ed 100644
+--- a/pkg/download/model.go
++++ b/pkg/download/model.go
+@@ -89,17 +89,10 @@ func (t *Task) MarshalJSON() ([]byte, error) {
+ 	type rawTaskType Task
+ 	jsonTask := struct {
+ 		rawTaskType
+-		Name         string `json:"name"`
+-		Verification string `json:"shandianVerification,omitempty"`
++		Name string `json:"name"`
+ 	}{
+ 		rawTaskType(*t),
+ 		t.Name(),
+-		func() string {
+-			if f, ok := t.fetcher.(interface{ VerificationState() string }); ok {
+-				return f.VerificationState()
+-			}
+-			return ""
+-		}(),
+ 	}
+ 	return json.Marshal(jsonTask)
+ }
+@@ -175,6 +168,7 @@ func (cfg *DownloaderConfig) Init() *DownloaderConfig {
+ 	if len(cfg.FetchManagers) == 0 {
+ 		cfg.FetchManagers = []fetcher.FetcherManager{
+ 			new(http.FetcherManager),
++			new(http.MultiFetcherManager), // shandian: multi-file HTTP task
+ 			new(bt.FetcherManager),
+ 			new(ed2k.FetcherManager),
+ 		}
+diff --git a/internal/protocol/bt/fetcher.go b/internal/protocol/bt/fetcher.go
+index 038df87..dff0bb2 100644
+--- a/internal/protocol/bt/fetcher.go
++++ b/internal/protocol/bt/fetcher.go
+@@ -47,11 +47,6 @@ type Fetcher struct {
+ 	streaming       atomic.Bool
+ 	torrentDropFunc func()
+ 	uploadDoneCh    chan any
+-	// 闪电下载：App 要求先把磁盘上已有的数据校验一遍（从迅雷收回），Start 时先校验再放行下载
+-	verifyExisting bool
+-	verifyState    atomic.Int32 // 0: idle, 1: checking, 2: failed, 3: complete
+-	wantDownload   atomic.Bool
+-	downloadLock   sync.Mutex
+ }
+ 
+ func (f *Fetcher) Setup(ctl *controller.Controller) {
+@@ -89,6 +84,16 @@ func (f *Fetcher) initClient() (err error) {
+ 	dnsResolver := &DnsCacheResolver{RefreshTimeout: 5 * time.Minute}
+ 	cfg.TrackerDialContext = dnsResolver.DialContext
+ 	client, err = torrent.NewClient(cfg)
++	// shandian: 固定端口被占（升级时旧内核还没退出、别的软件在用）不该让任务失败：
++	// 等一下再试一次，还不行就让系统分配一个端口
++	if err != nil && cfg.ListenPort != 0 && strings.Contains(err.Error(), "listen") {
++		time.Sleep(2 * time.Second)
++		client, err = torrent.NewClient(cfg)
++		if err != nil {
++			cfg.ListenPort = 0
++			client, err = torrent.NewClient(cfg)
++		}
++	}
+ 	if err != nil {
+ 		return
+ 	}
+@@ -114,7 +119,6 @@ func (f *Fetcher) Resolve(req *base.Request, opts *base.Options) error {
+ }
+ 
+ func (f *Fetcher) Start() (err error) {
+-	f.wantDownload.Store(true)
+ 	if !f.torrentReady.Load() {
+ 		if err = f.addTorrent(f.meta.Req, false); err != nil {
+ 			return
+@@ -132,98 +136,16 @@ func (f *Fetcher) Start() (err error) {
+ 		}
+ 		f.data.Progress = make(fetcher.Progress, len(f.meta.Opts.SelectFiles))
+ 	}
+-	// Keep piece priorities unset while the initial disk check is running.
+-	// The torrent library otherwise builds an inconsistent request order while
+-	// pieces are being rehashed and downloads are disallowed.
+-	if f.verifyExisting {
+-		f.verifyExisting = false
+-		f.beginVerification()
+-		return
+-	}
+-	if f.verifyState.Load() == 1 {
+-		return
+-	}
+-	f.markSelectedForDownload()
+-	f.downloadLock.Lock()
+-	if f.wantDownload.Load() && f.verifyState.Load() != 1 && f.verifyState.Load() != 2 {
+-		f.torrent.AllowDataDownload()
+-	}
+-	f.downloadLock.Unlock()
+-	return
+-}
+-
+-func (f *Fetcher) markSelectedForDownload() {
+-	files := f.torrent.Files()
+-	for _, index := range f.meta.Opts.SelectFiles {
+-		files[index].Download()
+-	}
+-}
+-
+-// VerificationState exposes actual completion of the asynchronous disk check.
+-func (f *Fetcher) VerificationState() string {
+-	switch f.verifyState.Load() {
+-	case 1:
+-		return "checking"
+-	case 2:
+-		return "failed"
+-	case 3:
+-		return "complete"
+-	default:
+-		return ""
+-	}
+-}
+-
+-func (f *Fetcher) beginVerification() {
+-	f.downloadLock.Lock()
+-	defer f.downloadLock.Unlock()
+-	if !f.verifyState.CompareAndSwap(0, 1) && !f.verifyState.CompareAndSwap(2, 1) && !f.verifyState.CompareAndSwap(3, 1) {
+-		return
+-	}
+-	for _, file := range f.torrent.Files() {
+-		file.Cancel()
+-	}
+-	f.torrent.DisallowDataDownload()
+-	go func() {
+-		if err := f.verifySelectedPieces(); err != nil {
+-			f.verifyState.Store(2)
+-			return
+-		}
+-		f.downloadLock.Lock()
+-		f.verifyState.Store(3)
+-		if f.wantDownload.Load() {
+-			f.markSelectedForDownload()
+-			f.torrent.AllowDataDownload()
+-		}
+-		f.downloadLock.Unlock()
+-	}()
+-}
+-
+-// verifySelectedPieces checks each piece intersecting the selected files exactly once,
+-// including shared boundary pieces. Unselected files do not need a full scan.
+-func (f *Fetcher) verifySelectedPieces() error {
+-	files := f.torrent.Files()
+-	selected := f.meta.Opts.SelectFiles
+-	if len(selected) == 0 {
+-		return f.torrent.VerifyDataContext(f.torrentDropCtx)
+-	}
+-	pieces := make(map[int]struct{})
+-	for _, index := range selected {
+-		if index < 0 || index >= len(files) {
+-			return fmt.Errorf("invalid selected file index %d", index)
+-		}
+-		for piece := files[index].BeginPieceIndex(); piece < files[index].EndPieceIndex(); piece++ {
+-			pieces[piece] = struct{}{}
+-		}
+-	}
+-	for piece := 0; piece < f.torrent.NumPieces(); piece++ {
+-		if _, ok := pieces[piece]; !ok {
+-			continue
+-		}
+-		if err := f.torrent.Piece(piece).VerifyDataContext(f.torrentDropCtx); err != nil {
+-			return fmt.Errorf("verifying piece %d: %w", piece, err)
++	if len(f.meta.Opts.SelectFiles) == len(files) {
++		f.torrent.DownloadAll()
++	} else {
++		for _, selectIndex := range f.meta.Opts.SelectFiles {
++			file := files[selectIndex]
++			file.Download()
+ 		}
+ 	}
+-	return nil
++	f.torrent.AllowDataDownload()
++	return
+ }
+ 
+ // Stream 闪电下载：边下边播。按播放顺序优先下最大的那个文件（从头往后，外加文件末尾 8 MB，
+@@ -290,9 +212,9 @@ type ctxReadSeeker struct {
+ 	r   torrent.Reader
+ }
+ 
+-func (c *ctxReadSeeker) Read(p []byte) (int, error)                { return c.r.ReadContext(c.ctx, p) }
++func (c *ctxReadSeeker) Read(p []byte) (int, error)                 { return c.r.ReadContext(c.ctx, p) }
+ func (c *ctxReadSeeker) Seek(off int64, whence int) (int64, error) { return c.r.Seek(off, whence) }
+-func (c *ctxReadSeeker) Close() error                              { return c.r.Close() }
++func (c *ctxReadSeeker) Close() error                               { return c.r.Close() }
+ 
+ type ctxReader struct {
+ 	ctx context.Context
+@@ -302,14 +224,7 @@ type ctxReader struct {
+ func (c *ctxReader) Read(p []byte) (int, error) { return c.r.ReadContext(c.ctx, p) }
+ 
+ func (f *Fetcher) Pause() (err error) {
+-	f.downloadLock.Lock()
+-	defer f.downloadLock.Unlock()
+-	f.wantDownload.Store(false)
+-	// Verification already blocked downloads; changing torrent priorities concurrently
+-	// with piece hashing can violate the upstream request-order invariant.
+-	if f.verifyState.Load() != 1 {
+-		f.torrent.DisallowDataDownload()
+-	}
++	f.torrent.DisallowDataDownload()
+ 	return
+ }
+ 
+@@ -344,6 +259,7 @@ func (f *Fetcher) Stats() any {
+ 		stats = torrent.TorrentStats{}
+ 	}
+ 	return &bt.Stats{
++		ShandianFiles:    f.Progress(),
+ 		TotalPeers:       stats.TotalPeers,
+ 		ActivePeers:      stats.ActivePeers,
+ 		ConnectedSeeders: stats.ConnectedSeeders,
+@@ -456,11 +372,6 @@ func (f *Fetcher) Patch(req *base.Request, opts *base.Options) error {
+ 		f.data.Progress = make(fetcher.Progress, len(validSelectFiles))
+ 	}
+ 
+-	// 闪电下载：App 要求重新校验磁盘上已有的数据（换内核后进度丢了、或从迅雷收回后想重新对一遍）
+-	if wantedVerify(opts) && f.torrentReady.Load() {
+-		f.beginVerification()
+-	}
+-
+ 	return nil
+ }
+ 
+@@ -625,9 +536,6 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 			return
+ 		}
+ 	}
+-	// Metadata may be resolved before the task starts; don't start data transfer
+-	// until Start has applied the requested disk verification.
+-	spec.DisallowDataDownload = true
+ 	spec.Storage = storage.NewFileOpts(storage.NewFileClientOpts{
+ 		ClientBaseDir: cfg.DataDir,
+ 		TorrentDirMaker: func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
+@@ -678,25 +586,11 @@ func (f *Fetcher) addTorrent(req *base.Request, fromUpload bool) (err error) {
+ 	}
+ 	<-f.torrent.GotInfo()
+ 	f.torrentReady.Store(true)
+-	f.verifyExisting = wantedVerify(f.meta.Opts)
+ 
+ 	go f.doUpload(fromUpload)
+ 	return
+ }
+ 
+-// wantedVerify App 在 opts.extra 里要求先校验磁盘上已有的数据吗（只有「从迅雷收回」会要）
+-func wantedVerify(opts *base.Options) bool {
+-	if opts == nil || opts.Extra == nil {
+-		return false
+-	}
+-	m, ok := opts.Extra.(map[string]any)
+-	if !ok {
+-		return false
+-	}
+-	v, _ := m["shandianVerifyExisting"].(bool)
+-	return v
+-}
+-
+ func (f *Fetcher) seedRadio() float64 {
+ 	var bytesRead int64
+ 	if f.Meta().Res != nil {
+diff --git a/pkg/protocol/bt/model.go b/pkg/protocol/bt/model.go
+index b106b61..8733eb0 100644
+--- a/pkg/protocol/bt/model.go
++++ b/pkg/protocol/bt/model.go
+@@ -6,6 +6,8 @@ type ReqExtra struct {
+ 
+ // Stats for torrent
+ type Stats struct {
++	// shandian: downloaded bytes of each selected file, same order as selectFiles
++	ShandianFiles []int64 `json:"shandianFiles,omitempty"`
+ 	// health indicators of torrents, from large to small, ConnectedSeeders are also the key to the health of seed resources
+ 	TotalPeers       int `json:"totalPeers"`
+ 	ActivePeers      int `json:"activePeers"`
+diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
+--- a/internal/protocol/http/fetcher.go
++++ b/internal/protocol/http/fetcher.go
+@@ -106,6 +106,11 @@
+ 	lastSpeedCheck    int64 // timestamp in nanoseconds
+ 	lastSpeedDownload int64 // bytes downloaded at last check
+ 
++	// shandian: 连接协程已退出（不论成功、失败还是暂停）。在 connMu 下看到 false，说明它的 wg.Done 还没调用
++	exited bool
++	// shandian: 失败退出时还有没下完的范围，由别的连接接手（原版不接，403 被拒的分片会留成空洞）
++	abandoned bool
++
+ 	ctx    context.Context
+ 	cancel context.CancelFunc
+ }
+@@ -750,6 +755,7 @@
+ 	} else {
+ 		// Resume: restart existing connections
+ 		f.resumeConnections()
++		go f.shandianBoost(f.ctx) // shandian: 自适应加连接
+ 		f.waitForCompletion()
+ 		return
+ 	}
+@@ -771,6 +777,7 @@
+ 
+ 			// Check if we've reached steady state (max connections)
+ 			if f.getState() == stateSteady {
++				go f.shandianBoost(f.ctx) // shandian: 自适应加连接
+ 				// Wait for all connections to complete
+ 				f.waitForCompletion()
+ 				return
+@@ -940,6 +947,8 @@
+ 
+ func (f *Fetcher) runConnection(conn *connection) {
+ 	defer f.wg.Done()
++	// shandian: 先于 wg.Done 执行。失败退出且还有剩余范围时交给别的连接（helpOtherConnection 优先接这种）
++	defer f.shandianMarkExited(conn)
+ 
+ 	f.connMu.Lock()
+ 	conn.State = connConnecting
+@@ -1466,6 +1475,11 @@
+ 	f.connMu.Lock()
+ 	defer f.connMu.Unlock()
+ 
++	// shandian: 先接失败退出的连接留下的整段
++	if f.shandianTakeAbandoned(helper) {
++		return true
++	}
++
+ 	// Find the connection with longest remaining time
+ 	var slowestConn *connection
+ 	var maxRemainSeconds int64
+@@ -1530,7 +1544,7 @@
+ 
+ func (f *Fetcher) resumeConnections() {
+ 	// Collect connections to resume while holding the lock
+-	var toResume []*connection
++	var toResume, skipped []*connection
+ 
+ 	f.connMu.Lock()
+ 	for _, conn := range f.connections {
+@@ -1544,19 +1558,34 @@
+ 		if conn.State == connFailed && conn.failed {
+ 			// Check if it's a permanent error (like 403)
+ 			if re := extractRequestError(conn.lastErr); re != nil && re.Code == 403 {
++				conn.abandoned = conn.Chunk != nil && conn.Chunk.remain() > 0 // shandian: 剩下的由别的连接接手
++				skipped = append(skipped, conn)
+ 				continue
+ 			}
+ 			// Check if retries exhausted
+ 			if conn.retryTimes >= 3 {
++				conn.abandoned = conn.Chunk != nil && conn.Chunk.remain() > 0
++				skipped = append(skipped, conn)
+ 				continue
+ 			}
+ 		}
++		toResume = append(toResume, conn)
++	}
++	// shandian: 只剩失败过的连接有没下完的范围时，没人能接手，让它们自己重来，不然继续了也下不完
++	if len(toResume) == 0 {
++		for _, conn := range skipped {
++			if conn.abandoned {
++				toResume = append(toResume, conn)
++			}
++		}
++	}
++	for _, conn := range toResume {
+ 		f.resetConnectionForRestart(conn)
+ 		// Reset the connection state for resume
+ 		conn.ctx, conn.cancel = context.WithCancel(f.ctx)
+ 		conn.State = connNotStarted
+ 		conn.failed = false // Clear failed flag for resumed connection
+-		toResume = append(toResume, conn)
++		conn.exited, conn.abandoned = false, false
+ 	}
+ 	f.connMu.Unlock()
+ 
+@@ -1602,13 +1631,8 @@
+ 
+ 		if needsMoreData && !conn.Completed && conn.State != connCompleted {
+ 			// This connection has remaining work and isn't done
+-			// Check if it failed with 403 (server limit) - these can be ignored if other connections completed the work
+-			if conn.State == connFailed && conn.failed {
+-				if re := extractRequestError(conn.lastErr); re != nil && re.Code == 403 {
+-					// 403 is server connection limit, check if other connections will complete this chunk
+-					continue
+-				}
+-			}
++			// shandian: 原版这里对 403 失败的连接直接跳过（以为别的连接会补上），但没人补，
++			// 结果文件中间留一段空洞却报告完成。剩余范围已由 helpOtherConnection 接手的，remain 为 0，到不了这里
+ 			allChunksComplete = false
+ 			break
+ 		}
+@@ -1636,6 +1660,19 @@
+ 				break
+ 			}
+ 		}
++		// shandian: 只有 403 失败时上面不报错，但文件确实没下完
++		if finalErr == nil && f.meta.Res.Range {
++			for _, conn := range f.connections {
++				if conn.Chunk != nil && conn.Chunk.remain() > 0 {
++					if re := extractRequestError(conn.lastErr); re != nil {
++						finalErr = fmt.Errorf("connection %d failed: status=%d", conn.ID, re.Code)
++					} else {
++						finalErr = fmt.Errorf("connection %d incomplete: %d bytes left", conn.ID, conn.Chunk.remain())
++					}
++					break
++				}
++			}
++		}
+ 	}
+ 	f.connMu.Unlock()
+ 
+diff --git a/internal/protocol/http/shandian_test.go b/internal/protocol/http/shandian_test.go
+--- a/internal/protocol/http/shandian_test.go
++++ b/internal/protocol/http/shandian_test.go
+@@ -114,3 +114,61 @@
+ 		t.Fatalf("请求次数 %d", hits)
+ 	}
+ }
++
++// 服务器限并发（超过 2 个连接回 403，常见于网盘 / 镜像站）：被拒的分片要有人接手，
++// 不能留一段空洞却报告下载完成
++func TestShandian_ConnLimit403NoHole(t *testing.T) {
++	fs := test.StartTestFileServer()
++	defer fs.Close()
++	var active atomic.Int32
++	ln, _ := net.Listen("tcp", "127.0.0.1:0")
++	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if active.Add(1) > 2 {
++			active.Add(-1)
++			w.WriteHeader(403)
++			return
++		}
++		defer active.Add(-1)
++		http.ServeFile(w, r, test.BuildFile)
++	}))
++	defer ln.Close()
++	downloadNormal(ln, 8, t)
++}
++
++// 单连接限速的源（像 GitHub Release、镜像站）：开满设定的连接数后应自适应再加，并且文件完整
++func TestShandian_BoostAddsConnections(t *testing.T) {
++	oldTick := shandianBoostTick
++	shandianBoostTick = 100 * time.Millisecond
++	defer func() { shandianBoostTick = oldTick }()
++	fs := test.StartTestFileServer()
++	defer fs.Close()
++	var active, peak atomic.Int32
++	ln, _ := net.Listen("tcp", "127.0.0.1:0")
++	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		n := active.Add(1)
++		defer active.Add(-1)
++		for {
++			p := peak.Load()
++			if n <= p || peak.CompareAndSwap(p, n) {
++				break
++			}
++		}
++		http.ServeFile(&throttledWriter{ResponseWriter: w, bps: 15 << 20}, r, test.BuildFile)
++	}))
++	defer ln.Close()
++	downloadNormal(ln, 2, t)
++	if peak.Load() <= 2 {
++		t.Fatalf("单连接限速时没有加连接，最多同时 %d 个", peak.Load())
++	}
++}
++
++type throttledWriter struct {
++	http.ResponseWriter
++	bps int
++}
++
++func (w *throttledWriter) Write(p []byte) (int, error) {
++	n, err := w.ResponseWriter.Write(p)
++	time.Sleep(time.Duration(n) * time.Second / time.Duration(w.bps))
++	return n, err
++}
+diff --git a/internal/protocol/http/shandian_boost.go b/internal/protocol/http/shandian_boost.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/http/shandian_boost.go
+@@ -0,0 +1,226 @@
++// 自适应加连接的部分逻辑参考并改写自 Ghost Downloader 的 http_pack/task.py。
++// 上游作者：XiaoYouChR 及项目贡献者；上游许可：GPL-3.0。
++// 本项目于 2026-11-13 改写适配 Gopeed；来源与改写范围见
++// docs/third-party-notices/ghost-downloader-reference.md。
++//
++package http
++
++import (
++	"context"
++	"math"
++	"time"
++
++	"github.com/GopeedLab/gopeed/internal/shandian"
++	"golang.org/x/time/rate"
++)
++
++// shandian: 两件事
++//  1. 失败退出的连接留下的范围交给别的连接接手（原版不接：服务器限并发时新连接被 403，那段就成了空洞）
++//  2. 自适应加连接：慢启动开满设定的连接数后，速度稳定了再加几个，加了明显变快就继续加，
++//     不划算就停（单连接限速的源，比如 GitHub Release、镜像站，多开连接才跑得满）
++
++var (
++	shandianBoostTick   = time.Second // 采样间隔（变量方便测试改小）
++	shandianBoostWindow = 5           // 速度看最近几次采样
++	shandianBoostStep   = 4           // 每次加几个
++	shandianBoostMax    = 16          // 最多加到几个（不超过设定值的 2 倍）
++)
++
++const (
++	shandianBoostStable = 0.15 // 每次采样偏离均值都在 15% 以内才算稳定
++	shandianBoostGain   = 0.8  // 速度提升比例至少是连接增加比例的 80% 才继续加
++)
++
++// 连接协程退出时调用（defer，先于 wg.Done）
++func (f *Fetcher) shandianMarkExited(conn *connection) {
++	f.connMu.Lock()
++	defer f.connMu.Unlock()
++	conn.exited = true
++	if conn.Completed || conn.ctx == nil || conn.ctx.Err() != nil || !f.meta.Res.Range ||
++		conn.Chunk == nil || conn.Chunk.remain() <= 0 {
++		return
++	}
++	conn.abandoned = true
++	// 被 403 拒：服务器限并发，不再加开连接
++	if re := extractRequestError(conn.lastErr); re != nil && re.Code == 403 {
++		f.shandianPauseExpansion()
++	}
++}
++
++func (f *Fetcher) shandianPauseExpansion() {
++	if f.slowStart == nil {
++		return
++	}
++	f.slowStart.mu.Lock()
++	f.slowStart.paused = true
++	f.slowStart.mu.Unlock()
++}
++
++// 调用方持有 connMu。把一个失败连接剩下的整段交给 helper
++func (f *Fetcher) shandianTakeAbandoned(helper *connection) bool {
++	for _, r := range f.connections {
++		if r == helper || !r.abandoned || r.Chunk == nil {
++			continue
++		}
++		r.abandoned = false
++		if r.Chunk.remain() <= 0 {
++			continue
++		}
++		begin := r.Chunk.Begin + r.Chunk.Downloaded
++		helper.Chunk.Begin = begin
++		helper.Chunk.End = r.Chunk.End
++		helper.Chunk.Downloaded = 0
++		r.Chunk.End = begin - 1
++		return true
++	}
++	return false
++}
++
++func (f *Fetcher) shandianBoostPaused() bool {
++	if f.slowStart == nil {
++		return true
++	}
++	f.slowStart.mu.Lock()
++	defer f.slowStart.mu.Unlock()
++	return f.slowStart.paused
++}
++
++// 已下字节数和还在跑的连接数
++func (f *Fetcher) shandianSnapshot() (total int64, live int) {
++	f.connMu.Lock()
++	defer f.connMu.Unlock()
++	if f.resolveConn != nil {
++		total += f.resolveConn.Downloaded
++	}
++	for _, c := range f.connections {
++		total += c.Downloaded
++		if !c.exited && !c.Completed && c.State != connFailed {
++			live++
++		}
++	}
++	return
++}
++
++// 从剩余最多的连接拆出后半段给新连接，每段仍不小于 shandianMinSplit。返回实际加了几个
++func (f *Fetcher) shandianAddConns(n int) int {
++	f.connMu.Lock()
++	running := false
++	for _, c := range f.connections {
++		if !c.exited {
++			running = true // 有连接没退出，wg 计数大于 0，此时 Add 是安全的
++			break
++		}
++	}
++	if !running || f.ctx == nil || f.ctx.Err() != nil {
++		f.connMu.Unlock()
++		return 0
++	}
++	var added []*connection
++	for i := 0; i < n; i++ {
++		var victim *connection
++		var most int64
++		for _, c := range f.connections {
++			if c.exited || c.Completed || c.abandoned || c.State == connFailed || c.Chunk == nil {
++				continue
++			}
++			if r := c.Chunk.remain(); r >= 2*shandianMinSplit && r > most {
++				victim, most = c, r
++			}
++		}
++		if victim == nil {
++			break
++		}
++		split := victim.Chunk.End - victim.Chunk.remain()/2
++		conn := &connection{
++			ID:    len(f.connections),
++			Role:  roleWorker,
++			State: connNotStarted,
++			Chunk: newChunk(split+1, victim.Chunk.End),
++		}
++		victim.Chunk.End = split
++		conn.ctx, conn.cancel = context.WithCancel(f.ctx)
++		f.connections = append(f.connections, conn)
++		f.wg.Add(1)
++		added = append(added, conn)
++	}
++	f.connMu.Unlock()
++	for _, c := range added {
++		go f.runConnection(c)
++	}
++	return len(added)
++}
++
++// 慢启动开满之后跑，直到暂停/下完/判定不划算
++func (f *Fetcher) shandianBoost(ctx context.Context) {
++	if !f.meta.Res.Range || f.meta.Res.Size <= 0 || f.slowStart == nil {
++		return
++	}
++	limit := min(f.slowStart.maxConnections*2, shandianBoostMax)
++	tick := time.NewTicker(shandianBoostTick)
++	defer tick.Stop()
++
++	var hist []float64
++	last := int64(-1)
++	checking := false
++	baseWorkers, baseSpeed := 0, 0.0
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case <-tick.C:
++		}
++		// 限流过、或者开了全局限速（多开连接也快不了），都不加
++		if f.shandianBoostPaused() || shandian.Limiter.Limit() != rate.Inf {
++			return
++		}
++		total, live := f.shandianSnapshot()
++		if live == 0 {
++			return
++		}
++		if last >= 0 {
++			hist = append(hist, float64(total-last))
++			if len(hist) > shandianBoostWindow {
++				hist = hist[1:]
++			}
++		}
++		last = total
++		if len(hist) < shandianBoostWindow {
++			continue
++		}
++		avg := 0.0
++		for _, s := range hist {
++			avg += s
++		}
++		avg /= float64(len(hist))
++		if avg <= 0 {
++			continue
++		}
++
++		if checking {
++			workerRatio := float64(live-baseWorkers) / float64(baseWorkers)
++			speedRatio := (avg - baseSpeed) / baseSpeed
++			if workerRatio <= 0 || speedRatio < shandianBoostGain*workerRatio {
++				return
++			}
++			checking = false
++			hist = hist[:0]
++			continue
++		}
++
++		dev := 0.0
++		for _, s := range hist {
++			dev = math.Max(dev, math.Abs(s-avg)/avg)
++		}
++		if dev > shandianBoostStable || live >= limit {
++			if live >= limit {
++				return
++			}
++			continue
++		}
++		if f.shandianAddConns(min(shandianBoostStep, limit-live)) == 0 {
++			return
++		}
++		baseWorkers, baseSpeed, checking = live, avg, true
++		hist = hist[:0]
++	}
++}
+
+diff --git a/pkg/download/shandian_checkpoint_test.go b/pkg/download/shandian_checkpoint_test.go
+new file mode 100644
+--- /dev/null
++++ b/pkg/download/shandian_checkpoint_test.go
+@@ -0,0 +1,38 @@
++package download
++
++import (
++	"github.com/GopeedLab/gopeed/internal/fetcher"
++	"github.com/GopeedLab/gopeed/pkg/base"
++	"testing"
++)
++
++func TestShandianMulti_CheckpointSurvivesRepeatedRestore(t *testing.T) {
++	storage := NewBoltStorage(t.TempDir())
++	defer storage.Close()
++	if err := storage.Setup([]string{bucketSave}); err != nil {
++		t.Fatal(err)
++	}
++	d := &Downloader{storage: storage}
++	task := &Task{ID: "original", Meta: &fetcher.FetcherMeta{Req: &base.Request{URL: "shandian-multi:folder"}}, Status: base.DownloadStatusPause, Progress: &Progress{Downloaded: 7}}
++	if err := storage.Put(bucketSave, task.ID, map[string]int{"retained": 7}); err != nil {
++		t.Fatal(err)
++	}
++	for i := 0; i < 3; i++ {
++		var data map[string]int
++		if err := d.loadFetcherState(task, &data); err != nil {
++			t.Fatal(err)
++		}
++		if data["retained"] != 7 {
++			t.Fatal("checkpoint consumed")
++		}
++	}
++	task.ID = "missing"
++	var data map[string]int
++	if err := d.loadFetcherState(task, &data); err == nil {
++		t.Fatal("missing segments must not restart from zero")
++	}
++	task.Status = base.DownloadStatusDone
++	if err := d.loadFetcherState(task, &data); err != nil {
++		t.Fatal(err)
++	}
++}
+diff --git a/pkg/download/shandian_resume_test.go b/pkg/download/shandian_resume_test.go
+new file mode 100644
+--- /dev/null
++++ b/pkg/download/shandian_resume_test.go
+@@ -0,0 +1,65 @@
++package download
++
++import (
++	"encoding/json"
++	"github.com/GopeedLab/gopeed/pkg/base"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++)
++
++func TestShandianMulti_FailedResumePublishesError(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.Method == "HEAD" {
++			w.Header().Set("Content-Length", "1048576")
++			w.Header().Set("Accept-Ranges", "bytes")
++			return
++		}
++		w.WriteHeader(http.StatusForbidden)
++	}))
++	defer server.Close()
++	d := NewDownloader(&DownloaderConfig{StorageDir: t.TempDir()})
++	if err := d.Setup(); err != nil {
++		t.Fatal(err)
++	}
++	defer d.Close()
++	extra := map[string]any{"files": []map[string]any{{"url": server.URL + "/video.mp4", "name": "video.mp4"}}}
++	// Ensure ReqExtra has the same JSON shape as the REST API.
++	raw, _ := json.Marshal(extra)
++	var data map[string]any
++	json.Unmarshal(raw, &data)
++	id, err := d.CreateDirect(&base.Request{URL: "shandian-multi:folder", Extra: data}, &base.Options{Path: t.TempDir()})
++	if err != nil {
++		t.Fatal(err)
++	}
++	for round := 0; round < 8; round++ {
++		deadline := time.Now().Add(5 * time.Second)
++		for d.GetTask(id).Status != base.DownloadStatusError && time.Now().Before(deadline) {
++			time.Sleep(time.Millisecond)
++		}
++		task := d.GetTask(id)
++		if task.Status != base.DownloadStatusError {
++			t.Fatalf("round %d stuck in %s", round, task.Status)
++		}
++		stats, err := d.Stats(id)
++		if err != nil {
++			t.Fatal(err)
++		}
++		blob, _ := json.Marshal(stats)
++		var view struct {
++			Files []struct {
++				Tries int `json:"tries"`
++			} `json:"files"`
++		}
++		json.Unmarshal(blob, &view)
++		if len(view.Files) != 1 || view.Files[0].Tries != 0 {
++			t.Fatalf("403 must not auto-retry: %s", blob)
++		}
++		if round < 7 {
++			if err := d.Continue(&TaskFilter{IDs: []string{id}}); err != nil {
++				t.Fatal(err)
++			}
++		}
++	}
++}
+diff --git a/internal/protocol/bt/fetcher.go b/internal/protocol/bt/fetcher.go
+--- a/internal/protocol/bt/fetcher.go
++++ b/internal/protocol/bt/fetcher.go
+@@ -228,14 +228,18 @@
+ 	return
+ }
+ 
+-func (f *Fetcher) Close() (err error) {
+-	f.safeDrop()
+-	f.torrentDropFunc()
+-	f.uploadDoneCh <- nil
+-	if len(client.Torrents()) == 0 {
+-		err = closeClient()
+-	}
+-	return nil
++func (f *Fetcher) Close() error {
++	if f.torrent != nil {
++		f.safeDrop()
++	}
++	if f.torrentDropFunc != nil {
++		f.torrentDropFunc()
++	}
++	select {
++	case f.uploadDoneCh <- nil:
++	default:
++	}
++	return closeClient(true)
+ }
+ 
+ func (f *Fetcher) safeDrop() {
+@@ -612,10 +616,13 @@
+ 	SeedTime int64
+ }
+ 
+-func closeClient() error {
++func closeClient(onlyIdle bool) error {
+ 	lock.Lock()
+ 	defer lock.Unlock()
+ 
++	if onlyIdle && (client == nil || len(client.Torrents()) != 0) {
++		return nil
++	}
+ 	if closeFunc != nil {
+ 		closeFunc()
+ 	}
+@@ -706,7 +713,7 @@
+ }
+ 
+ func (fm *FetcherManager) Close() error {
+-	return closeClient()
++	return closeClient(false)
+ }
+ 
+ // parse version to bep20 format, fixed length 4, if not enough, fill 0
+diff --git a/internal/protocol/bt/shandian_close_test.go b/internal/protocol/bt/shandian_close_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/bt/shandian_close_test.go
+@@ -0,0 +1,22 @@
++package bt
++
++import (
++	"context"
++	"testing"
++)
++
++func TestShandianCloseWithoutActiveTorrent(t *testing.T) {
++	_, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	for _, f := range []*Fetcher{
++		{},
++		{torrentDropFunc: cancel, uploadDoneCh: make(chan any, 1)},
++	} {
++		if err := f.Close(); err != nil {
++			t.Fatal(err)
++		}
++		if err := f.Close(); err != nil {
++			t.Fatal(err)
++		}
++	}
++}

@@ -1,0 +1,81 @@
+[package]
+name = "shandian-windows"
+version = "0.2.11"
+description = "闪电全能下载 Windows 版"
+edition = "2021"
+rust-version = "1.77"
+
+# 用 GNU 目标（x86_64-pc-windows-gnu），复用编内核那套 MinGW，不装 MSVC Build Tools。
+# 构建见 windows/README.md。
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+quick-xml = "0.42"
+# 内核接口只走 127.0.0.1 的明文 HTTP（no_proxy），但要给 yt-dlp / ffmpeg 下安装包，
+# 所以开 native-tls：Windows 上就是 SChannel，纯 Rust 绑定，不牵扯 OpenSSL
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "blocking"] }
+regex = "1"
+# 边下边播的播放密钥：sha256("shandian-play:token:id")[:24]，和内核 shandian.PlayKey 一致
+sha2 = "0.10"
+rand = "0.8"
+url = "2"
+# ffmpeg 只有 zip 分发包，解压用它
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# 内核启动要异步等就绪；只需要 sleep，不用开 rt
+tokio = { version = "1", features = ["time", "sync"] }
+# 设置页选文件夹要系统原生对话框（Windows 上是 IFileDialog），不自己写 COM
+tauri-plugin-dialog = "2"
+# 单实例：第二次双击图标（或从浏览器点磁力）时把链接交给已在跑的窗口，而不是再起一个内核
+tauri-plugin-single-instance = "2"
+# 完成通知走 Windows 10/11 原生 toast（Mac 版是 UNUserNotificationCenter）
+tauri-plugin-notification = "2"
+# 开机启动：写 HKCU\...\Run，不需要管理员
+tauri-plugin-autostart = "2"
+# 协议注册（shandian:// / magnet: / ed2k:）直接写注册表，插件在未打包时注册不了
+winreg = "0.52"
+# 剪贴板监听、防睡眠（SetThreadExecutionState）用系统 API，不额外引依赖
+windows-sys = { version = "0.61", features = [
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Console",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Power",
+  "Win32_System_RestartManager",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# 迅雷通道：调 ThunderAgent COM 接口、读它的无障碍树。tauri 已经带着这个版本的 windows crate
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_NetworkManagement_WNet",
+  "Win32_System_Com",
+  "Win32_System_Ole",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

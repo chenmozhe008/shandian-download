@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>提示</title>
+<script src="theme.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    user-select: none;
+  }
+  .card {
+    box-sizing: border-box;
+    position: absolute;
+    left: 10px; right: 10px; top: 10px; bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+    color: #1c1c1e;
+    font-size: 12px;
+    line-height: 1.45;
+    text-align: center;
+    word-break: break-word;
+  }
+  html[data-dark="1"] .card {
+    background: #26262a;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgb(245, 245, 247);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  .arrow {
+    position: absolute;
+    left: 50%;
+    bottom: 3px;
+    width: 10px;
+    height: 10px;
+    background: inherit;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    transform: translateX(-50%) rotate(45deg);
+  }
+  html[data-dark="1"] .arrow {
+    border-right-color: rgba(255, 255, 255, 0.1);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+</style>
+</head>
+<body>
+<div class="card" id="card"><span id="text"></span><i class="arrow"></i></div>
+<script>
+  const { listen } = window.__TAURI__.event;
+  listen("tip-data", (ev) => {
+    const t = ev.payload || {};
+    document.getElementById("text").textContent = t.text || "";
+  });
+</script>
+</body>
+</html>
