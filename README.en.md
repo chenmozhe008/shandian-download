@@ -4,10 +4,10 @@
 
 # Shandian Download Manager
 
-<strong>A fast, all-in-one open-source download manager for macOS &amp; Windows.</strong>
+<strong>Open-source download manager for macOS &amp; Windows.</strong>
 
-Free, open-source, ad-free, and lightweight (native SwiftUI on macOS · Tauri on Windows).<br>
-One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection — fast multi-connection downloads, with automatic route switching when BitTorrent stalls
+Free and open source — native SwiftUI on macOS, Tauri on Windows.<br>
+Manage magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web media in one window, with automatic route switching when BitTorrent stalls
 
 Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
@@ -33,13 +33,13 @@ The macOS edition is written natively in SwiftUI (Simplified Chinese & English),
 
 ## Highlights
 
-- <strong>All your downloads in one place</strong>: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites managed in a single window, with clipboard detection and automatic browser download takeover
-- <strong>Fast multi-connection engine</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and domain-aware proxy routing
-- <strong>Bulk document media downloads</strong>. Scan Feishu and Qingque Docs for original attachments, choose what to download, and keep original filenames. Two or more selected attachments save together in one folder
-- <strong>Web links and media detection</strong>. Add downloadable links in bulk or capture audio and video as it plays, with previews and selective downloads
-- <strong>Baidu Netdisk share downloads</strong>. Paste a share URL and access code. After initial authorization, save files locally with Shandian without installing the Baidu Netdisk desktop client. Shandian cleans up the temporary cloud transfer after it verifies the local download
-- <strong>Automatic route switching for stalled torrents</strong>: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back to your folder and clean up temporary copies
-- <strong>Native Mac workflow & AI integration</strong>: Pure SwiftUI with play-while-downloading, scheduled hours, and per-category save folders; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
+- <strong>One window for everyday downloads</strong>: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites in one place, with clipboard detection and browser download takeover
+- <strong>Multi-connection engine</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and per-domain proxy routing
+- <strong>Document media downloads</strong>: Scan Feishu and Qingque Docs for original audio and video attachments, pick what you need, and keep original filenames (multiple files save into one folder)
+- <strong>Web link &amp; media capture</strong>: Grab downloadable links in bulk, or capture audio and video as it plays with waveform preview and selective saving
+- <strong>Baidu Netdisk shares without the desktop client</strong>: Paste a share link and access code; after authorization, save directly with Shandian and let it clean up the temporary cloud copy once verified
+- <strong>Automatic route switching for stalled torrents</strong>: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back and clean up temporary copies
+- <strong>Native workflow &amp; local MCP</strong>: Stream while downloading, schedule download hours, and remember save folders by category; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
 
 ## Supported sources
 
@@ -132,7 +132,7 @@ The Windows edition (Windows 10 / 11, x64, Simplified Chinese UI) is independent
 - **Download**: [Latest Windows Release](https://github.com/cgeek-dev/shandian-download/releases/latest) (installer & portable builds, with built-in auto-update)
 - **Docs & Changelog**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
 
-Built with Tauri and WebView2, the Windows edition follows the macOS design and core features (magnet, torrent, ed2k, HTTP direct links, video platforms, Feishu & Qingque document media, Baidu Netdisk shares, local MCP, and Chrome / Edge extension), while adding extra cloud drive link extraction, GitHub / Hugging Face mirror acceleration, and local Ollama subtitle polishing. Windows releases and issues are maintained by [@cgeek-dev](https://github.com/cgeek-dev/shandian-download).
+Built with Tauri and WebView2, it shares the same design and core features as the macOS edition, and adds extra cloud drive link extraction, GitHub / Hugging Face mirror acceleration, and local Ollama subtitle polishing. Windows releases and issues are maintained by [@cgeek-dev](https://github.com/cgeek-dev/shandian-download).
 
 ## Browser extension
 
@@ -171,13 +171,13 @@ Once installed, the window shows <strong>已连接</strong> (Connected).
 
 <strong>Detect web audio & video</strong>: Open the extension on a media page, click <strong>Detect Media on This Page</strong>, and play the audio or video. Reopen the extension to preview with a waveform, download single files with their original names, or save multiple downloadable files together in one folder.
 
-<strong>Download web files in bulk</strong>. On a supported web page, choose <strong>Scan Page for Download Links</strong> and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use <strong>Detect Media on This Page</strong> for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
+<strong>Download web files in bulk</strong>: On a supported web page, choose <strong>Scan Page for Download Links</strong> and select direct links with supported extensions such as MP4, MP3 and ZIP, or magnet and ed2k links. Use <strong>Detect Media on This Page</strong> for audio or video that only loads when you press play. Download availability depends on the resources the page exposes and your account permissions.
 
 #### Document audio and video downloads
 
-<strong>Feishu Docs and Wiki</strong>. Open the full extension on the document to list original attachments, their sizes and the selection count. All items start selected. You can also paste the document link into Shandian to download all attachments. Install and authorize [Feishu’s official lark-cli](https://github.com/larksuite/cli) with an account that can access the document and download its attachments.
+<strong>Feishu Docs and Wiki</strong>: Open the full extension on the document to list original attachments, their sizes and the selection count. All items start selected. You can also paste the document link into Shandian to download all attachments. Install and authorize [Feishu’s official lark-cli](https://github.com/larksuite/cli) with an account that can access the document and download its attachments.
 
-<strong>Qingque Docs</strong>. Open an accessible document and choose Scan Current Page in the full extension. It lists up to 100 original audio and video attachments per scan, including items outside the visible area.
+<strong>Qingque Docs</strong>: Open an accessible document and choose Scan Current Page in the full extension. It lists up to 100 original audio and video attachments per scan, including items outside the visible area.
 
 Save one original directly or save several together in a document folder. Bulk downloads show completed file count and speed, and can reuse verified files on retry.
 

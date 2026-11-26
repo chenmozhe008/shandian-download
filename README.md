@@ -5,10 +5,10 @@
 
 # 闪电全能下载 · Shandian Download Manager
 
-<strong>快速、全能的开源下载工具（macOS / Windows）</strong>
+<strong>macOS / Windows 开源下载工具</strong>
 
-免费开源、无广告、轻量原生（macOS 纯 SwiftUI · Windows 基于 Tauri）。<br>
-一个窗口搞定磁力、种子、ed2k、直链、网盘、视频网站与网页音视频侦测，多连接高速下载，BT 卡 0% 自动换路下完
+免费开源，macOS 用 SwiftUI 原生写，Windows 用 Tauri。<br>
+磁力、种子、ed2k、直链、网盘、视频网站和网页音视频都在一个窗口里管，BT 没速度时自动换路下完
 
 磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书和轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
@@ -28,19 +28,19 @@
 
 </div>
 
-闪电全能下载（Shandian Download Manager）是一款面向 **macOS 与 Windows** 的开源全能下载工具（macOS 原生版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护），集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享和主流视频平台下载。复制链接后粘贴即可添加；搭配 Chrome / Edge 浏览器扩展，还可批量抓取网页下载链接、侦测和试听网页媒体，并从飞书和轻雀文档中选择可下载的原始音视频。单个附件直接保存，多个附件放进同一个文件夹。
+闪电全能下载（Shandian Download Manager）支持 **macOS 和 Windows**（macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发和维护），把磁力、种子、ed2k、HTTP 直链、百度网盘分享和常见视频网站收进同一个窗口。复制链接粘贴就能下；装上 Chrome / Edge 扩展，还可以批量抓网页链接、侦测并试听网页音视频，或者直接勾选保存飞书和轻雀文档里的原始音视频（单个直接存，多个自动归到同一个文件夹）。
 
-macOS 版基于 SwiftUI 原生开发，Windows 版基于 Tauri 与 WebView2 构建。下载内核均为 [Gopeed](https://github.com/GopeedLab/gopeed) 的定制版本，视频平台下载由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
+macOS 版用 SwiftUI 原生开发，Windows 版用 Tauri + WebView2。下载内核均为打过补丁的 [Gopeed](https://github.com/GopeedLab/gopeed)，视频网站由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 支持。
 
-## 核心亮点
+## 主要特点
 
-- <strong>多渠道一站式下载</strong>：磁力、种子、ed2k、HTTP 直链、网盘直链与主流视频平台统一管理；复制链接即弹提示，浏览器扩展自动接管网页下载
-- <strong>多连接高速下载，启动迅速</strong>：HTTP 大文件分段并行、视频 4 路分片并发、磁力自动合并最新 tracker 并固定端口，按域名智能分流系统代理
-- <strong>文档音视频批量下载</strong>。扫描飞书和轻雀文档中的原始附件，按需勾选，保留原文件名。选择两项及以上时统一保存到一个文件夹
-- <strong>网页链接与媒体侦测</strong>。批量添加当前网页的可下载链接，播放时捕获音视频，支持试听和按需保存
-- <strong>百度网盘分享下载</strong>：粘贴分享链接和提取码，首次授权后可用闪电保存到本机，无需安装百度网盘桌面客户端。下载校验完成后自动清理本次云端转存
-- <strong>冷门任务自动换路</strong>：BT / 磁力卡在 0% 时自动转交本机迅雷或 PikPak 云盘离线，下完自动归位到原保存目录并清理中转副本
-- <strong>原生顺手，支持 AI 接入</strong>：macOS 纯 SwiftUI、Windows 基于 Tauri，均支持边下边播、定时下载、自动记忆各类保存位置；内置本机 MCP 服务，支持 Claude Code、Codex、Cursor、ChatGPT 桌面版等直接管理下载任务
+- <strong>一个窗口管常见下载</strong>：磁力、种子、ed2k、HTTP 直链、网盘和主流视频网站都能直接下；复制链接自动弹提示，浏览器扩展接管网页下载
+- <strong>多连接提速</strong>：HTTP 大文件分段并行、视频 4 路分片并发、磁力自动合并最新 tracker 并固定端口，按域名分流系统代理
+- <strong>飞书、轻雀文档音视频批量下</strong>：扫描文档里的原始音视频附件，按需勾选并保留原名，选两项及以上时自动存进同一个文件夹
+- <strong>网页链接与媒体侦测</strong>：批量抓取当前页面的可下载链接，或在播放网页音视频时捕获、波形试听并按需保存
+- <strong>百度网盘分享免装客户端</strong>：粘贴分享链接和提取码，首次授权后直接用闪电保存到本机，下完校验通过自动清理云端转存
+- <strong>冷门 BT 卡 0% 自动换路</strong>：BT / 磁力没速度时自动转给本机迅雷或 PikPak 云盘离线，下完自动归位到原目录并清理中转副本
+- <strong>轻量顺手，内置 MCP</strong>：支持边下边播、定时下载和按类型记忆保存目录；内置本机 MCP 服务，Claude Code、Codex、Cursor、ChatGPT 桌面版等可直接管理下载任务
 
 <div align="center">
 <img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="760">
@@ -150,7 +150,7 @@ Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立�
 - **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
 - **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
 
-Windows 版基于 Tauri 与 WebView2 开发，延续与 macOS 版一致的界面和核心体验（磁力、种子、ed2k、直链、视频平台、飞书与轻雀文档音视频、百度网盘分享、本机 MCP 及 Chrome / Edge 扩展），并额外提供多网盘直链取链、GitHub / Hugging Face 镜像加速以及本机 Ollama 字幕润色等功能。Windows 版的相关问题与发布节奏由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
+Windows 版用 Tauri + WebView2 写的，界面和常用功能和 macOS 版基本一致，另外还多了多网盘直链取链、GitHub / Hugging Face 镜像加速和本机 Ollama 字幕润色。Windows 版的问题反馈和发版由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
 
 ## 浏览器扩展
 
@@ -195,9 +195,9 @@ Windows 版基于 Tauri 与 WebView2 开发，延续与 macOS 版一致的界面
 
 #### 文档音视频下载
 
-<strong>飞书文档和知识库</strong>。打开文档并点完整版扩展，闪电会读取整篇文档的原始音视频附件，显示文件名、大小和已选数量。默认全选，可取消不需要的条目。也可将飞书文档链接粘贴到闪电下载整篇附件。首次需安装并授权[飞书官方 lark-cli](https://github.com/larksuite/cli)，账号需有文档访问和附件下载权限。
+<strong>飞书文档和知识库</strong>：打开文档并点完整版扩展，闪电会读取整篇文档的原始音视频附件，显示文件名、大小和已选数量（默认全选，可取消不需要的条目）；也可以直接把文档链接粘贴到闪电里下载整篇附件。首次需安装并授权[飞书官方 lark-cli](https://github.com/larksuite/cli)，账号需有文档访问和附件下载权限。
 
-<strong>轻雀文档</strong>。打开有访问权限的文档，在完整版扩展点「扫描当前页面」，可列出尚未滚动到的原始音视频附件，一次最多识别 100 项。
+<strong>轻雀文档</strong>：打开有访问权限的文档，在完整版扩展点「扫描当前页面」，可列出尚未滚动到的原始音视频附件，一次最多识别 100 项。
 
 单选直接保存原文件，多选统一保存到文档文件夹。批量任务会显示已完成文件数和速度，继续或重试时可复用已校验的文件。
 
