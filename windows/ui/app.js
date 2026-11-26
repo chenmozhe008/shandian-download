@@ -427,7 +427,6 @@ function setTheme(v) {
 
 /// 有新版时要不要弹提示（圆点 + 启动 toast）。
 /// 发布源尚未接入，自动和手动检查都保持关闭。
-const ONLINE_UPDATES_ENABLED = false;
 
 /// 进程内启动时刻：启动头几秒任务状态还没稳，别急着显示「连接中」的转圈
 const BOOT_AT = performance.now();
@@ -2972,7 +2971,7 @@ function collectionTask(group, members) {
   const files = group.collection.items.map((item, index) => {
     const task = byId.get(item.id);
     return {
-      index, taskId: task?.id, name: task?.name || item.name, selected: true,
+      index, taskId: task?.id, name: task?.name || item.name, url: item.url, selected: true,
       status: task?.status || (item.error ? "error" : item.id ? removedIds.has(item.id) ? "removed" : "unavailable" : "wait"),
       stage: task?.stage,
       mediaReady: task?.status === "done" || /^(处理字幕|下载字幕)$/.test(task?.stage || ""),
@@ -3295,6 +3294,21 @@ let filesList = [];
 let filesSaving = null;
 const drawerFileSelection = new Set();
 const drawerFileKey = file => file.taskId || file.index;
+let drawerAnchor = null;
+function drawerSelectionEnabled(task = state.tasks.find(item => item.id === filesPanelId)) {
+  return !!task && (task.status === "done" || !!task.collectionFiles || isBaiduFileTask(task));
+}
+function applyDrawerSelection(ids) {
+  if (ids.size === drawerFileSelection.size && [...ids].every(id => drawerFileSelection.has(id))) return;
+  drawerFileSelection.clear();
+  ids.forEach(id => drawerFileSelection.add(id));
+  drawFilesRows();
+}
+function drawerFileAt(element) {
+  const index = Number(element.closest(".fd-row")?.querySelector("[data-i]")?.dataset.i);
+  const file = filesList[index];
+  return file?.index === index ? file : filesList.find(file => file.index === index);
+}
 
 function drawerFilesFor(file) {
   if (file && !drawerFileSelection.has(drawerFileKey(file))) return [file];
@@ -3457,13 +3471,12 @@ function drawFilesRows() {
   const top = scroll.scrollTop;
   const t = state.tasks.find((x) => x.id === filesPanelId);
   const collection = !!t?.collectionFiles;
-  const locked = t?.status === "done" || collection || isBaiduFileTask(t);
-  if (locked) {
-    const indices = new Set(filesList.map(drawerFileKey));
-    for (const index of drawerFileSelection) {
-      if (!indices.has(index)) drawerFileSelection.delete(index);
-    }
+  const locked = drawerSelectionEnabled(t);
+  const indices = new Set(filesList.map(drawerFileKey));
+  for (const index of drawerFileSelection) {
+    if (!indices.has(index)) drawerFileSelection.delete(index);
   }
+  if (!indices.has(drawerAnchor)) drawerAnchor = null;
   const members = collection ? new Map(groupMembers(filesPanelId).map(task => [task.id, task])) : null;
   const batch = $("files-fill-subtitles");
   const subtitleAction = members && collectionSubtitleAction([...members.values()]);
@@ -3495,16 +3508,17 @@ function drawFilesRows() {
     const task = members?.get(f.taskId);
     const subtitleControls = collection && task?.status === "done" ? renderSubtitleControls(task) : "";
     const subtitleStatus = subtitleControls ? `<span class="fd-file-note task-meta subtitle-controls">${subtitleControls}</span>` : "";
-    const selected = locked ? drawerFileSelection.has(drawerFileKey(f)) : f.selected;
+    const selected = drawerFileSelection.has(drawerFileKey(f));
+    const checked = locked ? selected : f.selected;
     const type = typeOfName(f.name);
     const playAudio = canOpen && !collection && canPlayDrawerAudio(f);
     const playVideo = canOpen && (type === "video" || (collection && f.taskId));
     const playLabel = playAudio ? "播放音频" : "播放视频";
     const play = playAudio || playVideo
-      ? `<button type="button" class="circle sm fd-play-control" data-file-${playAudio ? "audio" : "video"}="${f.index}" aria-label="${playLabel}"${playVideo ? ` data-tip="${playLabel}"` : ""}><svg class="ic"><use href="#i-media-play"/></svg></button>` : "";
+      ? `<button type="button" class="circle sm fd-play-control" data-file-${playAudio ? "audio" : "video"}="${f.index}" aria-label="${playLabel}"><svg class="ic"><use href="#i-media-play"/></svg></button>` : "";
     const actions = collection || mediaFiles ? `<span class="fd-file-actions">${play}</span>` : "";
     const coverId = collection ? f.taskId : baiduDrawerCover(filesPanelId, f);
-    return `<div class="fd-row${f.selected ? "" : " off"}${locked && selected ? " fd-selected" : ""}"${open}><${collection ? "div" : "label"} class="fd-file-entry" data-tip="${escapeHtml(tip)}"><input type="checkbox" aria-label="${escapeHtml(f.name)}" data-i="${f.index}"${selected ? " checked" : ""}>${coverId ? episodeCoverHtml(coverId) : ""}<span class="fd-file-info"><span class="n">${escapeHtml(f.name)}</span>${subtitleStatus}</span></${collection ? "div" : "label"}>${actions}<span class="p ${f.status}${f.missing ? " file-missing" : ""}"${f.missing ? ' data-tip="原路径未找到文件，可能已移动、重命名或删除。"' : (f.error || f.lastError || f.tries) ? ` data-tip="${escapeHtml(fileRetryTip(f))}"` : ""}>${escapeHtml(pct)}</span><span class="s">${f.size ? bytes(f.size) : "—"}</span></div>`;
+    return `<div class="fd-row${f.selected ? "" : " off"}${selected ? " fd-selected" : ""}"${open}><${collection ? "div" : "label"} class="fd-file-entry" data-tip="${escapeHtml(tip)}"><input type="checkbox" aria-label="${escapeHtml(f.name)}" data-i="${f.index}"${checked ? " checked" : ""}>${coverId ? episodeCoverHtml(coverId) : ""}<span class="fd-file-info"><span class="n">${escapeHtml(f.name)}</span>${subtitleStatus}</span></${collection ? "div" : "label"}>${actions}<span class="p ${f.status}${f.missing ? " file-missing" : ""}"${f.missing ? ' data-tip="原路径未找到文件，可能已移动、重命名或删除。"' : (f.error || f.lastError || f.tries) ? ` data-tip="${escapeHtml(fileRetryTip(f))}"` : ""}>${escapeHtml(pct)}</span><span class="s">${f.size ? bytes(f.size) : "—"}</span></div>`;
   });
   const previous = box.__fileRows;
   if (previous?.length !== rows.length || box.children.length !== rows.length) {
@@ -3528,7 +3542,8 @@ function drawFilesRows() {
   }
   const on = filesList.filter((f) => f.selected);
   const all = $("files-all");
-  const count = locked ? drawerFileSelection.size : on.length;
+  const selectedCount = drawerFileSelection.size;
+  const count = locked ? selectedCount : on.length;
   all.checked = !!filesList.length && count === filesList.length;
   all.indeterminate = count > 0 && count < filesList.length;
   $("files-all-label").hidden = !filesList.length;
@@ -3536,7 +3551,7 @@ function drawFilesRows() {
   const progress = collection || isBaiduFileTask(t) ? fileChipText(t) : `已下载 ${on.filter(file => file.status === "done").length}/${on.length} 项，${totalSize}`;
   $("files-count").textContent = locked
     ? progress + (count ? ` · 已选 ${count}` : "")
-    : `已选 ${on.length} / ${filesList.length} 项，${totalSize}`;
+    : `下载 ${on.length} / ${filesList.length} 项，${totalSize}` + (selectedCount ? ` · 已选 ${selectedCount}` : "");
 }
 function drawerListStatus(text, loading = false) {
   const status = $("files-list-status");
@@ -3615,6 +3630,7 @@ function openFilesPanel(id) {
   $("files-all-label").hidden = true;
   drawerListStatus("正在读取文件…", true);
   drawerFileSelection.clear();
+  drawerAnchor = null;
   filesList = [];
   const box = $("files-panel");
   if (box.hidden) {
@@ -3663,6 +3679,11 @@ document.addEventListener("pointerdown", (e) => {
     grip.addEventListener("pointercancel", up, { once: true });
   });
 }
+$("files-scroll").addEventListener("click", (event) => {
+  if (!filesPanelId || event.target.closest(".fd-row, button, a, input, select, label")) return;
+  drawerAnchor = null;
+  setDrawerSelection(false);
+});
 const drawerFiles = $("files-list");
 drawerFiles.addEventListener("click", (event) => {
   const audio = event.target.closest("[data-file-audio]");
@@ -3671,6 +3692,18 @@ drawerFiles.addEventListener("click", (event) => {
   if (video && filesPanelId) {
     drawerAudio.close();
     return openDownloadedDrawerFile(Number(video.dataset.fileVideo));
+  }
+  const file = drawerFileAt(event.target);
+  if (file && !event.target.closest("button,a,[data-subtitle-action]")) {
+    const add = event.ctrlKey || event.metaKey;
+    if (!event.target.closest("input") || add || event.shiftKey) {
+      event.preventDefault();
+      const key = drawerFileKey(file);
+      applyDrawerSelection(selectIds(drawerFileSelection, filesList.map(drawerFileKey), drawerAnchor, key,
+        { add, range: event.shiftKey }));
+      if (!event.shiftKey || drawerAnchor === null) drawerAnchor = key;
+    }
+    return;
   }
   if (event.target.closest("[data-open-file] label") && !event.target.closest("input")) event.preventDefault();
 });
@@ -3698,8 +3731,7 @@ drawerFiles.addEventListener("keydown", (event) => {
 drawerFiles.addEventListener("contextmenu", (event) => {
   const row = event.target.closest(".fd-row");
   if (!filesPanelId || !row) return;
-  const index = Number(row.querySelector("[data-i]")?.dataset.i);
-  const file = filesList.find(item => item.index === index);
+  const file = drawerFileAt(row);
   if (!file) return;
   event.preventDefault();
   event.stopPropagation();
@@ -3715,9 +3747,10 @@ function openDrawerFileMenu(files, anchor, clickedFile = null) {
   const action = selectedSubtitleAction(tasks);
   const polishable = tasks.filter(canPolishTask);
   const restorable = polishable.filter(task => task.polished);
-  const canReveal = clickedFile?.status === "done" && clickedFile.selected
-    && !clickedFile.missing && clickedFile.fileState !== "offline";
-  if (!styled.length && !action && !canReveal && !polishable.length) return;
+  const available = files.filter(file => file.status === "done" && file.selected && !file.missing && file.fileState !== "offline");
+  const canReveal = files.length === 1 && available.includes(clickedFile);
+  const links = files.map(file => file.url || tasks.find(task => task.id === file.taskId)?.meta?.req?.url).filter(Boolean);
+  const drawerId = filesPanelId;
 
   closeCtx();
   const menu = ctxEl();
@@ -3771,6 +3804,24 @@ function openDrawerFileMenu(files, anchor, clickedFile = null) {
       }
     });
   }
+  const count = size => size > 1 ? "（" + size + " 项）" : "";
+  const copyItems = async values => {
+    const items = values.filter(Boolean);
+    toast(items.length && await copyText(items.join("\n")) ? "已复制" + count(items.length) : "没有可复制的内容或复制失败");
+  };
+  add("复制名称" + count(files.length), "i-clipboard", () => copyItems(files.map(file => file.name)));
+  if (links.length) add("复制链接" + count(links.length), "i-link", () => copyItems(links));
+  if (available.length) add("复制完整路径" + count(available.length), "i-folder", async () => {
+    const paths = [];
+    for (const file of available) {
+      try {
+        paths.push(await (file.taskId
+          ? invoke("item_path", { id: file.taskId })
+          : invoke("task_downloaded_file_path", { id: drawerId, index: file.index })));
+      } catch {}
+    }
+    await copyItems(paths);
+  });
   showDrawerMenu(menu, anchor, false);
 }
 function showDrawerMenu(menu, anchor, alignRight) {
@@ -3819,6 +3870,7 @@ drawerFiles.addEventListener("change", (e) => {
   if (!f) return;
   const task = state.tasks.find(item => item.id === filesPanelId);
   if (task?.collectionFiles || task?.status === "done" || isBaiduFileTask(task)) {
+    drawerAnchor = drawerFileKey(f);
     if (e.target.checked) drawerFileSelection.add(drawerFileKey(f));
     else drawerFileSelection.delete(drawerFileKey(f));
     drawFilesRows();
@@ -5265,7 +5317,9 @@ function renderSubtitleControls(task) {
   } else if (task.polish) {
     detail = /失败/.test(task.polish) ? (english ? "翻译失败" : "润色失败") : task.polish;
   }
-  const progress = detail ? `<span class="subtitle-detail" data-tip="${escapeHtml(task.polish || detail)}">${escapeHtml(detail)}</span>` : "";
+  const detailTip = task.polish?.trim();
+  const tooltip = detailTip && detailTip !== detail.trim() ? ` data-tip="${escapeHtml(detailTip)}"` : "";
+  const progress = detail ? `<span class="subtitle-detail"${tooltip}>${escapeHtml(detail)}</span>` : "";
   let action = "";
   if (accessible && !fetching && !working) {
     if (task.collectionFiles) {
@@ -6591,49 +6645,27 @@ function selectAllVisibleTasks() {
 
 /// 选中一行。opts.add=Ctrl/⌘ 点选（切换），opts.range=Shift 范围选。
 /// 点列表空白处调 selectRow(null) 取消全部选中。
-function selectRow(id, opts = {}) {
-  const rows = [...document.querySelectorAll("#task-list .task")];
-  const idOf = (el) => el?.dataset?.id || null;
-
-  if (!id) {
-    state.selId = null;
-    state.selIds = new Set();
-    state.selAnchor = null;
-    rows.forEach((r) => { r.classList.remove("sel"); r.style.background = ""; });
-    syncSelUi();
-    return;
-  }
-
-  if (opts.add) {
-    // Ctrl/⌘：在集合里切换这一条
-    if (state.selIds.has(id)) state.selIds.delete(id);
-    else state.selIds.add(id);
-    state.selId = id;
-    state.selAnchor = id;
-  } else if (opts.range && state.selAnchor) {
-    // Shift：从锚点到当前行的连续范围
-    const a = rows.findIndex((r) => idOf(r) === state.selAnchor);
-    const b = rows.findIndex((r) => idOf(r) === id);
+function selectIds(current, ordered, anchor, id, { add, range }) {
+  if (range) {
+    const a = ordered.indexOf(anchor), b = ordered.indexOf(id);
     if (a >= 0 && b >= 0) {
-      const [lo, hi] = a <= b ? [a, b] : [b, a];
-      state.selIds = new Set(rows.slice(lo, hi + 1).map(idOf).filter(Boolean));
-    } else {
-      state.selIds = new Set([id]);
+      const span = ordered.slice(Math.min(a, b), Math.max(a, b) + 1);
+      return new Set(add ? [...current, ...span] : span);
     }
-    state.selId = id;
-  } else {
-    // 普通点击：只选这一条
-    state.selIds = new Set([id]);
-    state.selId = id;
-    state.selAnchor = id;
   }
+  if (add) {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }
+  return new Set([id]);
+}
 
-  rows.forEach((r) => {
-    const on = state.selIds.has(idOf(r));
-    r.classList.toggle("sel", on);
-    // 选中样式走 CSS 的 .task.sel，不再写内联 background（会和 :hover 打架）
-    r.style.background = "";
-  });
+function selectRow(id, opts = {}) {
+  state.selIds = id ? selectIds(state.selIds, visibleTaskIds(), state.selAnchor, id, opts) : new Set();
+  state.selId = id;
+  if (!id || !opts.range || !state.selAnchor) state.selAnchor = id;
   syncSelUi();
 }
 
@@ -6663,14 +6695,13 @@ function syncSelUi() {
 }
 
 /// 框选：从列表空白处按下拖动（已完成、下载历史页从行上开始也可以）。按住 Ctrl 是追加
-function bindRubberBand() {
-  const scroller = document.querySelector("#pane-downloads .scroll");
+function bindRubberBand(scroller, { selector, keyOf, selection, apply, allowed, onCommit, layer = "" }) {
   if (!scroller) return;
-  const ignored = "button, a, input, select, .hero, [data-act], [data-trash-act]";
+  const ignored = "button, a, input, select, .hero, [data-act], [data-trash-act], [data-subtitle-action]";
   let mouseBand = null, touchGesture = null;
 
   function beginBand(x0, y0, append) {
-    const previous = new Set(state.selIds);
+    const previous = new Set(selection());
     const base = append ? previous : new Set();
     const top0 = scroller.scrollTop;
     const previousUserSelect = document.body.style.userSelect;
@@ -6680,12 +6711,12 @@ function bindRubberBand() {
       const l = Math.min(x0, lastX), t = Math.min(y0Now, lastY), w = Math.abs(lastX - x0), h = Math.abs(lastY - y0Now);
       Object.assign(rect.style, { left: `${l}px`, top: `${t}px`, width: `${w}px`, height: `${h}px` });
       const picked = new Set(base);
-      document.querySelectorAll("#task-list .task").forEach((r) => {
+      scroller.querySelectorAll(selector).forEach((r) => {
         const b = r.getBoundingClientRect();
-        if (r.dataset.id && b.left < l + w && b.right > l && b.top < t + h && b.bottom > t) picked.add(r.dataset.id);
+        const key = keyOf(r);
+        if (key != null && b.left < l + w && b.right > l && b.top < t + h && b.bottom > t) picked.add(key);
       });
-      state.selIds = picked;
-      syncSelUi();
+      apply(picked);
     };
     const timer = setInterval(() => {
       if (!rect) return;
@@ -6700,7 +6731,7 @@ function bindRubberBand() {
       if (!rect && Math.hypot(lastX - x0, lastY - y0) < 5) return;
       if (!rect) {
         rect = document.createElement("div");
-        rect.className = "sel-rect";
+        rect.className = "sel-rect " + layer;
         document.body.append(rect);
         document.body.style.userSelect = "none";
       }
@@ -6712,13 +6743,10 @@ function bindRubberBand() {
       rect.remove();
       document.body.style.userSelect = previousUserSelect;
       if (!commit) {
-        state.selIds = previous;
-        syncSelUi();
+        apply(previous);
         return;
       }
-      const ids = [...state.selIds];
-      state.selId = ids[ids.length - 1] || null;
-      state.selAnchor = state.selId;
+      onCommit([...selection()].at(-1) ?? null);
       // 松手后的 click 不能把刚框好的选择清掉
       const eat = (ce) => { ce.stopPropagation(); ce.preventDefault(); };
       addEventListener("click", eat, { capture: true, once: true });
@@ -6729,7 +6757,7 @@ function bindRubberBand() {
 
   scroller.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "touch" || e.button !== 0 || e.shiftKey || e.isPrimary === false || mouseBand || touchGesture) return;
-    if (e.target.closest(ignored) || (state.view === "all" && e.target.closest(".task"))) return;
+    if (e.target.closest(ignored) || !allowed(e)) return;
     if (e.clientX > scroller.getBoundingClientRect().right - 12) return;
     const pointer = e.pointerId;
     mouseBand = beginBand(e.clientX, e.clientY, e.ctrlKey || e.metaKey);
@@ -6757,7 +6785,7 @@ function bindRubberBand() {
   };
   scroller.addEventListener("touchstart", (e) => {
     if (e.touches.length !== 1) { finishTouch(false); return; }
-    if (mouseBand || e.target.closest(ignored + ", .task")) return;
+    if (mouseBand || e.target.closest(ignored) || e.target.closest(selector) || !allowed(e)) return;
     const point = e.changedTouches[0];
     touchGesture = { id: point.identifier, x: point.clientX, y: point.clientY, start: performance.now(), band: null };
   }, { passive: true });
@@ -6782,7 +6810,21 @@ function bindRubberBand() {
   }
   addEventListener("blur", () => finishTouch(false));
 }
-bindRubberBand();
+bindRubberBand(document.querySelector("#pane-downloads .scroll"), {
+  selector: "#task-list .task", keyOf: row => row.dataset.id,
+  selection: () => state.selIds, apply: ids => { state.selIds = ids; syncSelUi(); },
+  allowed: event => state.view !== "all" || !event.target.closest(".task"),
+  onCommit: last => { state.selId = state.selAnchor = last; },
+});
+bindRubberBand($("files-scroll"), {
+  selector: ".fd-row", keyOf: row => {
+    const file = drawerFileAt(row);
+    return file ? drawerFileKey(file) : null;
+  },
+  selection: () => drawerFileSelection, apply: applyDrawerSelection,
+  allowed: () => !!filesPanelId && filesList.length > 0,
+  onCommit: last => { drawerAnchor = last; }, layer: "sel-rect-drawer",
+});
 
 /// 当前选中的任务对象列表（多选时按列表顺序）
 function selectedTasks() {
@@ -6918,6 +6960,39 @@ function openBaiduRetry(task, codeRequired = false) {
   });
 }
 
+function copyTaskRoots(id) {
+  const ids = state.selIds.has(id) ? state.selIds : new Set([id]);
+  return state.tasks.filter(task => !task.creating && ids.has(task.id));
+}
+
+function taskSourceLink(task) {
+  const group = taskGroups.find(entry => entry.id === task.id);
+  const input = group ? group.collection?.url : task.meta?.req?.url;
+  if (!input || input.startsWith("shandian-multi:")) return "";
+  if (!group?.collection) return input;
+  try {
+    const url = new URL(input);
+    if (["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(url.hostname) && url.searchParams.get("list")) {
+      return "https://www.youtube.com/playlist?list=" + encodeURIComponent(url.searchParams.get("list"));
+    }
+    if (["bilibili.com", "www.bilibili.com", "m.bilibili.com"].includes(url.hostname) && url.pathname.startsWith("/video/")) {
+      url.searchParams.delete("p");
+      return url.href;
+    }
+  } catch {}
+  return input;
+}
+
+async function copyTaskPath(task) {
+  const group = taskGroups.find(entry => entry.id === task.id);
+  if (!group) return invoke("item_path", { id: task.id }).catch(() => "");
+  if (group.dir && !group.dir.startsWith("/")) return group.dir.replaceAll("/", "\\");
+  const members = groupMembers(group.id);
+  const member = members.find(item => item.status === "done" && !item.missing) || members[0];
+  if (!member) return group.dir || "";
+  return invoke("task_folder_path", { id: member.id }).catch(() => group.dir || "");
+}
+
 async function taskAction(id, act) {
   const selectedTask = state.tasks.find(task => task.id === id);
   if (selectedTask?.creating) return;
@@ -7040,7 +7115,7 @@ async function taskAction(id, act) {
     if (act === "resume" && needsCloudRefresh(t)) return await beginCloudRefresh(t,true);
     if (act === "open") await invoke("item_open", { id });
     else if (act === "openLink") {
-      const url = t.meta?.req?.url || "";
+      const url = taskSourceLink(t);
       if (!url) return toast("这条任务没有原始链接");
       await invoke("open_url", { url });
     }
@@ -7123,12 +7198,13 @@ async function taskAction(id, act) {
       return openFilesPanel(id);
     } else if (act === "copyLink") {
       // 多文件任务的 shandian-multi: 不是真实链接，不能拿去用
-      const links = multiFor(id).map((x) => x.meta?.req?.url || "").filter((u) => u && !u.startsWith("shandian-multi:"));
+      const links = [...new Set(copyTaskRoots(id).map(taskSourceLink).filter(Boolean))];
       toast(links.length && (await copyText(links.join("\n"))) ? (links.length > 1 ? `已复制 ${links.length} 个链接` : "已复制链接") : "复制失败");
       return;
     } else if (act === "copyName") {
       // 有实际文件就复制完整文件名（带后缀），没下完的只有显示名
-      const names = (await Promise.all(multiFor(id).map(async (x) => {
+      const names = (await Promise.all(copyTaskRoots(id).map(async (x) => {
+        if (isGroup(x.id)) return taskGroups.find(group => group.id === x.id)?.name || x.name;
         const path = x.status === "done" ? String((await invoke("item_path", { id: x.id }).catch(() => "")) || "") : "";
         return path.split(/[\\/]/).pop() || x.name || x.meta?.res?.name || "";
       }))).filter(Boolean);
@@ -7136,8 +7212,7 @@ async function taskAction(id, act) {
       return;
     } else if (act === "copyPath") {
       // 复制完整路径：剪贴板 API 不给用就退回隐藏 textarea 那套老办法
-      const list = multiFor(id);
-      const paths = (await Promise.all(list.map((x) => invoke("item_path", { id: x.id }).catch(() => "")))).map(String).filter(Boolean);
+      const paths = (await Promise.all(copyTaskRoots(id).map(copyTaskPath))).filter(Boolean);
       if (!paths.length) return toast("这些任务还没有文件路径");
       toast((await copyText(paths.join("\n"))) ? (paths.length > 1 ? `已复制 ${paths.length} 个路径` : "已复制路径") : "复制失败");
     }
@@ -7686,7 +7761,7 @@ function openCtx(x, y, id) {
   }
   // 原始链接：http(s) 直接开浏览器，磁力交给装了关联的 BT 客户端
   const baiduJob = String(t.id).startsWith("bd:");
-  if (t.meta?.req?.url) item("openLink", baiduJob ? "打开原分享" : "打开链接");
+  if (taskSourceLink(t)) item("openLink", baiduJob ? "打开原分享" : "打开链接");
   if (baiduJob && !isOwnBaiduShare(t) && ["pause", "error"].includes(t.status)) {
     item("baiduCode", "填写提取码");
   }
@@ -7752,9 +7827,12 @@ function openCtx(x, y, id) {
       menu.lastElementChild.addEventListener("click", () => { closeCtx(); fetchSubtitlesBatch(missing); });
     }
   }
-  item("copyName", many ? `复制名称（${picked.length} 项）` : "复制名称");
-  item("copyLink", many ? `复制链接（${picked.length} 项）` : "复制链接");
-  item("copyPath", many ? `复制文件完整路径（${picked.length} 项）` : "复制文件完整路径");
+  const roots = copyTaskRoots(id);
+  const count = size => size > 1 ? "（" + size + " 项）" : "";
+  const urls = new Set(roots.map(taskSourceLink).filter(Boolean));
+  item("copyName", "复制名称" + count(roots.length));
+  if (urls.size) item("copyLink", "复制链接" + count(urls.size));
+  item("copyPath", "复制完整路径" + count(roots.length));
   // 文案按状态区分：下载中 = 取消下载；已完成 = 删除（进下载历史）
   const countText = many ? `（${picked.length} 项）` : "";
   if (many && nActive && nActive + nStopped < picked.length) item("del", `移除${countText}`);
@@ -8065,6 +8143,11 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
     toast("本机 PikPak 已关联");
     loadPikpak();
   });
+  window.__TAURI__.event.listen("mcp-add", ({ payload }) => {
+    if (!payload?.url) return;
+    submitLink(payload.url, { confirm: true }).catch(error => toast(String(error)));
+  });
+
   window.__TAURI__.event.listen("ext-add", (ev) => {
     const p = ev.payload || {};
     const url = String(p.url || "").trim();
@@ -8086,13 +8169,16 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("ext-grab", ({ payload }) => openGrab(payload?.links || [], payload || {}));
 
   // 更新进度由后端推过来：下载带百分比，安装不带
-  window.__TAURI__.event.listen("update-progress", (ev) => {
-    const p = ev.payload || {};
-    if (!ONLINE_UPDATES_ENABLED) return;
-    const button = $("btn-check-update");
-    if (!button) return;
-    button.disabled = true;
-    button.textContent = p.phase === "installing" ? "正在安装" : `下载 ${Math.round(p.percent || 0)}%`;
+  window.__TAURI__.event.listen("update-progress", ({ payload }) => {
+    if (!payload || payload.version !== availableUpdate?.version) return;
+    if (payload.phase === "retry" || payload.phase === "failed") {
+      downloadingUpdate = false;
+      showUpdateState(payload.message || "安装已关闭，可重试");
+      return;
+    }
+    downloadingUpdate = true;
+    showUpdateState(payload.phase === "installing" ? "正在安装…" :
+      payload.phase === "verifying" ? "正在校验…" : "下载 " + Math.round(payload.percent || 0) + "%");
   });
 }
 
@@ -8163,11 +8249,8 @@ document.addEventListener("keydown", (e) => {
       !document.querySelector(".modal-mask:not([hidden]), .player-mask:not([hidden])")) {
     if (filesPanelId && filesList.length) {
       e.preventDefault();
-      const all = $("files-all");
-      if (!all.checked) {
-        all.checked = true;
-        all.dispatchEvent(new Event("change"));
-      }
+      setDrawerSelection(true);
+      drawerAnchor ??= drawerFileKey(filesList[0]);
     } else if (!e.target.closest?.("#files-panel") && selectAllVisibleTasks()) e.preventDefault();
     return;
   }
@@ -9462,6 +9545,21 @@ $("btn-copy-rpc")?.addEventListener("click", async () => {
   }
 });
 
+async function copyMcpConfig(codex) {
+  try {
+    const config = await invoke("mcp_config");
+    const path = config.mcpServers.shandian.command;
+    const command = path.includes("'") ? JSON.stringify(path.replaceAll("\\", "/")) : "'" + path + "'";
+    const text = codex ? "[mcp_servers.shandian]\ncommand = " + command + '\nargs = ["--mcp"]'
+      : JSON.stringify(config, null, 2);
+    toast(await copyText(text) ? (codex ? "Codex 配置已复制" : "JSON 配置已复制") : "复制失败");
+  } catch (error) {
+    toast(String(error));
+  }
+}
+$("btn-mcp-copy")?.addEventListener("click", () => copyMcpConfig(true));
+$("btn-mcp-json")?.addEventListener("click", () => copyMcpConfig(false));
+
 $("btn-linkswift")?.addEventListener("click", () => {
   if (!invoke) return;
   invoke("open_url", { url: "http://127.0.0.1:6800/linkswift-settings" })
@@ -9477,34 +9575,46 @@ $("btn-open-repo")?.addEventListener("click", () => {
 
 // ---------- 更新检查 ----------
 
-/// silent：启动时静默查，有新版只 toast 提一声；否则是用户点「检查更新」，
-/// 没有就写「已是最新版本」，有就问一句要不要下载（进度走 update-progress 事件）
-async function checkUpdate(silent) {
-  if (!invoke || !ONLINE_UPDATES_ENABLED) {
-    if (!silent) toast("在线更新尚未启用，请使用安装包升级");
-    return;
-  }
-  const button = $("btn-check-update");
-  if (!silent && button?.disabled) return;
-  if (!silent && button) { button.disabled = true; button.textContent = "正在检查"; }
-  try {
-    const info = await invoke("update_check", { force: !silent });
-    if (!info) { if (!silent) toast("已是最新版本"); return; }
-    const dot = $("nav-dot"); if (dot) dot.hidden = false;
-    if (silent) { toast(`发现新版本 ${info.version}`); return; }
-    if (await askYes("发现新版本", `下载更新到 ${info.version} 并重新打开？`, "更新")) {
-      await invoke("update_install").catch(e => toast("更新失败：" + e));
-    }
-  } catch (e) { if (!silent) toast("检查更新失败：" + e); }
-  finally { if (!silent && button) { button.disabled = false; button.textContent = "检查更新"; } }
+let availableUpdate = null, checkingUpdate = false, downloadingUpdate = false;
+const updateButton = $("btn-check-update");
+
+function showUpdateState(message = "") {
+  if (!updateButton) return;
+  updateButton.disabled = checkingUpdate || downloadingUpdate;
+  updateButton.textContent = checkingUpdate ? "正在检查" : downloadingUpdate ? "正在更新"
+    : availableUpdate?.canInstall ? "立即更新" : "检查更新";
+  const status = $("update-state");
+  const text = message || (availableUpdate ? "发现 " + availableUpdate.version : "");
+  status.textContent = text ? " · " + text : "";
+  status.dataset.tip = availableUpdate?.message || "";
 }
 
-const updateButton = $("btn-check-update");
-if (updateButton) {
-  updateButton.disabled = !ONLINE_UPDATES_ENABLED;
-  updateButton.textContent = ONLINE_UPDATES_ENABLED ? "检查更新" : "在线更新未启用";
-  updateButton.addEventListener("click", () => checkUpdate(false));
+async function checkUpdate(silent = false) {
+  if (!invoke || checkingUpdate || downloadingUpdate) return;
+  checkingUpdate = true;
+  if (!silent) showUpdateState();
+  try {
+    availableUpdate = await invoke("update_check", { force: !silent });
+    if (!silent) toast(availableUpdate ? availableUpdate.message || "发现新版本 " + availableUpdate.version : "已是最新版本");
+  } catch (error) {
+    if (!silent) toast("检查更新失败：" + error);
+  } finally {
+    checkingUpdate = false;
+    if (!downloadingUpdate) showUpdateState();
+  }
 }
+
+updateButton?.addEventListener("click", async () => {
+  if (!availableUpdate?.canInstall) return checkUpdate(false);
+  downloadingUpdate = true;
+  showUpdateState("正在下载安装包…");
+  try { await invoke("update_install", { version: availableUpdate.version }); }
+  catch (error) {
+    downloadingUpdate = false;
+    showUpdateState(String(error));
+    toast("更新失败：" + error);
+  }
+});
 
 // 启动后先探一次内核状态（可能上次退出了但进程还在），再开轮询
 refreshEngine();
@@ -9665,7 +9775,10 @@ loadAutostart();
 loadTrash();
 refreshExt();
 // 启动时静默查一次更新，有新版只 toast 提一声
-if (ONLINE_UPDATES_ENABLED) checkUpdate(true);
+if (invoke) {
+  setTimeout(() => checkUpdate(true), 8000);
+  setInterval(() => checkUpdate(true), 60 * 60 * 1000);
+}
 loadRpcInfo();
 // 按 state.view 切一次面板：只 renderAll() 的话，改动初始视图时界面不会跟着变
 switchView(state.view);
@@ -9690,7 +9803,7 @@ $("btn-copy-diagnostics")?.addEventListener("click", async () => {
 $("btn-report-issue")?.addEventListener("click", async () => {
   try {
     const report = await feedbackInfo();
-    const issue = new URL($("nav-nas") ? "https://github.com/cgeek-dev/shandian_NAS_download/issues/new" : "https://github.com/chenmozhe008/shandian-download/issues/new");
+    const issue = new URL("https://github.com/chenmozhe008/shandian-download/issues/new");
     issue.searchParams.set("body", `### 问题描述\n\n### 复现步骤\n1. \n\n### 预期与实际结果\n\n### 环境信息\n${report}\n### 日志或截图\n如需附加日志，可在设置中打开日志目录后自行选择。\n`);
     await invoke("open_url", { url: issue.toString() });
   } catch (e) { toast(String(e)); }

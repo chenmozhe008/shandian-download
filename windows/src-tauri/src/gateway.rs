@@ -337,6 +337,24 @@ fn serve(app: AppHandle, mut stream: TcpStream) {
 }
 
 fn route(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
+    if req.path == crate::mcp::ROUTE {
+        if req.method != "POST" || req.header("origin").is_some() {
+            return bad(403, "Forbidden");
+        }
+        let authenticated = {
+            let state = app.state::<AppState>();
+            let engine = state.engine.lock().unwrap();
+            !engine.token.is_empty() && req.header("x-api-token") == Some(engine.token.as_str())
+        };
+        if !authenticated { return bad(401, "Unauthorized"); }
+        let Ok(message) = serde_json::from_slice(&req.body) else {
+            return bad(400, "工具参数格式不正确");
+        };
+        return match tauri::async_runtime::block_on(crate::mcp::dispatch(app, message)) {
+            Ok(result) => ok_json(json!({"result":result})),
+            Err(error) => ok_json(json!({"error":error})),
+        };
+    }
     if req.method == "OPTIONS" {
         return (200, b"{}".to_vec());
     }

@@ -3245,6 +3245,12 @@ pub async fn task_open_downloaded_file(id: String, index: usize, reveal: Option<
     }).await.map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+pub async fn task_downloaded_file_path(id: String, index: usize, state: State<'_, AppState>) -> Result<String, String> {
+    let (_, path) = completed_drawer_file(&id, index, &state).await?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[derive(Serialize)]
 pub struct DrawerAudioSource {
     path: String,

@@ -331,6 +331,7 @@ struct Mode {
     machine: bool,
     /// 提权后重新启动时带来的安装选项，界面直接开始装
     auto: Option<InstallOpts>,
+    in_app_update: bool,
 }
 
 #[derive(Serialize)]
@@ -356,6 +357,7 @@ struct Info {
     machine_dir: String,
     /// 提权后回来的：不用再选，直接开始
     auto: Option<InstallOpts>,
+    in_app_update: bool,
     /// 解压后的大小
     size_mb: u64,
     /// 用户的数据目录在不在（卸载界面决定要不要给「同时删除」这个选项）
@@ -408,6 +410,7 @@ fn setup_info(mode: State<'_, Mode>) -> Result<Info, String> {
             user_dir,
             machine_dir,
             auto: None,
+            in_app_update: false,
             size_mb: 0,
             has_data: places.data_dirs().iter().any(|d| d.exists()),
         });
@@ -418,6 +421,9 @@ fn setup_info(mode: State<'_, Mode>) -> Result<Info, String> {
         .filter_map(|i| zip.by_index(i).ok().map(|f| f.size()))
         .sum();
     let old = find_installed();
+    let auto = if mode.in_app_update {
+        Some(in_app_update_opts(mode.auto.as_ref().ok_or("更新缺少原安装位置")?)?)
+    } else { mode.auto.clone() };
     let extension_version = zip.by_name("BrowserExtension/manifest.json").ok().and_then(|mut f| {
         let mut text = String::new(); f.read_to_string(&mut text).ok()?; extension_version_from(&text)
     });
@@ -438,7 +444,8 @@ fn setup_info(mode: State<'_, Mode>) -> Result<Info, String> {
         installed_version: old.map(|(v, _, _)| v),
         user_dir,
         machine_dir,
-        auto: mode.auto.clone(),
+        auto,
+        in_app_update: mode.in_app_update,
         size_mb: bytes / 1024 / 1024 + 1,
         has_data: false,
     })
@@ -518,6 +525,23 @@ fn locked_install_opts(opts: &InstallOpts) -> InstallOpts {
 }
 
 
+fn requested_install_dir_matches(requested: &Path, installed: &Path) -> bool {
+    lower(requested) == lower(installed) ||
+        fs::canonicalize(requested).ok().zip(fs::canonicalize(installed).ok())
+            .is_some_and(|(a, b)| lower(&a) == lower(&b))
+}
+
+fn in_app_update_opts(opts: &InstallOpts) -> Result<InstallOpts, String> {
+    let (current, dir, machine) = find_installed().ok_or("找不到原安装位置，无法自动更新")?;
+    let places = Places::get(machine);
+    let entry = places.root().open_subkey(places.uninstall_key()).map_err(|_| "找不到原安装记录")?;
+    let edition: String = entry.get_value("ShandianEdition").map_err(|_| "原安装记录缺少版别")?;
+    if !requested_install_dir_matches(Path::new(&opts.dir), &dir) || edition != EDITION || compare_versions(VERSION, &current) != "upgrade" {
+        return Err("安装包与原安装位置、版别或版本不符，自动更新未开始".into());
+    }
+    Ok(InstallOpts { dir: dir.display().to_string(), desktop: places.lnks()[0].is_file(), machine })
+}
+
 /// 这次安装要不要先弹管理员确认
 #[tauri::command]
 fn needs_admin(machine: bool) -> bool {
@@ -533,15 +557,16 @@ fn elevate_install(
     app: tauri::AppHandle,
     mode: State<'_, Mode>,
 ) -> Result<(), String> {
-    let opts = locked_install_opts(&opts);
+    let opts = if mode.in_app_update { in_app_update_opts(&opts)? } else { locked_install_opts(&opts) };
     let payload = mode.payload.as_ref().ok_or("安装包不完整")?;
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
     let params = format!(
-        "--payload {} --auto-dir {} --auto-desktop {}{}",
+        "--payload {} --auto-dir {} --auto-desktop {}{}{}",
         quote(&payload.to_string_lossy()),
         quote(&opts.dir),
         if opts.desktop { "1" } else { "0" },
         if opts.machine { " --all-users" } else { "" },
+        if mode.in_app_update { " --in-app-update" } else { "" },
     );
     use std::sync::atomic::Ordering;
     ELEVATION_HANDOFF.store(true, Ordering::SeqCst);
@@ -583,8 +608,11 @@ async fn install(
     mode: State<'_, Mode>,
 ) -> Result<InstallResult, String> {
     let payload = mode.payload.clone().ok_or("安装包不完整")?;
-    tauri::async_runtime::spawn_blocking(move || do_install(&opts, &payload, &app))
-        .await
+    let in_app_update = mode.in_app_update;
+    tauri::async_runtime::spawn_blocking(move || {
+        let opts = if in_app_update { in_app_update_opts(&opts)? } else { opts };
+        do_install(&opts, &payload, &app)
+    }).await
         .map_err(|e| e.to_string())?
 }
 
@@ -1307,6 +1335,7 @@ fn main() {
         uninstall_dir: value("--uninstall-run"),
         machine,
         auto,
+        in_app_update: args.iter().any(|arg| arg == "--in-app-update"),
     };
     if mode.payload.is_none() && mode.uninstall_dir.is_none() {
         message("请运行安装包，或从系统设置里卸载。");

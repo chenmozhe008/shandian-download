@@ -265,6 +265,18 @@ fn done_now() -> &'static Mutex<Option<DoneItem>> {
 }
 
 const ACCOUNT_NOTICE_PREFIX: &str = "__cloud_account__:";
+const UPDATE_NOTICE_PREFIX: &str = "__windows_update__:";
+
+pub fn notify_update(app: &tauri::AppHandle, version: &str) {
+    let handle = app.clone();
+    let version = version.to_owned();
+    let _ = app.run_on_main_thread(move || {
+        show_done(
+            &handle, format!("{UPDATE_NOTICE_PREFIX}{version}"),
+            format!("闪电全能下载 {version}"), Some("发现新版本".into()),
+        );
+    });
+}
 
 fn account_notice_id(provider: &str, nas: bool) -> String {
     let target = if nas { "nas" } else { "local" };
@@ -439,6 +451,9 @@ pub fn done_close(app: tauri::AppHandle) {
 #[tauri::command]
 pub async fn done_action(app: tauri::AppHandle, action: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let id = done_now().lock().unwrap().as_ref().map(|d| d.id.clone()).ok_or("任务不在了")?;
+    if id.starts_with(UPDATE_NOTICE_PREFIX) {
+        return Err("请使用卡片上的更新按钮".into());
+    }
     if let Some((target, provider)) = id.strip_prefix(ACCOUNT_NOTICE_PREFIX).and_then(|id|id.split_once(':')) {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.show();

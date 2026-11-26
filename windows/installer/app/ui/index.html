@@ -460,6 +460,19 @@ async function runInstall({ dir, desktop, machine }) {
   try {
     const installed = await invoke("install", { opts: { dir, desktop, machine } });
     const exe = installed.exe;
+    if (info.inAppUpdate) {
+      $("g-title").textContent = "更新完成";
+      setBar(100, "正在打开新版本…");
+      try {
+        await invoke("launch", { path: exe });
+        await quit();
+        return;
+      } catch (e) {
+        result({ ok: true, title: "更新完成", text: "已安装新版，请从开始菜单打开。",
+          buttons: [btn("关闭", "primary", quit)] });
+        return;
+      }
+    }
     result({
       ok: true,
       title: info.installedVersion ? "更新完成" : "安装完成",

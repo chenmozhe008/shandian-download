@@ -35,6 +35,7 @@ mod feishu_setup;
 mod baidu_cleanup;
 mod baidu_setup;
 mod migrate;
+mod mcp;
 mod pikpak;
 mod thunder;
 mod proxy;
@@ -197,6 +198,11 @@ fn extract_links(text: String) -> Vec<String> {
 }
 
 fn main() {
+    if std::env::args_os().len() == 2 && std::env::args_os().nth(1).is_some_and(|arg| arg == "--mcp") {
+        mcp::run_stdio();
+        return;
+    }
+
     // 越早越好：这个时刻到首帧的差值就是用户感觉到的「启动要几秒」
     let _ = STARTED_AT.set(Instant::now());
     // 窗口子系统下 stderr 是无效句柄，panic 默认输出会直接丢失——落一份到 panic.log
@@ -259,6 +265,7 @@ fn main() {
             let local = app.path().app_local_data_dir().unwrap_or_else(|_| base.clone());
             // 工具和内核都还没起，这时搬旧数据最安全
             migrate::run(&base, &local);
+            update::cleanup_installers(local.clone());
             sources::init(&local);
             cache::apply_pending(&local);
             mark("数据目录就绪");
@@ -458,6 +465,7 @@ fn main() {
             engine::multi_conflict,
             engine::task_file_list,
             engine::task_open_downloaded_file,
+            engine::task_downloaded_file_path,
             engine::task_drawer_audio,
             engine::thumb_get,
             engine::play_url,
@@ -508,6 +516,7 @@ fn main() {
             commands::clipboard_write_text,
             gateway::extension_status,
             gateway::rpc_info,
+            mcp::mcp_config,
             gateway::extension_dir,
             gateway::extension_reveal,
             gateway::open_browser_extensions,

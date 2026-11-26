@@ -738,8 +738,8 @@ body.sb-collapsed #sb-toggle { left: 12px; top: 12px; }
 .task > .thumb { grid-column: 1; grid-row: 1 / 3; }
 
 /* 行悬停底色比列表其它地方更淡（透明度更高），鼠标划过只轻轻带一点色 */
-.task:hover { background: hsl(var(--accent-h) var(--accent-s) 45% / 0.07); }
-:root[data-theme="dark"] .task:hover { background: rgba(255, 255, 255, 0.04); }
+.task:not(.sel):hover { background: hsl(var(--accent-h) var(--accent-s) 45% / 0.07); }
+:root[data-theme="dark"] .task:not(.sel):hover { background: rgba(255, 255, 255, 0.04); }
 /* 行有 tabindex 供键盘导航：焦点时别画浏览器默认黑框（多选时特别扎眼），
    选中态只用 .sel 的底色表达 */
 .task:focus,
@@ -838,9 +838,12 @@ body.dialog-window #nd-text { flex: 1; min-height: 120px; }
 .ctx-item .sort-mark { float: right; margin-left: 18px; color: var(--tint); }
 
 /* 选中：仅用底色区分 */
-.task.sel {
-  background: var(--hover);
+.task.sel, .fd-row.fd-selected {
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
   box-shadow: none;
+}
+.task.sel:hover, .fd-row.fd-selected:hover {
+  background: color-mix(in srgb, var(--tint) 21%, transparent);
 }
 
 .thumb {
@@ -2170,9 +2173,10 @@ body.sb-collapsed .engine { display: none !important; }
 .fd-list-status { padding: 12px 18px; white-space: normal; }
 .collection-files .fd-list-status { grid-column: 1 / -1; }
 .fd-row { height: 32px; font-size: 13px; }
-.fd-row:hover { background-color: var(--line-soft); }
-.fd-row.fd-selected { background-color: var(--faint); }
-.fd-row[aria-current="true"] { background-color: var(--line-soft); }
+.fd-row:not(.fd-selected):hover { background-color: var(--line-soft); }
+.fd-row:not(.fd-selected)[aria-current="true"] { background-color: var(--line-soft); }
+.fd-row:focus, .fd-row:focus-visible { outline: none; }
+.sel-rect-drawer { z-index: 61; }
 .fd-row input[type="checkbox"], .fd-foot input[type="checkbox"] { flex: none; margin: 0; accent-color: var(--tint); }
 .fd-row[data-open-file] { cursor: pointer; }
 .fd-row .fd-file-entry { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }

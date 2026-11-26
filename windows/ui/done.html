@@ -62,12 +62,27 @@
   const $ = (id) => document.getElementById(id);
   let timer;
   let noAuto = false;
+  let updateVersion = null;
   const close = () => invoke("done_close").catch(() => {});
   // 鼠标停在卡片上时别消失，移开再算 8 秒
   const arm = () => { clearTimeout(timer); if (noAuto) return; timer = setTimeout(close, 8000); };
   async function pull() {
     const d = await invoke("done_pending").catch(() => null);
     if (!d) return;
+    updateVersion = String(d.id).startsWith("__windows_update__:") ? d.id.split(":")[1] : null;
+    $("open").disabled = false;
+    if (updateVersion) {
+      clearTimeout(timer);
+      noAuto = true;
+      $("title").textContent = "发现新版本";
+      $("name").textContent = d.title;
+      $("name").title = d.title;
+      $("open").hidden = false;
+      $("open").querySelector("span").textContent = "立即更新";
+      $("open").classList.add("relogin");
+      $("folder").hidden = true;
+      return;
+    }
     if (String(d.id).startsWith("__cloud_account__:")) {
       $("title").textContent = d.heading;
       $("name").textContent = d.title;
@@ -97,7 +112,29 @@
     $("name").title = d.title;
     arm();
   }
-  $("open").addEventListener("click", () => { invoke("done_action", { action: "open" }).catch(() => {}); });
+  $("open").addEventListener("click", async () => {
+    if (!updateVersion) { await invoke("done_action", { action: "open" }).catch(() => {}); return; }
+    $("open").disabled = true;
+    $("name").textContent = "正在下载安装包…";
+    try { await invoke("update_install", { version: updateVersion }); }
+    catch (error) { showUpdateRetry(String(error)); }
+  });
+  function showUpdateRetry(text) {
+    $("name").textContent = text;
+    $("name").title = text;
+    $("open").disabled = false;
+    $("open").querySelector("span").textContent = "重试更新";
+  }
+  listen?.("update-progress", ({ payload }) => {
+    if (!updateVersion || payload?.version !== updateVersion) return;
+    if (payload.phase === "retry" || payload.phase === "failed") {
+      showUpdateRetry(payload.message || "安装已关闭，可重试更新");
+      return;
+    }
+    $("open").disabled = true;
+    $("name").textContent = payload.phase === "installing" ? "正在安装更新…" :
+      payload.phase === "verifying" ? "正在校验安装包…" : "正在下载 " + Math.round(payload.percent || 0) + "%";
+  });
   $("folder").addEventListener("click", () => { invoke("done_action", { action: "folder" }).catch(() => {}); });
   $("close").addEventListener("click", close);
   document.body.addEventListener("mouseenter", () => clearTimeout(timer));

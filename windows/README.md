@@ -10,7 +10,25 @@ node --test @tests
 ```
 
 
-跟 macOS 版同一套内核、同一份补丁，换了个外壳。v0.1 的目标是给同事装来测试。
+Windows 普通版使用 Tauri 和 WebView2。直链与磁力等任务由 Gopeed 处理，视频站下载使用 yt-dlp。
+
+## 已验证环境
+
+Windows 客户端已在 Windows 10 和 Windows 11 测试，构建目标为 x64，浏览器扩展支持 Chrome 和 Edge。软件界面为简体中文。
+
+## AI 工具（MCP）
+
+启动闪电后，在「设置 → AI 工具」点「复制 Codex 配置」，粘贴到 Codex 的 `~/.codex/config.toml`。需要 `mcpServers` 配置的客户端可用「复制 JSON 配置」。
+
+支持在本机新建下载、查看进度、暂停和继续。应用要求确认时会打开原有确认窗口。
+
+## 在线更新
+
+启动约 8 秒后检查，常驻时每小时判断是否需要联网，距上次成功检查满 24 小时再请求发布列表。「设置 → 关于」也可手动检查。发现新版后，可从版本行或右下角通知点「立即更新」。
+
+查到可安装的新版后，先下载并核对安装包名称、大小和 SHA-256，再启动现有 NSIS 安装器，按原路径和范围升级。系统目录需要 Windows 管理员确认。新版启动后清理安装缓存，便携版仍可手动升级。
+
+普通版读取 `cgeek-dev/shandian-download` 的 `v<版本>-windows` Release。若 API 受限，改查同一仓库的 Atom 发布列表，使用随正式版发布的校验记录。发布完整安装包后，从已校验的产物目录运行 `python windows/installer/make-update-record.py <发布目录>`，并把生成的 JSON 附到同版正式 Release。
 
 ## 结构
 
