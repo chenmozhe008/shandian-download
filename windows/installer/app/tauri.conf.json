@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "闪电全能下载安装程序",
+  "version": "0.2.15",
+  "identifier": "com.shandian.setup",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "../../src-tauri/icons/icon.ico"
+    ]
+  }
+}

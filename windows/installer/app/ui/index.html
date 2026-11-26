@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>闪电全能下载</title>
+<style>
+  /* 颜色和主程序浅色主题同一套（ui/style.css），窗口圆角和边框由系统画，这里不写圆角和透明 */
+  :root {
+    color-scheme: light;
+    --tint: hsl(36 100% 52%);
+    --tint-hi: hsl(36 100% 58%);
+    --tint-lo: hsl(36 100% 47%);
+    --bar-lo: hsl(36 100% 58%);
+    --bar-hi: hsl(36 100% 66%);
+    --window: rgb(251, 250, 248);
+    --field: #fff;
+    --text: rgb(29, 29, 31);
+    --sub: rgb(138, 138, 142);
+    --line: rgba(0, 0, 0, 0.09);
+    --faint: rgba(0, 0, 0, 0.045);
+    --track: rgba(0, 0, 0, 0.075);
+    --failed: rgb(215, 58, 46);
+    --ok: rgb(46, 160, 67);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--window); color: var(--text);
+    font-family: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px; user-select: none; cursor: default;
+  }
+  [hidden] { display: none !important; }
+
+  .close {
+    position: fixed; top: 0; right: 0; width: 46px; height: 36px; border: 0;
+    background: transparent; color: var(--text); cursor: pointer;
+    display: grid; place-items: center; z-index: 2;
+  }
+  .close svg { width: 11px; height: 11px; }
+  .close:hover { background: #e81123; color: #fff; }
+  .close:disabled { opacity: .3; background: transparent; color: var(--text); cursor: default; }
+
+  /* 页面高度由内容决定，窗口跟着它走（fit），所以没有撑开的空白 */
+  .page { display: flex; flex-direction: column; padding: 24px 36px 22px; }
+  .drag { touch-action: none; z-index: 1; position: fixed; top: 0; left: 0; right: 46px; height: 36px; }
+
+  .brand { touch-action: none; display: flex; align-items: center; gap: 16px; }
+  .brand img { width: 56px; height: 56px; flex: none; margin: -3px; }
+  .brand h1 { font-size: 22px; font-weight: 650; letter-spacing: .2px; line-height: 1.25; }
+  .brand > div { min-width: 0; }
+  .brand p { margin-top: 3px; font-size: 13px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .main { display: flex; flex-direction: column; margin-top: 18px; }
+  #p-result .main { margin-top: 8px; }
+  .label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .path { display: flex; gap: 8px; position: relative; }
+  /* 选文件夹：图标按钮放在输入框里面的右侧 */
+  .path input { flex: 1; padding-right: 38px; }
+  .path .pick { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: grid; place-items: center;
+    border: 0; border-radius: 6px; background: transparent; color: var(--sub); cursor: pointer; }
+  .path .pick:hover { background: var(--faint); color: var(--text); }
+  .path .pick svg { width: 16px; height: 16px; }
+  .scopes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .scope {
+    position: relative; display: block; padding: 12px 13px 12px 38px;
+    background: var(--field); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .12s, background .12s, box-shadow .12s;
+  }
+  .scope:hover { border-color: hsl(36 100% 47% / .5); }
+  .scope:has(input:checked) {
+    border-color: var(--tint); background: hsl(36 100% 52% / .07);
+    box-shadow: 0 0 0 1px var(--tint);
+  }
+  .scope input { position: absolute; left: 13px; top: 14px; }
+  .scope b { display: block; font-size: 13.5px; font-weight: 600; }
+  .scope small { display: block; margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--sub); }
+  input[type=text] {
+    flex: 1; min-width: 0; height: 36px; padding: 0 11px;
+    background: var(--field); color: var(--text); font: inherit; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 8px; outline: none; user-select: text;
+  }
+  input[type=text]:focus { border-color: var(--tint); box-shadow: 0 0 0 3px hsl(36 100% 52% / .16); }
+  input[type=text]:read-only { background: var(--faint); color: var(--sub); }
+
+  .check { display: flex; align-items: center; gap: 9px; margin-top: 12px; font-size: 13px; cursor: pointer; width: fit-content; }
+  /* 勾选框和单选自己画：系统控件配 accent-color 时，勾的颜色由浏览器按对比度决定，
+     琥珀色底上会变成黑色。这里和主按钮统一：同样的渐变底、白色的勾和点 */
+  input[type=checkbox], input[type=radio] {
+    appearance: none; flex: none; width: 16px; height: 16px; margin: 0;
+    display: grid; place-items: center; cursor: pointer;
+    background: var(--field); border: 1px solid rgba(0, 0, 0, .28);
+    transition: border-color .12s, background .12s;
+  }
+  input[type=checkbox] { border-radius: 4px; }
+  input[type=radio] { border-radius: 50%; }
+  input[type=checkbox]:hover, input[type=radio]:hover { border-color: var(--tint); }
+  input[type=checkbox]:checked, input[type=radio]:checked {
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--tint-hi), var(--tint-lo));
+  }
+  input[type=checkbox]:checked::after {
+    content: ""; width: 9px; height: 5px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: translateY(-1px) rotate(-45deg);
+  }
+  input[type=radio]:checked::after {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff;
+  }
+  input[type=checkbox]:focus-visible, input[type=radio]:focus-visible {
+    outline: 2px solid hsl(36 100% 47% / .55); outline-offset: 2px;
+  }
+  .note { margin-top: 8px; font-size: 12.5px; line-height: 1.6; color: var(--sub); }
+  .note.warn { color: var(--failed); }
+
+  .foot { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 20px; }
+  #e-foot .btn { flex: none; padding-inline: 12px; white-space: nowrap; }
+  .foot .grow { flex: 1; font-size: 12.5px; color: var(--sub); }
+  /* 协议入口：安装按钮左边一行小字，点链接在窗口里弹出全文 */
+  .agree { flex: 1; font-size: 12px; color: var(--sub); }
+  .agree a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .agree a:hover { color: var(--tint); border-color: var(--tint); }
+  .doc { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; padding: 20px 24px; background: var(--window); }
+  .doc[hidden] { display: none; }
+  .doc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .doc-head h2 { flex: 1; font-size: 16px; }
+  .doc-tabs button { border: 0; background: transparent; color: var(--sub); font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+  .doc-tabs button.on { color: var(--text); background: var(--faint); font-weight: 600; }
+  .doc-body { flex: 1; overflow-y: auto; font-size: 12.5px; line-height: 1.75; color: var(--text); padding-right: 6px; }
+  .doc-body h4 { margin: 14px 0 4px; font-size: 13px; }
+  .doc-body p { margin: 0 0 6px; color: var(--sub); }
+  .doc-body b { color: var(--text); }
+  .doc-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 11.5px; color: var(--sub); }
+  button.btn {
+    height: 36px; min-width: 92px; padding: 0 18px; border-radius: 8px;
+    font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    transition: filter .12s, background .12s;
+  }
+  .primary { border: 0; color: #fff; background: linear-gradient(180deg, var(--tint-hi), var(--tint-lo)); }
+  .primary:hover { filter: brightness(1.05); }
+  .primary:active { filter: brightness(.96); }
+  .primary:focus-visible, .ghost:focus-visible { outline: 2px solid hsl(36 100% 47% / .55); outline-offset: 2px; }
+  .ghost { border: 1px solid var(--line); background: var(--field); color: var(--text); }
+  .ghost:hover { background: #f5f4f1; }
+  .danger { border: 0; color: #fff; background: var(--failed); }
+  .danger:hover { filter: brightness(1.07); }
+
+  /* 进度页：和主程序任务行同一条进度条 */
+  .progress-title { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; }
+  .progress-title span:last-child { font-variant-numeric: tabular-nums; color: var(--sub); font-size: 13px; font-weight: 500; }
+  .bar { height: 8px; margin-top: 12px; border-radius: 4px; background: var(--track); overflow: hidden; }
+  .bar i {
+    display: block; height: 100%; width: 0; border-radius: 4px;
+    background: linear-gradient(90deg, var(--bar-lo), var(--bar-hi));
+    transition: width .22s ease-out;
+  }
+
+  /* 左边大图标，和右边整块文字上下居中；标题、说明、选项都从同一条线开始 */
+  .result { display: flex; flex-direction: row; align-items: center; gap: 22px; }
+  .result .mark {
+    flex: none; width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center;
+    background: hsl(136 55% 40% / .12); color: var(--ok);
+  }
+  .result .mark svg { width: 58px; height: 58px; }
+  .result.bad .mark { background: rgb(215 58 46 / .1); color: var(--failed); }
+  .result-body { flex: 1; min-width: 0; }
+  .result h2 { font-size: 22px; font-weight: 650; line-height: 1.25; }
+  .result p { margin-top: 3px; font-size: 13px; line-height: 1.5; color: var(--sub); word-break: break-word; user-select: text; }
+  .result .check { margin-top: 10px; }
+  .result p + .check { margin-top: 14px; }
+  .result .check[hidden] + .check { margin-top: 14px; }
+  .steps { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 2; }
+  .steps b { font-weight: 600; }
+  .ext-dir { margin-top: 10px; display: flex; gap: 8px; }
+.drag, .brand { -webkit-app-region:drag; app-region:drag; }
+.close, button, input, a, label, select, textarea { -webkit-app-region:no-drag; app-region:no-drag; }
+</style>
+</head>
+<body class="installer-window">
+<div class="drag" data-tauri-drag-region></div>
+<button class="close" id="close" title="关闭" aria-label="关闭">
+  <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M.5.5l10 10M10.5.5l-10 10"/></svg>
+</button>
+
+<!-- 检查完成前只显示准备状态，不露出新安装选项。 -->
+<section class="page" id="p-check">
+  <div class="brand" data-tauri-drag-region="deep">
+    <img src="logo.svg" alt="">
+    <div><h1>检查现有安装</h1><p>正在读取已安装版本和安装范围…</p></div>
+  </div>
+</section>
+
+<!-- 安装 -->
+<section class="page" id="p-install" hidden>
+  <div class="brand" data-tauri-drag-region="deep">
+    <img src="logo.svg" alt="">
+    <div><h1 id="i-name">闪电全能下载</h1><p id="i-sub"></p><p id="i-ext-version" hidden></p></div>
+  </div>
+  <div class="main">
+    <div id="i-scopes">
+      <div class="label">安装方式</div>
+      <div class="scopes">
+        <label class="scope"><input type="radio" name="scope" id="i-user" checked><b>仅为我安装</b><small>只有当前账户能用，不需要管理员</small></label>
+        <label class="scope"><input type="radio" name="scope" id="i-machine"><b>为所有用户安装</b><small>所有账户都能用，需要管理员确认</small></label>
+      </div>
+    </div>
+    <div class="label">安装位置</div>
+    <div class="path">
+      <input type="text" id="i-dir" spellcheck="false">
+      <button class="pick" id="i-pick" title="选择文件夹" aria-label="选择文件夹"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></button>
+    </div>
+    <label class="check"><input type="checkbox" id="i-desktop">创建桌面快捷方式</label>
+    <div class="note" id="i-note"></div>
+  </div>
+  <div class="foot">
+    <span class="agree">安装前请阅读 <a data-doc="terms">用户协议</a> 和 <a data-doc="privacy">隐私说明</a></span>
+    <button class="btn ghost" id="i-cancel">取消</button>
+    <button class="btn primary" id="i-go">安装</button>
+  </div>
+</section>
+
+<!-- 卸载 -->
+<section class="page" id="p-uninstall" hidden>
+  <div class="brand" data-tauri-drag-region="deep">
+    <img src="logo.svg" alt="">
+    <div><h1>卸载闪电全能下载</h1><p id="u-dir"></p></div>
+  </div>
+  <div class="main">
+    <div class="note" style="margin:0;color:var(--text)">将删除程序文件、快捷方式和系统登记。已下载的文件不会被删除。</div>
+    <label class="check" id="u-data-row"><input type="checkbox" id="u-data">同时删除下载记录和设置</label>
+    <div class="note" id="u-note"></div>
+  </div>
+  <div class="foot">
+    <button class="btn ghost" id="u-cancel">取消</button>
+    <button class="btn danger" id="u-go">卸载</button>
+  </div>
+</section>
+
+<!-- 进度 -->
+<section class="page" id="p-progress" hidden>
+  <div class="brand" data-tauri-drag-region="deep">
+    <img src="logo.svg" alt="">
+    <div><h1 id="g-title"></h1><p id="g-sub"></p></div>
+  </div>
+  <div class="main">
+    <div class="progress-title"><span id="g-text">正在准备…</span><span id="g-pct">0%</span></div>
+    <div class="bar"><i id="g-bar"></i></div>
+  </div>
+</section>
+
+<!-- 结果 -->
+<section class="page" id="p-result" hidden>
+  <div class="main result" id="r-box">
+    <div class="mark" id="r-mark"></div>
+    <div class="result-body">
+    <h2 id="r-title"></h2>
+    <p id="r-text"></p>
+    <p class="note" id="r-ext-update" hidden></p>
+    <label class="check" id="r-open-row" hidden><input type="checkbox" id="r-open" checked>完成后打开闪电全能下载</label>
+    <label class="check" id="r-ext-row" hidden><input type="checkbox" id="r-ext"><span id="r-ext-label">安装浏览器扩展，接管浏览器里的下载</span></label>
+    </div>
+  </div>
+  <div class="foot" id="r-foot"></div>
+</section>
+
+<!-- 浏览器不允许程序替用户装扩展，只能带着用户走一遍。步骤和主程序设置页一致 -->
+<section class="page" id="p-ext" hidden>
+  <div class="brand" data-tauri-drag-region="deep">
+    <img src="logo.svg" alt="">
+    <div><h1 id="e-title">安装浏览器扩展</h1><p id="e-sub">从本地文件夹添加扩展</p></div>
+  </div>
+  <div class="main">
+    <ol class="steps" id="e-steps">
+      <li>打开浏览器的扩展管理页</li>
+      <li>开启 <b>开发者模式</b></li>
+      <li>点 <b>加载解压缩的扩展</b>，选中下面这个文件夹</li>
+    </ol>
+    <div class="ext-dir">
+      <input type="text" id="e-dir" readonly spellcheck="false">
+      <button class="btn ghost" id="e-reveal">打开文件夹</button>
+    </div>
+    <div class="note" id="e-note"></div>
+  </div>
+  <div class="foot" id="e-foot"></div>
+</section>
+
+<!-- 用户协议 / 隐私说明全文（内容在 legal.js，和 App 里「关于」共用一份） -->
+<div class="doc" id="doc" hidden>
+  <div class="doc-head">
+    <h2>用户协议与隐私说明</h2>
+    <div class="doc-tabs"><button type="button" data-tab="terms">用户协议</button><button type="button" data-tab="privacy">隐私说明</button></div>
+  </div>
+  <div class="doc-body" id="doc-body"></div>
+  <div class="doc-foot"><span id="doc-meta"></span><button class="btn primary" id="doc-close">关闭</button></div>
+</div>
+<script src="legal.js"></script>
+<script>
+// 协议弹层：点安装页那行小字里的链接打开
+(() => {
+  const doc = document.getElementById("doc");
+  const show = (tab) => {
+    const L = window.LEGAL || {};
+    document.getElementById("doc-body").innerHTML = L[tab] || "";
+    document.getElementById("doc-body").scrollTop = 0;
+    doc.querySelectorAll(".doc-tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    document.getElementById("doc-meta").textContent = `更新于 ${L.updated}`;
+    doc.hidden = false;
+  };
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("[data-doc]");
+    if (a) { e.preventDefault(); show(a.dataset.doc); }
+    const t = e.target.closest(".doc-tabs button");
+    if (t) show(t.dataset.tab);
+  });
+  document.getElementById("doc-close").addEventListener("click", () => { doc.hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !doc.hidden) { e.stopPropagation(); doc.hidden = true; } }, true);
+})();
+</script>
+<script>
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+const $ = (id) => document.getElementById(id);
+const OK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const BAD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6.5v7.5M12 17.6v.2"/></svg>';
+
+let info = null;
+let working = false;
+let finishing = false;
+let closing = null;
+let fitRequest = null;
+let initialPagePositioned = false;
+/// 更新时安装方式跟着已装的走；全新安装时为 null，看单选
+let upgradeMachine = null;
+
+function show(id) {
+  for (const p of document.querySelectorAll(".page")) p.hidden = p.id !== id;
+  const center = !initialPagePositioned && id !== "p-check";
+  if (center) initialPagePositioned = true;
+  fit(center);
+}
+/// 窗口高度贴合当前页。内容变了（提示多一行）也要调一次
+function fit(center = false) {
+  const page = document.querySelector(".page:not([hidden])");
+  if (!page) return;
+  const height = Math.ceil(page.getBoundingClientRect().height);
+  // Windows re-applies the window bounds on every fit, even at the same size.
+  if (fitRequest?.height === height && !center) return;
+  const request = { height, center };
+  fitRequest = request;
+  invoke("fit_window", request).catch(() => {
+    if (fitRequest === request) fitRequest = null;
+  });
+}
+function setBar(pct, text) {
+  const v = Math.max(0, Math.min(100, Math.round(pct)));
+  $("g-bar").style.width = v + "%";
+  $("g-pct").textContent = v + "%";
+  if (text) $("g-text").textContent = text;
+}
+listen("prog", (e) => setBar(e.payload.pct, e.payload.text));
+
+function btn(label, cls, fn) {
+  const b = document.createElement("button");
+  b.className = "btn " + cls;
+  b.textContent = label;
+  b.addEventListener("click", fn);
+  return b;
+}
+function result({ ok, title, text, buttons, openRow = false, extensionChanged = false, extensionFrom = null, extensionTo = null }) {
+  working = false;
+  $("close").disabled = false;
+  $("r-box").classList.toggle("bad", !ok);
+  $("r-mark").innerHTML = ok ? OK_ICON : BAD_ICON;
+  $("r-title").textContent = title;
+  $("r-text").textContent = text || "";
+  $("r-open-row").hidden = !openRow;
+  const needExt = openRow && (!info?.installedVersion || extensionChanged);
+  $("r-ext-row").hidden = !needExt;
+  $("r-ext").checked = needExt;
+  const updatingExt = extensionChanged && !!extensionFrom;
+  $("r-ext-label").textContent = updatingExt ? "查看扩展升级步骤（需要重新加载）" : "安装浏览器扩展，接管浏览器里的下载";
+  const notice = $("r-ext-update");
+  notice.hidden = !openRow || !extensionChanged || !extensionTo;
+  notice.textContent = updatingExt
+    ? `浏览器扩展 ${extensionFrom} → ${extensionTo}。请在扩展管理页点「重新加载」，再刷新已打开的网页。`
+    : extensionTo ? `已包含浏览器扩展 ${extensionTo}。首次使用需要在浏览器中加载。` : "";
+  const foot = $("r-foot");
+  foot.innerHTML = "";
+  buttons.forEach((b) => foot.appendChild(b));
+  show("p-result");
+}
+const quit = () => closing ??= invoke("close_app").catch(error => {
+  closing = null;
+  throw error;
+});
+
+/// 有程序占着文件时先征得同意：直接结束会打断下载，不能不说一声
+async function confirmClose(dir, withData, noteEl) {
+  const names = await invoke("running_in", { dir, withData }).catch(() => []);
+  if (!names.length || noteEl.dataset.confirmed === dir) return true;
+  noteEl.dataset.confirmed = dir;
+  noteEl.classList.add("warn");
+  noteEl.textContent = "闪电全能下载正在运行，继续会关闭它，未下完的任务之后可以接着下。再点一次继续。";
+  fit();
+  return false;
+}
+
+// ---------- 安装 ----------
+async function goInstall(automatic = false) {
+  if (!info || working || !$("i-dir").value.trim()) return;
+  working = true;
+  $("i-go").disabled = true;
+  $("close").disabled = true;
+  try {
+    // 升级固定原目录和范围；自动参数也不能绕过这一步。
+    const dir = info.installedVersion ? info.dir : await invoke("normalize_dir", { dir: $("i-dir").value });
+    $("i-dir").value = dir;
+    const machine = upgradeMachine ?? $("i-machine").checked;
+    if (!automatic && !(await confirmClose(dir, false, $("i-note")))) return;
+    const opts = { dir, desktop: $("i-desktop").checked, machine };
+    $("i-note").classList.remove("warn");
+    $("i-note").textContent = "正在检查安装权限…";
+    fit();
+    if (await invoke("needs_admin", { machine })) {
+      $("i-note").textContent = info.installedVersion
+        ? "更新原安装位置需要管理员确认；确认前不会关闭旧程序。"
+        : "为所有用户安装需要管理员确认。";
+      fit();
+      try {
+        await invoke("elevate_install", { opts });
+      } catch (e) {
+        $("i-note").classList.add("warn");
+        $("i-note").textContent = String(e) === "cancelled"
+          ? (info.installedVersion
+            ? "未获得管理员确认，更新未开始。更新原安装位置需要确认，原程序和下载记录保持不变。"
+            : "为所有用户安装需要管理员确认。也可以选「仅为我安装」，不需要确认。")
+          : "无法获取管理员权限：" + e;
+        fit();
+      }
+      return;
+    }
+    await runInstall(opts);
+  } catch (e) {
+    $("i-note").classList.add("warn");
+    $("i-note").textContent = String(e);
+    fit();
+  } finally {
+    working = false;
+    $("i-go").disabled = false;
+    $("close").disabled = false;
+  }
+}
+
+async function runInstall({ dir, desktop, machine }) {
+  working = true;
+  $("close").disabled = true;
+  $("g-title").textContent = info.installedVersion ? "正在更新闪电全能下载" : "正在安装闪电全能下载";
+  $("g-sub").textContent = dir;
+  setBar(0, "正在准备…");
+  show("p-progress");
+  try {
+    const installed = await invoke("install", { opts: { dir, desktop, machine } });
+    const exe = installed.exe;
+    if (info.inAppUpdate) {
+      $("g-title").textContent = "更新完成";
+      setBar(100, "正在打开新版本…");
+      try {
+        await invoke("launch", { path: exe });
+        await quit();
+        return;
+      } catch (e) {
+        result({ ok: true, title: "更新完成", text: "已安装新版，请从开始菜单打开。",
+          buttons: [btn("关闭", "primary", quit)] });
+        return;
+      }
+    }
+    result({
+      ok: true,
+      title: info.installedVersion ? "更新完成" : "安装完成",
+      text: "可以从开始菜单打开，也可以在系统设置的「应用」里卸载。",
+      openRow: true,
+      extensionChanged: installed.extensionChanged,
+      extensionFrom: installed.extensionFrom,
+      extensionTo: installed.extensionTo,
+      buttons: [btn("完成", "primary", () => completeInstall(dir, installed, exe))],
+    });
+  } catch (e) {
+    result({
+      ok: false,
+      title: info.installedVersion ? "更新没有完成" : "安装没有完成",
+      text: String(e),
+      buttons: [btn("取消", "ghost", quit), btn("返回", "primary", () => show("p-install"))],
+    });
+  }
+}
+
+async function completeInstall(dir, installed, exe) {
+  if (working || finishing || closing) return;
+  let shouldLaunch = $("r-open").checked;
+  const finish = async (note, button) => {
+    if (working || finishing || closing) return;
+    finishing = true;
+    if (button) {
+      button.disabled = true;
+      button.textContent = shouldLaunch ? "正在打开…" : "正在关闭…";
+    }
+    try {
+      if (shouldLaunch) {
+        await invoke("launch", { path: exe });
+        shouldLaunch = false;
+      }
+      if (button) button.textContent = "正在关闭…";
+      await quit();
+    } catch (error) {
+      if (closing) return;
+      note.textContent = String(error);
+      $("r-open").checked = false;
+      shouldLaunch = false;
+      fit();
+      if (button) button.textContent = "关闭";
+    } finally {
+      finishing = false;
+      if (button && !closing) button.disabled = false;
+    }
+  };
+  if (!$("r-ext-row").hidden && $("r-ext").checked) {
+    await showExtGuide(dir, !!installed.extensionFrom, finish);
+  } else {
+    await finish($("r-text"), $("r-foot").lastElementChild);
+  }
+}
+
+// ---------- 浏览器扩展 ----------
+async function showExtGuide(dir, updating, finish, extensionInfo) {
+  $("e-title").textContent = updating ? "更新浏览器扩展" : "安装浏览器扩展";
+  $("e-sub").textContent = updating ? "已添加的扩展无需删除重装。" : "首次添加扩展时使用下方文件夹。";
+  $("e-steps").innerHTML = updating
+    ? '<li>打开正在使用的浏览器的扩展管理页</li><li>找到「闪电全能下载」，选择 <b>重新加载</b></li><li><b>刷新已打开的网页</b>，即可使用新版</li>'
+    : '<li>打开正在使用的浏览器的扩展管理页</li><li>开启 <b>开发者模式</b></li><li>加载下方文件夹中的本地扩展</li>';
+  $("e-dir").value = "";
+  $("e-reveal").disabled = true;
+  const foot = $("e-foot");
+  foot.innerHTML = "";
+  const note = $("e-note");
+  note.classList.remove("warn");
+  note.textContent = "正在检查浏览器扩展…";
+  const done = btn("完成", "primary", () => finish(note, done));
+  foot.appendChild(done);
+  show("p-ext");
+  done.focus();
+  let x;
+  try {
+    x = extensionInfo ?? await invoke("ext_info", { dir });
+  } catch (_) {
+    if (!closing && !finishing) {
+      note.textContent = "无法读取浏览器扩展信息，可以先点「完成」。";
+      fit();
+    }
+    return;
+  }
+  if (closing) return;
+  $("e-dir").value = x.dir;
+  $("e-reveal").disabled = false;
+  if (!finishing) note.textContent = "";
+  const browsers = x.browsers.length ? x.browsers : [["chrome", "Chrome", false], ["edge", "Edge", false]];
+  for (const [key, name, available] of browsers) {
+    const label = available ? `打开 ${name} 扩展页` : `复制 ${name} 地址`;
+    const button = btn(label, "ghost", async () => {
+      button.disabled = true;
+      if (available) button.textContent = "正在打开…";
+      const address = key === "edge" ? "edge://extensions/" : "chrome://extensions/";
+      try {
+        if (available && await invoke("open_ext_page", { browser: key }).catch(() => false)) {
+          note.textContent = `已交给 ${name} 打开扩展管理页。`;
+          return;
+        }
+        await navigator.clipboard.writeText(address);
+        note.textContent = `已复制地址，请在 ${name} 地址栏粘贴打开。`;
+      } catch (_) {
+        note.textContent = `请在 ${name} 地址栏打开 ${address}`;
+      } finally {
+        button.disabled = false;
+        button.textContent = label;
+        fit();
+      }
+    });
+    foot.insertBefore(button, done);
+  }
+  if (updating) foot.insertBefore(btn("首次添加扩展", "ghost", () => showExtGuide(dir, false, finish, x)), done);
+  fit();
+}
+$("e-reveal").addEventListener("click", () => invoke("reveal_ext", { dir: $("e-dir").value }));
+
+// ---------- 卸载 ----------
+async function goUninstall() {
+  const removeData = $("u-data").checked;
+  if (!(await confirmClose(info.dir, removeData, $("u-note")))) return;
+  working = true;
+  $("close").disabled = true;
+  $("g-title").textContent = "正在卸载闪电全能下载";
+  $("g-sub").textContent = info.dir;
+  setBar(0, "正在准备…");
+  show("p-progress");
+  try {
+    const r = await invoke("uninstall", { removeData });
+    const buttons = [btn("完成", "primary", quit)];
+    if (r.left) buttons.unshift(btn("打开文件夹", "ghost", () => invoke("open_folder", { path: r.dir })));
+    result({
+      ok: true,
+      title: "已卸载",
+      text: r.left
+        ? `安装目录里还有 ${r.left} 个不是安装程序放进去的文件，已保留。`
+        : (removeData ? "程序、下载记录和设置都已删除。已下载的文件还在原来的位置。"
+                      : "下载记录和设置已保留，重新安装后还能用。"),
+      buttons,
+    });
+  } catch (e) {
+    result({ ok: false, title: "卸载没有完成", text: String(e), buttons: [btn("关闭", "primary", quit)] });
+  }
+}
+
+// ---------- 启动 ----------
+(async () => {
+  show("p-check");
+  info = await invoke("setup_info");
+  if (info.mode === "uninstall") {
+    $("u-dir").textContent = info.dir;
+    $("u-data-row").hidden = !info.hasData;
+    $("u-go").addEventListener("click", goUninstall);
+    $("u-cancel").addEventListener("click", quit);
+    $("u-data").addEventListener("change", () => {
+      $("u-note").classList.remove("warn");
+      $("u-note").textContent = $("u-data").checked ? "下载历史、设置、封面和登录信息都会删除，不能恢复。已下载的文件不受影响。" : "";
+      fit();
+    });
+    show("p-uninstall");
+    return;
+  }
+  const upgrade = !!info.installedVersion;
+  if (upgrade) upgradeMachine = info.machine;
+  $("i-scopes").hidden = upgrade;
+  const initialMachine = upgrade ? info.machine : (info.auto?.machine ?? info.machine);
+  $("i-machine").checked = initialMachine;
+  $("i-user").checked = !initialMachine;
+  $("i-machine").disabled = upgrade;
+  $("i-user").disabled = upgrade;
+  const pickScope = () => {
+    if (upgrade) return;
+    $("i-dir").value = $("i-machine").checked ? info.machineDir : info.userDir;
+    $("i-note").classList.remove("warn");
+    $("i-note").textContent = `需要约 ${info.sizeMb} MB 空间。`;
+    delete $("i-note").dataset.confirmed;
+    fit();
+  };
+  $("i-user").addEventListener("change", pickScope);
+  $("i-machine").addEventListener("change", pickScope);
+  // 只有 NAS 才标注，写在版本号后面：0.1.5 NAS
+  const verText = (v, ed) => (ed === "nas" ? `${v} NAS` : v);
+  const newLabel = verText(info.version, info.edition);
+  const oldLabel = verText(info.installedVersion, info.installedEdition);
+  const cmp = info.versionCmp;
+  $("i-sub").textContent = !upgrade ? `版本 ${newLabel}`
+    : cmp === "downgrade" ? `已安装 ${oldLabel}，将降级到 ${newLabel}`
+    : cmp === "same" ? `已安装 ${oldLabel}，将重新安装 ${newLabel}`
+    : `已安装 ${oldLabel}，将升级到 ${newLabel}`;
+  const extVersion=$("i-ext-version");
+  extVersion.hidden=!(info.extensionVersion && info.installedExtensionVersion && info.extensionVersion !== info.installedExtensionVersion);
+  extVersion.textContent=extVersion.hidden?"":`浏览器扩展 ${info.installedExtensionVersion} → ${info.extensionVersion}`;
+  $("i-dir").value = upgrade ? info.dir : (initialMachine ? info.machineDir : info.userDir);
+  // 更新就装在原位置：换位置会留下旧目录
+  $("i-dir").readOnly = upgrade;
+  $("i-pick").hidden = upgrade;
+  $("i-note").textContent = upgrade
+    ? (info.machine ? "原程序安装在系统目录，写入新版需要管理员确认。原安装范围、下载记录和设置会保留。" : "下载记录和设置会保留。")
+    : `需要约 ${info.sizeMb} MB 空间。`;
+  $("i-go").textContent = !upgrade ? "安装" : cmp === "downgrade" ? "降级安装" : cmp === "same" ? "重新安装" : "升级";
+  // 降级和换版别容易是拿错了安装包，要说清楚
+  const warns = [];
+  if (upgrade && cmp === "downgrade") warns.push(`这个安装包比已安装的版本旧。`);
+  if (upgrade && info.installedEdition && info.installedEdition !== info.edition) warns.push(info.edition === "nas" ? "已安装的不是 NAS，这个安装包是 NAS。" : "已安装的是 NAS，这个安装包不是 NAS。");
+  if (warns.length) {
+    $("i-note").classList.add("warn");
+    $("i-note").textContent = `${warns.join("")}${$("i-note").textContent}`;
+  }
+  $("i-go").addEventListener("click", () => goInstall(false));
+  $("i-cancel").addEventListener("click", quit);
+  $("i-pick").addEventListener("click", async () => {
+    if (upgrade || working) return;
+    const d = await invoke("pick_dir", { current: $("i-dir").value }).catch(() => null);
+    if (d) $("i-dir").value = d;
+  });
+  show("p-install");
+  // 外部自动启动与提权重启共用上面已经识别并绑定的升级流程。
+  if (info.auto) {
+    if (!upgrade) $("i-dir").value = info.auto.dir;
+    $("i-desktop").checked = !!info.auto.desktop;
+    await goInstall(true);
+  }
+})().catch((e) => {
+  result({ ok: false, title: "无法启动", text: String(e), buttons: [btn("关闭", "primary", quit)] });
+});
+
+$("close").addEventListener("click", () => { if (!working) quit(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !working) quit();
+  // 回车 = 当前页的主按钮（卸载页不接：删除不该一个回车就开始）
+  if (e.key === "Enter" && !working && e.target.tagName !== "BUTTON") {
+    if (!$("p-install").hidden) goInstall();
+    else if (!$("p-result").hidden) $("r-foot").lastElementChild?.click();
+    else if (!$("p-ext").hidden) {
+      e.preventDefault();
+      $("e-foot").lastElementChild?.click();
+    }
+  }
+});
+document.addEventListener("contextmenu", (e) => {
+  if (e.target.tagName !== "INPUT") e.preventDefault();
+});
+</script>
+<script src="window-frame.js"></script>
+</body>
+</html>

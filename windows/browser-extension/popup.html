@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --tint: #E0992F; --text: #222; --sub: #888; --bg: #FBF9F6; --line: #EAE5DD; --field: #F2EFEA; --raised: #FFF; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --text: #EEE; --sub: #999; --bg: #2A2723; --line: #3A3631; --field: #302D28; --raised: #403C36; color-scheme: dark; } }
+  body { margin: 0; width: 300px; font: 13px -apple-system, "PingFang SC", sans-serif; color: var(--text); background: var(--bg); }
+  body.batch-mode { width: 400px; }
+  body.media-mode { width: 368px; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .head img { width: 28px; height: 28px; }
+  .head b { font-size: 15px; }
+  .page { padding: 0 16px 14px; }
+  .title { color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 10px; }
+  button.main { width: 100%; height: 40px; border: 0; border-radius: 10px; background: var(--tint); color: #fff;
+    font-size: 15px; font-weight: 600; cursor: pointer; }
+  button.main:disabled { opacity: .6; cursor: default; }
+  button.scan { margin-top: 8px; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; }
+  .download-actions {
+    display: flex;
+    --shandian-segment-background: var(--tint);
+    --shandian-segment-color: #fff;
+    --shandian-segment-hover: #0001;
+    --shandian-segment-divider: #fff5;
+  }
+  .download-actions #dl { flex: 1; min-width: 0; font-weight: 400; }
+  #batch { margin-top:8px; }
+  .download-tools { margin-top: 10px; }
+  .download-tools > summary { padding: 4px 0; color: var(--sub); cursor: pointer; }
+  body:not(.media-mode) #capture { width: auto; border: 0; padding: 4px 0; color: var(--text); }
+  .results { max-height: 210px; overflow-y: auto; margin-top: 6px; }
+  .result { display: block; width: 100%; text-align: left; margin-top: 5px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: transparent; cursor: pointer; }
+  .batch-row { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+  .batch-name { display:flex; flex-direction:column; flex:1; min-width:0; gap:3px; }
+  .batch-row .batch-reason { color:var(--text); font-size:12px; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
+  .batch-row span.name { display:block; flex: 1; min-width:0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .batch-row small { color: var(--sub); white-space: nowrap; }
+  .batch-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; gap: 8px; }
+  .batch-actions[hidden] { display: none; }
+  #media-results { max-height: 280px; margin-top: 8px; }
+  #media-results:empty { display: none; }
+  .media-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+  .media-card + .media-card { margin-top: 7px; }
+  .media-top { display: flex; align-items: center; gap: 7px; }
+  .media-top .batch-row { flex: 1; min-width: 0; margin: 0; cursor: pointer; }
+  .media-top .batch-row input { flex: none; margin: 0 1px 0 0; }
+  .media-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  .media-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+  .media-meta span { flex: none; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .media-top button { flex: none; height: 30px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .media-play { width: 30px; padding: 0; color: var(--text); border: 1px solid var(--line); background: var(--bg); }
+  .media-play[aria-label="停止试听"] { border-color: var(--tint); color: var(--tint); }
+  .media-single { min-width: 52px; padding: 0 7px; color: white; border: 0; background: var(--tint); }
+  .media-single:disabled { opacity: .55; cursor: default; }
+  .media-player { display: flex; align-items: center; gap: 8px; height: 34px; visibility: hidden; }
+  .media-player.on { visibility: visible; }
+  .media-wave { position: relative; flex: 1; min-width: 0; height: 28px; }
+  .media-wave:has(input:focus-visible) { box-shadow: inset 0 -1px var(--sub); }
+  .media-peaks { position: absolute; inset: 0; display: block; width: 100%; height: 100%; color: var(--sub); pointer-events: none; }
+  .media-wave-status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--sub); font-size: 11px; pointer-events: none; }
+  .media-wave-status[hidden] { display: none; }
+  .media-peaks-played { color: var(--tint); clip-path: inset(0 calc(100% - var(--progress, 0%)) 0 0); }
+  .media-wave input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .media-time { flex: none; width: 82px; text-align: right; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .batch-actions button { padding: 6px 10px; border: 0; border-radius: 7px; background: var(--tint); color: white; cursor: pointer; }
+  .batch-actions button:disabled { opacity: .5; cursor: default; }
+  #site-batch-progress { appearance:none; -webkit-appearance:none; display:block; width:100%; height:6px; margin-top:8px; border:0; border-radius:3px; overflow:hidden; }
+  #site-batch-progress::-webkit-progress-bar { background:var(--line); border:0; box-shadow:none; }
+  #site-batch-progress::-webkit-progress-value { background:var(--tint); border:0; box-shadow:none; }
+  #site-batch-controls { justify-content:flex-start; }
+  #site-batch-controls button { color:var(--text); background:transparent; border:1px solid var(--line); }
+  .batch-row input, .batch-actions input { width: auto; height: auto; accent-color: var(--tint); }
+  .wechat-input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); }
+  .hint:empty { display: none; }
+  .quality { display:flex;align-items:center;gap:10px;margin:0 0 10px; }
+  .quality select { flex:1;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit; }
+  [hidden] { display: none !important; }
+  .tabs { margin: 0 16px 12px; --shandian-segment-background: var(--field); --shandian-segment-color: var(--sub); }
+  .tabs button.on { background: var(--raised); color: var(--text); }
+  body.show-settings #page { display: none; }
+  body:not(.show-settings) :is(.row, .cloud-settings) { display: none !important; }
+  /* 滚动条细一点，跟随深浅色，不要系统那条白的 */
+  html, .results { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  .results { max-height: 170px; }
+  .hint { color: var(--sub); font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--line); }
+  .row small { display: block; color: var(--sub); font-size: 11.5px; margin-top: 2px; line-height: 1.35; }
+  .row input[type=checkbox] { flex: 0 0 16px; width: 16px; height: 16px; margin: 0 6px 0 0; }
+  #channel-background-wait { flex: none; box-sizing: border-box; min-width: 66px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--field); color: var(--text); font: inherit; cursor: pointer; }
+  @supports (appearance: base-select) {
+    #channel-background-wait, #channel-background-wait::picker(select) { appearance: base-select; }
+    #channel-background-wait::picker(select) {
+      position-area: block-end span-inline-start;
+      position-try-fallbacks: flip-block;
+      margin: 6px 0;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--raised);
+      color: var(--text);
+      box-shadow: 0 6px 18px #0003;
+    }
+    #channel-background-wait option { min-height: 30px; padding: 4px 7px; border-radius: 6px; box-sizing: border-box; background: transparent; }
+    #channel-background-wait option:checked { color: var(--tint); }
+    #channel-background-wait option:hover { background: var(--field); }
+    #channel-background-wait option:focus-visible { outline: 1px solid var(--sub); outline-offset: -1px; }
+  }
+  .cloud-settings > summary { min-height: 34px; cursor: pointer; list-style: none; }
+  .cloud-settings > summary::-webkit-details-marker { display: none; }
+  .cloud-settings > summary::after { content: ""; width: 6px; height: 6px; border-right: 1px solid var(--sub); border-bottom: 1px solid var(--sub); transform: rotate(45deg); }
+  .cloud-settings[open] > summary::after { transform: rotate(225deg); }
+  .cloud-settings .row:not(summary) { border-top: 0; padding-block: 5px; }
+  input[type=checkbox] { width: 34px; height: 20px; accent-color: var(--tint); }
+</style>
+<link rel="stylesheet" href="segments.css">
+</head>
+<body>
+  <div class="head"><img src="icons/icon48.png" alt=""><b>闪电全能下载</b></div>
+  <div class="tabs shandian-segments"><button id="tab-dl" class="on">下载</button><button id="tab-set">设置</button></div>
+  <div class="page" id="page">
+    <div class="title" id="title"></div>
+    <button class="scan" id="wechat-toggle" hidden>下载视频号 ›</button>
+    <div id="wechat" hidden><input class="wechat-input" id="wechat-link" placeholder="粘贴微信视频号分享链接"><button class="main" id="wechat-download">闪电下载</button><div class="hint">分享链接将交给腾讯元宝解析；首次会打开页面完成初始化。</div></div>
+    <button class="main" id="baidu-open" hidden></button>
+    <label class="quality" id="mp-quality-row" hidden><span>分辨率</span><select id="mp-quality"><option value="">最高画质</option></select></label>
+    <div class="download-actions">
+      <button class="main" id="dl">闪电下载</button>
+      <button class="scan" id="download-collection" hidden>下载合集</button>
+    </div>
+    <button class="main" id="batch" hidden>查找本页下载链接</button>
+    <label class="quality" id="site-batch-format-row" hidden><span>爱给音频格式</span><select id="site-batch-format"><option value="mp3">MP3</option><option value="wav">WAV（原站可用时）</option></select></label>
+    <div id="more" hidden>
+    <button class="scan" id="scan">查找音视频和字幕</button>
+    <div class="hint" id="media-hint" role="status"></div>
+    <button class="scan" id="capture" hidden title="仅在本页侦测媒体类型，5 分钟后自动停止；首次启用需要浏览器授权">开始播放侦测</button>
+    <div class="results" id="media-results"></div>
+    <div class="media-player" id="media-player" hidden>
+      <div class="media-wave" id="media-wave">
+        <canvas class="media-peaks" aria-hidden="true"></canvas>
+        <canvas class="media-peaks media-peaks-played" aria-hidden="true"></canvas>
+        <span class="media-wave-status" role="status" hidden></span>
+        <input type="range" min="0" max="1000" aria-label="试听进度" disabled>
+      </div>
+      <span class="media-time"></span>
+    </div>
+    <div class="batch-actions" id="media-actions" hidden>
+      <label><input type="checkbox" id="media-all"> 全选</label>
+      <button type="button" id="media-download" disabled>下载所选</button>
+    </div>
+    </div>
+    <details class="download-tools" id="download-tools" hidden>
+      <summary>更多下载工具</summary>
+    </details>
+    <div class="results" id="results"></div>
+    <div class="batch-actions" id="batch-actions" hidden><label><input type="checkbox" id="select-all"> <span id="site-batch-select-label">全选</span></label><button id="download-selected">下载所选</button></div>
+    <div class="batch-actions" id="baidu-actions" hidden>
+      <label><input type="checkbox" id="baidu-all"> 全选</label>
+      <button id="baidu-dl">下载所选</button>
+    </div>
+    <div class="hint" id="hint"></div>
+    <progress id="site-batch-progress" aria-label="获取下载地址" hidden></progress>
+    <div class="batch-actions" id="site-batch-controls" hidden>
+      <button type="button" id="site-batch-verify">查看原站验证</button>
+      <button type="button" id="site-batch-cancel">停止</button>
+    </div>
+  </div>
+  <label class="row">
+    <span>接管浏览器下载<small>网页上点下载时交给闪电全能下载</small></span>
+    <input type="checkbox" id="takeover">
+  </label>
+  <label class="row">
+    <span>悬停下载按钮<small>鼠标移到视频或下载链接上时显示闪电按钮</small></span>
+    <input type="checkbox" id="hover-button">
+  </label>
+  <label class="row" data-settings>
+    <span>视频号后台等待<small>悬浮及自动解析：首次唤醒元宝，后续超时再唤醒</small></span>
+    <select id="channel-background-wait" aria-label="视频号后台等待"><option value="3">3 秒</option><option value="5">5 秒</option><option value="10">10 秒</option></select>
+  </label>
+  <label class="row" data-settings>
+    <span>网盘工具栏<small>在支持的网盘网页显示「闪电下载」</small></span>
+    <input type="checkbox" id="cloud-toolbar">
+  </label>
+  <details class="cloud-settings" data-settings>
+    <summary class="row">百度 AppKey</summary>
+    <div class="row" style="display:block">
+      <small>到<a href="https://pan.baidu.com/union/console" target="_blank" rel="noopener" style="color:var(--tint)">百度网盘开放平台</a>免费创建应用后填入，只存在本机；不要填 AppSecret</small>
+      <input class="wechat-input" id="baidu-appkey" aria-label="百度 AppKey" placeholder="AppKey" spellcheck="false" autocomplete="off">
+    </div>
+  </details>
+  <script src="cloud-sites.js"></script>
+  <script src="popup-waveform.js"></script>
+  <script src="popup.js"></script>
+  <script src="source-labels.js"></script>
+  <script src="batch-ui.js"></script>
+  <script src="baidu-ui.js"></script>
+</body>
+</html>

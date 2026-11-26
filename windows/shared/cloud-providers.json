@@ -1,0 +1,201 @@
+[
+  {
+    "id": "guangya",
+    "name": "光鸭云盘",
+    "driver": "GuangYaPan",
+    "fields": [
+      "phone_number",
+      "send_code",
+      "verify_code",
+      "refresh_token",
+      "access_token",
+      "client_id",
+      "captcha_token",
+      "root_path"
+    ],
+    "note": "使用电脑客户端现有登录关联；关联后由执行端独立续期与换链。",
+    "offlineTool": "GuangYaPan",
+    "protocols": [
+      "http",
+      "https",
+      "magnet"
+    ],
+    "deviceLogin": true,
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://www.guangyapan.com/",
+    "transferSession": true,
+    "linkMessage": ""
+  },
+  {
+    "id": "baidu",
+    "name": "百度网盘",
+    "driver": "BaiduNetdisk",
+    "fields": [
+      "refresh_token",
+      "client_id",
+      "client_secret"
+    ],
+    "note": "使用对应应用的合法授权，直接向百度续期。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": false,
+    "linkMethod": "",
+    "loginUrl": "",
+    "transferSession": false,
+    "linkMessage": "暂不支持电脑关联"
+  },
+  {
+    "id": "ali",
+    "name": "阿里云盘",
+    "driver": "AliyundriveOpen",
+    "fields": [
+      "refresh_token",
+      "client_id",
+      "client_secret"
+    ],
+    "note": "使用对应开放平台应用的合法授权，直接向阿里续期。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": false,
+    "linkMethod": "",
+    "loginUrl": "",
+    "transferSession": false,
+    "linkMessage": "暂不支持电脑关联"
+  },
+  {
+    "id": "quark",
+    "name": "夸克网盘",
+    "driver": "Quark",
+    "fields": [
+      "cookie"
+    ],
+    "note": "可自动重新取下载地址；账号Cookie本身失效后需要重新关联。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://pan.quark.cn/",
+    "transferSession": false,
+    "linkMessage": ""
+  },
+  {
+    "id": "uc",
+    "name": "UC 网盘",
+    "driver": "UC",
+    "fields": [
+      "cookie"
+    ],
+    "note": "可自动重新取下载地址；账号Cookie本身失效后需要重新关联。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://drive.uc.cn/",
+    "transferSession": false,
+    "linkMessage": ""
+  },
+  {
+    "id": "pan123",
+    "name": "123 云盘",
+    "driver": "123Pan",
+    "fields": [
+      "AccessToken",
+      "username",
+      "password"
+    ],
+    "note": "可在执行端重新取下载链接；网盘整体登录失效时需在电脑重新关联。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://yun.123pan.cn/",
+    "transferSession": false,
+    "linkMessage": ""
+  },
+  {
+    "id": "tianyi",
+    "name": "天翼云盘",
+    "driver": "189CloudPC",
+    "fields": [
+      "username",
+      "password",
+      "sms_code",
+      "validate_code",
+      "refresh_token"
+    ],
+    "note": "出现设备验证时，填写服务商发送的验证码。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": false,
+    "linkMethod": "",
+    "loginUrl": "",
+    "transferSession": false,
+    "linkMessage": "暂不支持电脑关联"
+  },
+  {
+    "id": "mobile",
+    "name": "移动云盘",
+    "driver": "139Yun",
+    "fields": [
+      "username",
+      "password",
+      "sms_code",
+      "authorization",
+      "mail_cookies",
+      "user_domain_id"
+    ],
+    "note": "支持账号登录或已有授权；账号验证要求以服务商返回为准。",
+    "offlineTool": "",
+    "protocols": [],
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://yun.139.com/w/",
+    "transferSession": false,
+    "linkMessage": ""
+  },
+  {
+    "id": "xunlei",
+    "name": "迅雷云盘",
+    "driver": "Thunder",
+    "fields": [
+      "username",
+      "password",
+      "captcha_token"
+    ],
+    "note": "由执行端登录并提交云端离线任务。",
+    "offlineTool": "Thunder",
+    "protocols": [
+      "http",
+      "https",
+      "magnet",
+      "ed2k"
+    ],
+    "canLink": false,
+    "linkMethod": "",
+    "loginUrl": "",
+    "transferSession": false,
+    "linkMessage": "暂不支持电脑关联"
+  },
+  {
+    "id": "pan115",
+    "name": "115 网盘",
+    "driver": "115 Cloud",
+    "fields": [
+      "cookie"
+    ],
+    "note": "使用电脑网页登录关联；网页登录整体失效时需要重新关联。",
+    "offlineTool": "115 Cloud",
+    "protocols": [
+      "http",
+      "https",
+      "magnet",
+      "ed2k"
+    ],
+    "canLink": true,
+    "linkMethod": "browser",
+    "loginUrl": "https://115.com/?mode=wangpan",
+    "transferSession": false,
+    "linkMessage": ""
+  }
+]

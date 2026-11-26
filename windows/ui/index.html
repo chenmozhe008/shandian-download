@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>闪电全能下载</title>
+<script>document.documentElement.dataset.windowFrame = window.__sdWindowFrame || "rounded";</script>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<script>
+  try {
+    // 强调色先读缓存，避免打开瞬间是琥珀再跳成别的色
+    var acc = localStorage.getItem("sd.accent") || "amber";
+    var vars = localStorage.getItem("sd.accentVars");
+    if (acc === "custom" && vars) {
+      var v = JSON.parse(vars);
+      var el = document.documentElement;
+      el.dataset.accent = "custom";
+      el.style.setProperty("--accent-h", v.h);
+      el.style.setProperty("--accent-s", v.s);
+      el.style.setProperty("--on-dark", v.onDark);
+    } else {
+      document.documentElement.dataset.accent = acc;
+    }
+    // 注意：这里不能给 <html> 兜底色。窗口是透明的，四个圆角是靠 #app 的
+    // border-radius 裁出来的，html 一旦有实色，圆角外面就成了一块不透明色块，
+    // 圆角等于白做（之前"圆角改了看不出变化"就是这么来的）。
+    // 底色统一交给 #app 自己的 background，CSS 是本地文件，第一帧之前就加载完了。
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<!-- 图标：Mac 版用的是 SF Symbols（系统字体，Windows 上没有）。
+     电影/视频/回收站/其他文件/文件夹这几个换成官方实心 SVG（fill="currentColor"，24 画布），
+     其余的还是手写描边线条：统一 24 画布、1.7 描边、圆角端点，视觉重量对齐 SF Symbols 的 regular。 -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-down" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v7.3M8.7 11.5L12 14.8l3.3-3.3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.2 12.3l2.6 2.6 5-5.2"/></symbol>
+  <!-- 回收站：官方实心 SVG，桶盖/桶身/提手都在一条 path 里，挖空靠子路径回转 -->
+  <symbol id="i-sort" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M20 4V16H23L19 21L15 16H18V4H20ZM12 18V20H3V18H12ZM14 11V13H3V11H14ZM14 4V6H3V4H14Z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M17 6H22V8H20V21C20 21.5523 19.5523 22 19 22H5C4.44772 22 4 21.5523 4 21V8H2V6H7V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V6ZM18 8H6V20H18V8ZM9 11H11V17H9V11ZM13 11H15V17H13V11ZM9 4V6H15V4H9Z"/></symbol>
+  <!-- 下载历史：圆圈箭头 + 时钟指针 -->
+  <symbol id="i-history" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12H4C4 16.4183 7.58172 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C9.25022 4 6.82447 5.38734 5.38451 7.50024L8 7.5V9.5H2V3.5H4L3.99989 5.99918C5.82434 3.57075 8.72873 2 12 2ZM13 7L12.9998 11.585L16.2426 14.8284L14.8284 16.2426L10.9998 12.413L11 7H13Z"/></symbol>
+  <!-- 胶片：官方实心 SVG，画格和齿孔全在一条 path 里（子路径回转挖空），不用描边凑 -->
+  <symbol id="i-film" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M2 3.9934C2 3.44476 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.44495 22 3.9934V20.0066C22 20.5552 21.5447 21 21.0082 21H2.9918C2.44405 21 2 20.5551 2 20.0066V3.9934ZM8 5V19H16V5H8ZM4 5V7H6V5H4ZM18 5V7H20V5H18ZM4 9V11H6V9H4ZM18 9V11H20V9H18ZM4 13V15H6V13H4ZM18 13V15H20V13H18ZM4 17V19H6V17H4ZM18 17V19H20V17H18Z"/></symbol>
+  <!-- 播放：官方实心 SVG，外框屏幕 + 中间播放三角 -->
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M2 3.9934C2 3.44476 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.44495 22 3.9934V20.0066C22 20.5552 21.5447 21 21.0082 21H2.9918C2.44405 21 2 20.5551 2 20.0066V3.9934ZM4 5V19H20V5H4ZM10.6219 8.41459L15.5008 11.6672C15.6846 11.7897 15.7343 12.0381 15.6117 12.2219C15.5824 12.2658 15.5447 12.3035 15.5008 12.3328L10.6219 15.5854C10.4381 15.708 10.1897 15.6583 10.0672 15.4745C10.0234 15.4088 10 15.3316 10 15.2526V8.74741C10 8.52649 10.1791 8.34741 10.4 8.34741C10.479 8.34741 10.5562 8.37078 10.6219 8.41459Z"/></symbol>
+  <!-- 其他文件：官方实心 SVG，右上折角直接画在路径里 -->
+  <symbol id="i-doc" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M21 8V20.9932C21 21.5501 20.5552 22 20.0066 22H3.9934C3.44495 22 3 21.556 3 21.0082V2.9918C3 2.45531 3.4487 2 4.00221 2H14.9968L21 8ZM19 9H14V4H5V20H19V9Z"/></symbol>
+  <symbol id="i-collection" viewBox="0 0 24 24"><path d="M8 4h10a2 2 0 0 1 2 2v10"/><rect x="4" y="8" width="12" height="12" rx="2"/><path d="M7.5 12h5m-5 4h5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M4 7.4h8.6M18.2 7.4h2"/><path d="M4 16.4h1.6M11.2 16.4h9"/><circle cx="15.4" cy="7.4" r="2.3"/><circle cx="8.4" cy="16.4" r="2.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4"/><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-media-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M20.4,12.5l-12.5,8.3c-.3.2-.6.1-.8-.2,0,0,0-.2,0-.3V3.7c0-.3.3-.6.6-.6s.2,0,.3,0l12.5,8.3c.3.2.3.5.2.8,0,0,0,.1-.2.2Z"/></symbol>
+  <symbol id="i-audio-order" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h10"/><path d="m17 15 5 3-5 3z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-audio-repeat" viewBox="0 0 24 24"><path d="m17 3 4 4-4 4m4-4H6a3 3 0 0 0-3 3v1m4 10-4-4 4-4m-4 4h15a3 3 0 0 0 3-3v-1"/></symbol>
+  <symbol id="i-audio-repeat-one" viewBox="0 0 24 24"><use href="#i-audio-repeat"/><path d="m11 11 1-1v4"/></symbol>
+  <symbol id="i-audio-shuffle" viewBox="0 0 24 24"><path d="M3 6h3c4.5 0 7.5 12 12 12h3m-4-4 4 4-4 4M3 18h3c1.3 0 2.5-1 3.6-2.5M14.4 8.5C15.5 7 16.7 6 18 6h3m-4-4 4 4-4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15.5V5.2M8 8.8l4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2V4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 9.53614 5.11383 7.33243 6.86543 5.86492L9 8V2L3 2L5.44648 4.44656C3.33509 6.28002 2 8.9841 2 12Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></symbol>
+  <symbol id="i-zip" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="4.5" rx="1"/><path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></symbol>
+  <symbol id="i-app" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9h17M6.5 6.8h.01M9 6.8h.01"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M4 13v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="12" width="4" height="8" rx="2"/><rect x="17" y="12" width="4" height="8" rx="2"/><path d="M10 12v4m4-6v8" stroke-linecap="round"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M20.5 15.5l-5-5-9 9"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.3V19l-3.6-1.8v-4.9z"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M9 7.53861L15 21.5386L18.6594 13H23V11H17.3406L15 16.4614L9 2.46143L5.3406 11H1V13H6.6594L9 7.53861Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.3 4.6v14.8M15.7 4.6v14.8" stroke-width="2.6"/></symbol>
+  <symbol id="i-resume" viewBox="0 0 24 24"><path d="M8.4 5.8l9.2 6.2-9.2 6.2z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.4v13.2M5.4 12h13.2" stroke-width="2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4" stroke-width="2"/></symbol>
+  <!-- 外链：官方实心 SVG，方框 + 穿出去的箭头 -->
+  <symbol id="i-external" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M10 6V8H5V19H16V14H18V20C18 20.5523 17.5523 21 17 21H4C3.44772 21 3 20.5523 3 20V7C3 6.44772 3.44772 6 4 6H10ZM21 3V11H19L18.9999 6.413L11.2071 14.2071L9.79289 12.7929L17.5849 5H13V3H21Z"/></symbol>
+  <!-- 收起/展开侧边栏：官方 48 画布描边图标（圆角外框 + 竖分隔线 + 上下两个小横档） -->
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="36" height="36" rx="3"/>
+      <path d="M16 6V42"/>
+      <path d="M13 42H19"/>
+      <path d="M13 6H19"/>
+    </g>
+  </symbol>
+  <!-- 清理失效：三条细线 + 右下角一个叉（第三条让位给叉）。
+       细线 + 大一点的叉，19px 下比实心块清楚得多 -->
+  <symbol id="i-clean" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+      <path d="M3.8 5.4h16.4"/>
+      <path d="M3.8 11h16.4"/>
+      <path d="M3.8 16.6h7.4"/>
+      <path d="M14.8 14.8l6 6"/>
+      <path d="M20.8 14.8l-6 6"/>
+    </g>
+  </symbol>
+  <!-- 窗口按钮：最小化 / 最大化 / 还原 / 关闭 -->
+  <symbol id="i-win-min" viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="1.8"/></symbol>
+  <symbol id="i-win-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.6"/></symbol>
+  <symbol id="i-win-restore" viewBox="0 0 24 24"><rect x="5" y="9" width="10" height="10" rx="1.6"/><path d="M8.6 6H18a1 1 0 011 1v9.4"/></symbol>
+  <symbol id="i-win-close" viewBox="0 0 24 24"><path d="M6.8 6.8l10.4 10.4M17.2 6.8L6.8 17.2" stroke-width="1.8"/></symbol>
+  <!-- 文件夹：官方实心 SVG -->
+  <symbol id="i-folder" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M4 5V19H20V7H11.5858L9.58579 5H4ZM12.4142 5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H10.4142L12.4142 5Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="5.6"/><path d="M15.2 15.2L20 20"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.2 13.8a3.6 3.6 0 005.1 0l2.6-2.6a3.6 3.6 0 00-5.1-5.1l-1.3 1.3"/><path d="M13.8 10.2a3.6 3.6 0 00-5.1 0l-2.6 2.6a3.6 3.6 0 005.1 5.1l1.3-1.3"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.6 18.6a4.1 4.1 0 01-.5-8.2 5.3 5.3 0 0110.1-.6 3.7 3.7 0 01.3 8.8z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z"/></symbol>
+  <!-- 月牙：外圆 r8.4 与太阳的整体外径（17.2）等大，开口朝右上。
+       内弧是「偏右上那颗大圆」落在外圆里的那段，两条弧一连就是单条 path。 -->
+  <symbol id="i-moon" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 21.9967C6.47715 21.9967 2 17.5196 2 11.9967C2 6.47386 6.47715 1.9967 12 1.9967C17.5228 1.9967 22 6.47386 22 11.9967C22 17.5196 17.5228 21.9967 12 21.9967ZM12 19.9967C16.4183 19.9967 20 16.415 20 11.9967C20 7.57843 16.4183 3.9967 12 3.9967C7.58172 3.9967 4 7.57843 4 11.9967C4 16.415 7.58172 19.9967 12 19.9967ZM12 17.9967V5.9967C15.3137 5.9967 18 8.683 18 11.9967C18 15.3104 15.3137 17.9967 12 17.9967Z"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4V2H17V4H20.0066C20.5552 4 21 4.44495 21 4.9934V21.0066C21 21.5552 20.5551 22 20.0066 22H3.9934C3.44476 22 3 21.5551 3 21.0066V4.9934C3 4.44476 3.44495 4 3.9934 4H7ZM7 6H5V20H19V6H17V8H7V6ZM9 4V6H15V4H9Z"/></symbol>
+  <symbol id="i-privacy" viewBox="0 0 24 24"><path d="M12 22c5.2-2.4 8-6.1 8-11V5l-8-3-8 3v6c0 4.9 2.8 8.6 8 11Z"/><path d="m8.5 12 2.3 2.3 4.7-4.6"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 7h8M8 12h8M8 17h5"/></symbol>
+  <symbol id="i-power" viewBox="0 0 48 48"><path d="M14.5 8C13.8406 8.37652 13.2062 8.79103 12.6 9.24051C11.5625 10.0097 10.6074 10.8814 9.75 11.8402C6.79377 15.1463 5 19.4891 5 24.2455C5 34.6033 13.5066 43 24 43C34.4934 43 43 34.6033 43 24.2455C43 19.4891 41.2062 15.1463 38.25 11.8402C37.3926 10.8814 36.4375 10.0097 35.4 9.24051C34.7938 8.79103 34.1594 8.37652 33.5 8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 4V24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sleep" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM9 9H15V15H9V9Z"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12.001 2C6.47598 2 2.00098 6.475 2.00098 12C2.00098 16.425 4.86348 20.1625 8.83848 21.4875C9.33848 21.575 9.52598 21.275 9.52598 21.0125C9.52598 20.775 9.51348 19.9875 9.51348 19.15C7.00098 19.6125 6.35098 18.5375 6.15098 17.975C6.03848 17.6875 5.55098 16.8 5.12598 16.5625C4.77598 16.375 4.27598 15.9125 5.11348 15.9C5.90098 15.8875 6.46348 16.625 6.65098 16.925C7.55098 18.4375 8.98848 18.0125 9.56348 17.75C9.65098 17.1 9.91348 16.6625 10.201 16.4125C7.97598 16.1625 5.65098 15.3 5.65098 11.475C5.65098 10.3875 6.03848 9.4875 6.67598 8.7875C6.57598 8.5375 6.22598 7.5125 6.77598 6.1375C6.77598 6.1375 7.61348 5.875 9.52598 7.1625C10.326 6.9375 11.176 6.825 12.026 6.825C12.876 6.825 13.726 6.9375 14.526 7.1625C16.4385 5.8625 17.276 6.1375 17.276 6.1375C17.826 7.5125 17.476 8.5375 17.376 8.7875C18.0135 9.4875 18.401 10.375 18.401 11.475C18.401 15.3125 16.0635 16.1625 13.8385 16.4125C14.201 16.725 14.5135 17.325 14.5135 18.2625C14.5135 19.6 14.501 20.675 14.501 21.0125C14.501 21.275 14.6885 21.5875 15.1885 21.4875C19.259 20.1133 21.9999 16.2963 22.001 12C22.001 6.475 17.526 2 12.001 2Z"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M6 18H18V6H6V18ZM14 20H10V22H8V20H5C4.44772 20 4 19.5523 4 19V16H2V14H4V10H2V8H4V5C4 4.44772 4.44772 4 5 4H8V2H10V4H14V2H16V4H19C19.5523 4 20 4.44772 20 5V8H22V10H20V14H22V16H20V19C20 19.5523 19.5523 20 19 20H16V22H14V20ZM8 8H16V16H8V8Z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M4 22C4 17.5817 7.58172 14 12 14C16.4183 14 20 17.5817 20 22H18C18 18.6863 15.3137 16 12 16C8.68629 16 6 18.6863 6 22H4ZM12 13C8.685 13 6 10.315 6 7C6 3.685 8.685 1 12 1C15.315 1 18 3.685 18 7C18 10.315 15.315 13 12 13ZM12 11C14.21 11 16 9.21 16 7C16 4.79 14.21 3 12 3C9.79 3 8 4.79 8 7C8 9.21 9.79 11 12 11Z"/></symbol>
+  <symbol id="i-moon-fill" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z"/></symbol>
+  <symbol id="i-install" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M9 2V4H5L4.999 14H18.999L19 4H15V2H20C20.5523 2 21 2.44772 21 3V21C21 21.5523 20.5523 22 20 22H4C3.44772 22 3 21.5523 3 21V3C3 2.44772 3.44772 2 4 2H9ZM18.999 16H4.999L5 20H19L18.999 16ZM17 17V19H15V17H17ZM13 2V7H16L12 11L8 7H11V2H13Z"/></symbol>
+  <!-- 浏览器扩展：拼图块（给「扩展文件夹」那一行用） -->
+  <symbol id="i-ext" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 5C7 2.79086 8.79086 1 11 1C13.2091 1 15 2.79086 15 5H20C20.5523 5 21 5.44772 21 6V10.1707C21 10.4953 20.8424 10.7997 20.5774 10.9872C20.3123 11.1746 19.9728 11.2217 19.6668 11.1135C19.4595 11.0403 19.2355 11 19 11C17.8954 11 17 11.8954 17 13C17 14.1046 17.8954 15 19 15C19.2355 15 19.4595 14.9597 19.6668 14.8865C19.9728 14.7783 20.3123 14.8254 20.5774 15.0128C20.8424 15.2003 21 15.5047 21 15.8293V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V6C3 5.44772 3.44772 5 4 5H7ZM11 3C9.89543 3 9 3.89543 9 5C9 5.23554 9.0403 5.45952 9.11355 5.66675C9.22172 5.97282 9.17461 6.31235 8.98718 6.57739C8.79974 6.84243 8.49532 7 8.17071 7H5V19H19V17C16.7909 17 15 15.2091 15 13C15 10.7909 16.7909 9 19 9V7H13.8293C13.5047 7 13.2003 6.84243 13.0128 6.57739C12.8254 6.31235 12.7783 5.97282 12.8865 5.66675C12.9597 5.45952 13 5.23555 13 5C13 3.89543 12.1046 3 11 3Z"/></symbol>
+  <symbol id="i-dl-box" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M4 19H20V12H22V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V12H4V19ZM14 9H19L12 16L5 9H10V3H14V9Z"/></symbol>
+  <!-- 品牌侧的「闪电箭头」：路径取自 BrandGlyph.swift（1024 画布 x300–724 / y196–876），单色模板 -->
+  <symbol id="i-to-local" viewBox="0 0 24 24"><path transform="rotate(-90 12 12)" fill="currentColor" stroke="none" d="M9.99994 4.99988V10.9999L16.0002 11.0002L16.0002 13.0002L9.99994 12.9999V18.9999L2.99994 12.0001L9.99994 4.99988ZM18.0001 19.0001V5.00006H20.0001V19.0001H18.0001Z"/></symbol>
+<symbol id="i-to-nas" viewBox="0 0 24 24"><path transform="rotate(90 12 12)" fill="currentColor" stroke="none" d="M9.99994 4.99988V10.9999L16.0002 11.0002L16.0002 13.0002L9.99994 12.9999V18.9999L2.99994 12.0001L9.99994 4.99988ZM18.0001 19.0001V5.00006H20.0001V19.0001H18.0001Z"/></symbol>
+<symbol id="i-thunder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" d="M12 2.8 20 7.4v9.2L12 21.2l-8-4.6V7.4z"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 424 680"><path d="M260 0 L110 274 H220 L152 414 H30 L212 610 L394 414 H266 L340 256 H234 L352 0 Z" fill="currentColor" stroke="none"/><rect x="0" y="646" width="424" height="34" rx="17" fill="currentColor" stroke="none"/></symbol>
+</svg>
+
+<!-- 系统标题栏已经去掉（decorations:false），这三个是自绘的窗口按钮，
+     固定在右上角，和标题栏里的「新建下载 / 搜索」留出间距 -->
+<!-- 用 data-tip 而不是 title：title 会被 WebView2 画成系统白框，和自绘 tip 同时出现（两种样式） -->
+<button class="circle sm" id="sb-toggle" data-tip="收起侧边栏（Tab）"><svg class="ic"><use href="#i-sidebar"/></svg></button>
+
+<div class="win-ctrls">
+  <button class="win-btn" id="win-min"><svg class="ic"><use href="#i-win-min"/></svg></button>
+  <button class="win-btn" id="win-max"><svg class="ic"><use href="#i-win-max"/></svg></button>
+  <button class="win-btn close" id="win-close"><svg class="ic"><use href="#i-win-close"/></svg></button>
+</div>
+
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <!-- 和 assets/logo.svg 同一个图形，底色跟强调色走 -->
+      <svg class="logo" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="logo-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--logo-top,#ff8f2a)"/><stop offset="1" style="stop-color:var(--logo-bottom,#d9480f)"/></linearGradient><radialGradient id="logo-top" cx="512" cy="120" r="620" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><linearGradient id="logo-white" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#fff1e4"/></linearGradient><filter id="logo-sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity=".3"/></filter><filter id="logo-ash" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#7a2500" flood-opacity=".4"/></filter></defs><g filter="url(#logo-sh)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#logo-bg)"/><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#logo-top)"/><g filter="url(#logo-ash)"><path d="M560 196 L410 470 H520 L452 610 H330 L512 806 L694 610 H566 L640 452 H534 L652 196 Z" fill="url(#logo-white)"/><rect x="300" y="842" width="424" height="34" rx="17" fill="#fff"/></g><rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2"/></g></svg>
+      <span class="brand-name">闪电全能下载</span>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="all">
+        <svg class="ic"><use href="#i-down"/></svg><span>下载中</span><b class="count" id="c-all"></b>
+      </button>
+      <button class="nav-item" data-view="done">
+        <svg class="ic"><use href="#i-check"/></svg><span>已完成</span><b class="count" id="c-done"></b>
+      </button>
+      <button class="nav-item" data-view="trash">
+        <svg class="ic"><use href="#i-history"/></svg><span>下载历史</span><b class="count" id="c-trash"></b>
+      </button>
+    </nav>
+
+    <div class="nav-title">资料库</div>
+    <nav class="nav">
+      <button class="nav-item" data-view="movie">
+        <svg class="ic"><use href="#i-film"/></svg><span>电影</span><b class="count" id="c-movie"></b>
+      </button>
+      <button class="nav-item" data-view="video">
+        <svg class="ic"><use href="#i-play"/></svg><span>视频</span><b class="count" id="c-video"></b>
+      </button>
+      <button class="nav-item" data-view="cloud">
+        <svg class="ic"><use href="#i-cloud"/></svg><span>云盘</span><b class="count" id="c-cloud"></b>
+      </button>
+      <button class="nav-item" data-view="other">
+        <svg class="ic"><use href="#i-doc"/></svg><span>其他文件</span><b class="count" id="c-other"></b>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="engine">
+        <span class="dot" id="engine-dot"></span>
+        <span class="engine-text" id="engine-text">内核未启动</span>
+        <button class="mini" id="engine-btn">启动</button>
+      </div>
+      <!-- 底部只留「设置」一行，右侧是外观分段开关；版本号、关于都在设置页里。
+           三者同一个 28px 高度，谁也不比谁高。 -->
+      <div class="foot-row">
+        <button class="nav-item" data-view="settings" id="nav-settings">
+          <svg class="ic"><use href="#i-gear"/></svg><span>设置</span><i class="nav-dot" id="nav-dot" hidden></i>
+        </button>
+        <div class="theme-seg">
+          <button data-theme-set="light" title="浅色" aria-label="浅色">
+            <svg class="ic"><use href="#i-sun"/></svg>
+          </button>
+          <button data-theme-set="dark" title="深色" aria-label="深色">
+            <svg class="ic"><use href="#i-moon-fill"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar" data-tauri-drag-region>
+      <div class="view-heading" data-tauri-drag-region>
+        <h1 id="view-title" data-tauri-drag-region>下载中</h1>
+        <span class="top-speed-group" id="top-speed-group" data-tauri-drag-region hidden>
+          <span class="top-speed" id="top-speed" data-tauri-drag-region></span>
+          <canvas class="top-spark" id="top-spark" width="80" height="30" aria-hidden="true" data-tauri-drag-region></canvas>
+        </span>
+      </div>
+      <span class="sel-count" id="sel-count" hidden></span>
+      <div class="top-actions">
+        <span class="search-count" id="search-count" role="status" aria-live="polite" hidden></span>
+        <button class="circle" id="filter-btn" data-tip="筛选">
+          <svg class="ic"><use href="#i-filter"/></svg>
+        </button>
+        <button class="circle" id="sort-btn" data-tip="排序" hidden>
+          <svg class="ic"><use href="#i-sort"/></svg>
+        </button>
+        <button class="circle" id="purge-btn" title="清理全部失效记录" hidden>
+          <svg class="ic"><use href="#i-clean"/></svg>
+        </button>
+        <button class="circle" id="clear-trash-btn" title="清空下载历史" hidden>
+          <svg class="ic"><use href="#i-clean"/></svg>
+        </button>
+        <button class="circle" id="start-all" title="全部开始">
+          <svg class="ic"><use href="#i-media-play"/></svg>
+        </button>
+        <button class="circle" id="pause-all" title="全部暂停">
+          <svg class="ic"><use href="#i-pause"/></svg>
+        </button>
+        <button class="primary" id="new-btn" data-tip="新建下载（Ctrl+N）">
+          <svg class="ic"><use href="#i-plus"/></svg>新建下载
+        </button>
+        <label class="search clear-wrap">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input id="search" type="text" placeholder="搜索" autocomplete="off" spellcheck="false">
+          <button type="button" class="input-clear" id="search-clear" hidden><svg class="ic"><use href="#i-x"/></svg></button>
+        </label>
+      </div>
+    </header>
+
+    <!-- 下载视图 -->
+    <section class="pane" id="pane-downloads">
+      <div class="scroll">
+        <div class="hero" id="hero">
+          <div class="hero-text">
+            <div class="hero-label">当前速度</div>
+            <div class="hero-speed"><b id="speed-num">0</b><span id="speed-unit">KB/s</span></div>
+            <div class="hero-stats" id="hero-stats">还没有任务</div>
+          </div>
+          <canvas class="spark" id="spark" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="sec-head"><h2 id="sec-title">进行中</h2></div>
+        <div class="task-list" id="task-list"></div>
+      </div>
+
+    </section>
+
+    <!-- 设置视图 -->
+    <section class="pane settings" id="pane-settings" hidden>
+      <div class="scroll">
+        <div class="set-card">
+          <h2>外观</h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-theme"/></svg>主题</span>
+            <span class="set-path"></span>
+            <div class="seg" id="set-theme">
+              <button data-theme-set="system">跟随系统</button>
+              <button data-theme-set="light">浅色</button>
+              <button data-theme-set="dark">深色</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-sun"/></svg>强调色</span>
+            <span class="set-path"></span>
+            <div class="accents" id="accent-row">
+              <button class="acc" data-accent="amber" title="琥珀"></button>
+              <button class="acc" data-accent="blue" title="蓝"></button>
+              <button class="acc" data-accent="teal" title="青"></button>
+              <button class="acc" data-accent="green" title="绿"></button>
+              <button class="acc" data-accent="purple" title="紫"></button>
+              <button class="acc" data-accent="rose" title="玫红"></button>
+              <button class="acc" data-accent="indigo" title="靛蓝"></button>
+              <button class="acc" data-accent="graphite" title="石墨"></button>
+              <button class="acc acc-custom" id="acc-custom-btn" title="自定义颜色"></button>
+              <!-- 自定义取色面板：像系统色板那样一块二维色区——
+                   横向是色相、越往下越灰（饱和度），拖圆点即改、松手即生效；
+                   不放「完成」按钮：点面板外面或按 Esc 收起 -->
+
+            </div>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <h2>保存位置<i class="info" data-tip="按来源分目录：磁力、种子、ed2k 归「电影」，视频网站归「视频」，直链归「其他」。视频体积较大，建议将「电影」目录设在空间充足的磁盘。"></i></h2>
+
+
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-film"/></svg>磁力、种子</span>
+            <span class="set-path" id="dir-movie" title="">…</span>
+            <div class="set-actions">
+              <button class="link" data-reset="movie" hidden>恢复默认</button>
+              <button class="ghost" data-pick="movie">选择目录</button>
+              <button class="circle sm" data-open="movie" title="在资源管理器里打开">
+                <svg class="ic"><use href="#i-folder"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-play"/></svg>视频网站</span>
+            <span class="set-path" id="dir-video" title="">…</span>
+            <div class="set-actions">
+              <button class="link" data-reset="video" hidden>恢复默认</button>
+              <button class="ghost" data-pick="video">选择目录</button>
+              <button class="circle sm" data-open="video" title="在资源管理器里打开">
+                <svg class="ic"><use href="#i-folder"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-doc"/></svg>其他文件</span>
+            <span class="set-path" id="dir-other" title="">…</span>
+            <div class="set-actions">
+              <button class="link" data-reset="other" hidden>恢复默认</button>
+              <button class="ghost" data-pick="other">选择目录</button>
+              <button class="circle sm" data-open="other" title="在资源管理器里打开">
+                <svg class="ic"><use href="#i-folder"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <h2>下载</h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-plus"/></svg>下载前确认</span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-confirm" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-check"/></svg>下载完成通知</span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-notify" role="switch" aria-checked="false"></button>
+          </div>
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-down"/></svg>同时下载</span>
+            <span class="set-path"></span>
+            <span class="select-wrap">
+            <select id="set-max" class="select">
+              <option value="1">1 个任务</option>
+              <option value="2">2 个任务</option>
+              <option value="3">3 个任务</option>
+              <option value="5">5 个任务</option>
+              <option value="8">8 个任务</option>
+              <option value="10">10 个任务</option>
+            </select>
+            </span>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-play"/></svg>视频网站同时下载<i class="info" data-tip="默认 5 个，最多 10 个。遇到网站限流或连续下载失败时，可调低后继续。"></i></span>
+            <span class="set-path"></span>
+            <span class="select-wrap">
+            <select id="set-max-videos" class="select">
+              <option value="1">1 个任务</option>
+              <option value="2">2 个任务</option>
+              <option value="3">3 个任务</option>
+              <option value="5">5 个任务</option>
+              <option value="8">8 个任务</option>
+              <option value="10">10 个任务</option>
+            </select>
+            </span>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-pulse"/></svg>下载限速</span>
+            <span class="set-path"></span>
+            <span class="select-wrap">
+            <select id="set-limit" class="select">
+              <option value="0">不限速</option>
+              <option value="512">512 KB/s</option>
+              <option value="1024">1 MB/s</option>
+              <option value="2048">2 MB/s</option>
+              <option value="5120">5 MB/s</option>
+              <option value="10240">10 MB/s</option>
+            </select>
+            </span>
+          </div>
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row">
+            <span class="set-label set-label-wide"><svg class="ic"><use href="#i-github"/></svg>GitHub / Hugging Face 加速<i class="info" data-tip="GitHub 的发布文件、源码包和 raw 文件，以及 Hugging Face 公开模型、数据集的文件直链经公共加速站下载：新建时同时测试各加速站和原链接，选用最快的一个；下载出错时自动换站继续。带登录信息的请求不经过加速站。"></i></span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-ghmirror" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="set-row" id="thunder-row">
+            <span class="set-label"><svg class="ic"><use href="#i-bolt"/></svg>下载方式接力<i class="info" data-tip="磁力连续 3 分钟几乎没速度时自动接力。云盘要先登录 PikPak；云盘失败或 10 分钟没有进度时交给迅雷。迅雷的进度和速度读自迅雷窗口，下完后文件移到任务的保存位置。迅雷是第三方软件，不装也能正常下载。"></i></span>
+            <span class="set-path" id="thunder-state"></span>
+            <span class="select-wrap"><select id="set-relay" class="select">
+              <option value="off">不接力</option>
+              <option value="cloud">交给云盘</option>
+              <option value="thunder">交给迅雷（磁力推荐）</option>
+              <option value="cloud_thunder">先云盘，再迅雷</option>
+            </select></span>
+          </div>
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-share"/></svg>做种分享率<i class="info" data-tip="磁力和种子下完后继续上传，上传量达到文件大小的这个倍数就停。分享率和时长先到哪个算哪个，都选不限就一直做种。"></i></span>
+            <span class="set-path"></span>
+            <span class="select-wrap">
+            <select id="set-seed-ratio" class="select">
+              <option value="0.5">0.5</option>
+              <option value="1">1.0</option>
+              <option value="2">2.0</option>
+              <option value="5">5.0</option>
+              <option value="0">不限</option>
+            </select>
+            </span>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-clock"/></svg>做种时长</span>
+            <span class="set-path"></span>
+            <span class="select-wrap">
+            <select id="set-seed-time" class="select">
+              <option value="1800">30 分钟</option>
+              <option value="7200">2 小时</option>
+              <option value="86400">1 天</option>
+              <option value="604800">7 天</option>
+              <option value="0">不限</option>
+            </select>
+            </span>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <h2>视频工具与字幕<i class="info" data-tip="yt-dlp 负责视频解析，ffmpeg 负责合并音视频；缺失时首次使用会自动获取。字幕润色和翻译需要本机 Ollama。"></i></h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-play"/></svg>yt-dlp</span>
+            <span class="set-path" id="tool-yt-dlp">正在检查…</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-yt-dlp" data-install="yt-dlp">安装</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-film"/></svg>ffmpeg</span>
+            <span class="set-path" id="tool-ffmpeg">正在检查…</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-ffmpeg" data-install="ffmpeg">安装</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-link"/></svg>站点 Cookie<i class="info" data-tip="一般不用手动导入：在浏览器里点扩展的下载时，登录信息会自动导入"></i></span>
+            <span class="set-path" id="ck-state" title="">没导入（YouTube、抖音、西瓜、小红书等会报「需要 Cookie」）</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-import-cookie" title="导入 cookies.txt 文件">导入 Cookie</button>
+            </div>
+          </div>
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row" id="polish-row" hidden>
+            <span class="set-label"><svg class="ic"><use href="#i-doc"/></svg>润色字幕<i class="info" data-tip="视频网站的字幕下完后，用本机 Ollama 大模型修错字、合并断句，只有外语时可以翻译成中文。全程在这台电脑上处理，字幕不会上传；原字幕有备份，可以在任务右键恢复。需要先安装 Ollama 和模型，长视频会占用较多显卡或 CPU。"></i></span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-polish" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="set-row" id="polish-model-row" hidden>
+            <span class="set-label"><svg class="ic"><use href="#i-chip"/></svg>本机 Ollama 模型</span>
+            <span class="set-path cloud-account-state" title="Ollama 已连接，选中的模型在本机模型列表中"><span class="cloud-status-dot ready" aria-hidden="true"></span>可用</span>
+            <span class="select-wrap"><select id="set-polish-model" class="select"></select></span>
+          </div>
+          <div class="set-row" id="polish-mode-row" hidden>
+            <span class="set-label"><svg class="ic"><use href="#i-film"/></svg>外语字幕处理<i class="info" data-tip="其他语言的视频总是从原文翻译；有人工中文字幕时只润色"></i></span>
+            <span class="set-path"></span>
+            <span class="select-wrap"><select id="set-polish-mode" class="select">
+              <option value="polish">润色机翻中文</option>
+              <option value="translate">从外语翻译</option>
+            </select></span>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <h2>浏览器扩展<i class="info" data-tip="以下功能可分别开关：接管浏览器下载、视频站悬停按钮、网盘工具栏按钮。右键链接也能直接投递；本程序未运行时浏览器照常下载。"></i></h2>
+
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-install"/></svg>安装</span>
+            <span class="set-path">打开扩展管理页 → 开启「开发者模式」→ 点「加载解压缩的扩展」→ 选中扩展文件夹</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-ext-chrome">Chrome</button>
+              <button class="ghost" id="btn-ext-edge">Edge</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-ext"/></svg>扩展文件夹</span>
+            <span class="set-path" id="ext-dir">…</span>
+            <button class="circle sm" id="btn-ext-folder" data-tip="打开扩展文件夹"><svg class="ic"><use href="#i-folder"/></svg></button>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-check"/></svg>连接状态</span>
+            <span class="set-path" id="ext-state">未激活</span>
+          </div>
+
+          <!-- 网盘直链走 Aria2 RPC：LinkSwift 这类油猴脚本把直链 + Cookie 推过来 -->
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-cloud"/></svg>网盘直链<i class="info" data-tip="在网盘网页登录后，选择文件并使用闪电扩展获取下载地址。百度网盘需要先在扩展设置中填写自己的 AppKey；文件夹请先打开，再选择其中的文件。&#10;&#10;支持批量下载、续传和多连接，实际速度取决于网络、网盘策略和账号权限。复制配置可供兼容 Aria2 RPC 的工具使用。"></i></span>
+            <span class="set-path" id="rpc-path">Aria2 RPC：127.0.0.1:6800/jsonrpc</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-copy-rpc" data-tip="复制闪电的连接地址和密钥，填入 LinkSwift 等脚本的 Aria2 RPC 配置。使用闪电扩展的网页按钮时无需配置。">复制脚本配置</button>
+              <button class="ghost" id="btn-linkswift" data-tip="通过闪电扩展打开网盘页面中 LinkSwift 的 Aria2 RPC 连接设置。">连接设置</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="set-card" id="cloud-accounts-card">
+          <div class="cloud-settings-header">
+            <h2>云盘<i class="info" id="cloud-settings-scope" data-tip="账号供本机使用。右键「交给云盘」只列能接收新任务的网盘。"></i></h2>
+            <div class="seg" id="cloud-settings-target" hidden><button type="button" class="on" data-cloud-target="local">本机</button><button type="button" data-cloud-target="nas">NAS</button></div>
+            <button type="button" class="circle" id="cloud-settings-refresh" aria-label="刷新状态" data-tip="刷新状态"><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg></button>
+          </div>
+          <p class="set-hint" id="cloud-settings-status" role="status" aria-live="polite"></p>
+          <div id="cloud-settings-list"></div>
+          <details class="cloud-more" id="cloud-settings-unsupported" hidden><summary>暂未支持的网盘</summary><div id="cloud-settings-unsupported-list"></div></details>
+        </div>
+
+        <div class="set-card">
+          <h2>AI 工具 (MCP)<i class="info" data-tip="将配置添加到支持 MCP 的工具。闪电运行时，可提交下载、查看进度、暂停或继续。"></i></h2>
+          <div class="set-row">
+            <span class="set-label">连接 AI 工具</span>
+            <span class="set-path"></span>
+            <div class="set-actions">
+              <button type="button" class="ghost" id="btn-mcp-copy" data-tip="粘贴到 ~/.codex/config.toml">复制 Codex 配置</button>
+              <button type="button" class="ghost" id="btn-mcp-json">复制 JSON 配置</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="set-card system-card">
+          <h2>系统<i class="info" data-tip="控制确认提示、剪贴板监听与系统行为。"></i></h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-trash"/></svg>删除历史记录前确认</span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-history-confirm" role="switch" aria-checked="true"></button>
+          </div>
+          <hr class="set-divider" aria-hidden="true">
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-sleep"/></svg>下载时阻止睡眠<i class="info" data-tip="本机正在下载时阻止自动睡眠。全部暂停或完成后释放，持续零速 5 分钟也会释放。"></i></span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-sleep" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-power"/></svg>开机自动启动</span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-autostart" role="switch" aria-checked="false"></button>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-clipboard"/></svg>监听剪贴板</span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-clip" role="switch" aria-checked="false"></button>
+          </div>
+        </div>
+
+        <div class="set-card about-card">
+          <h2>关于</h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-bolt"/></svg>闪电全能下载</span>
+            <span class="set-path"><span id="about-ver">—</span><span id="update-state" role="status" aria-live="polite"></span></span>
+            <div class="set-actions"><button class="ghost" id="btn-check-update" type="button">检查更新</button></div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-github"/></svg>GitHub 仓库</span>
+            <span class="set-path">github.com/chenmozhe008/shandian-download</span>
+            <div class="set-actions"><button class="ghost" id="btn-open-repo">打开仓库</button></div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic" aria-hidden="true"><use href="#i-privacy"/></svg>协议与隐私</span>
+            <span class="set-path" id="about-copy"></span>
+            <div class="set-actions"><button class="ghost" id="btn-legal">查看协议</button></div>
+          </div>
+        </div>
+        <div class="set-card maintenance-card">
+          <h2>诊断与维护</h2>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-chip"/></svg>下载内核</span>
+            <span class="set-path" id="about-engine">—</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-engine-restart">重启内核</button>
+              <button class="ghost" data-open-engine data-tip="查看内核配置与任务数据库">打开内核目录</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic" aria-hidden="true"><use href="#i-log"/></svg>运行日志</span>
+            <span class="set-path">排查操作异常</span>
+            <div class="set-actions">
+              <button class="ghost" id="btn-copy-diagnostics">复制诊断信息</button>
+              <button class="ghost" id="btn-open-logs">打开日志目录</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-github"/></svg>问题反馈</span>
+            <span class="set-path">在 GitHub 报告问题</span>
+            <div class="set-actions"><button class="ghost" id="btn-report-issue">反馈问题</button></div>
+          </div>
+          <div class="set-row">
+            <span class="set-label"><svg class="ic"><use href="#i-trash"/></svg>本地缓存</span>
+            <span class="set-path">不清除账号、下载记录和设置</span>
+            <div class="set-actions"><button class="ghost" id="btn-clean-cache">清理缓存…</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 新建下载确认框（Mac 版是 sheet，这里换成 Windows 的居中弹窗） -->
+<div class="filter-pop" id="filter-pop" hidden></div>
+<div class="modal-mask" id="confirm" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <h3 id="cf-title">新建下载</h3>
+    <div class="modal-body">
+      <div id="cf-fields" class="cf-fields">
+      <div class="set-row first">
+        <span class="set-label">来源</span>
+        <span class="set-path" id="cf-kind">—</span>
+      </div>
+      <div class="set-row">
+        <span class="set-label"><label for="cf-name" id="cf-name-label">名称</label><span id="cf-name-hint" class="cf-name-hint" hidden>Tab 填入默认名</span></span>
+        <input id="cf-name" class="field" type="text" autocomplete="off" placeholder="留空就用链接里的名字" spellcheck="false">
+        <span id="cf-name-state" class="probe-state" role="status" aria-label="正在获取名称" hidden><span class="spin" aria-hidden="true"></span></span>
+      </div>
+      <div class="set-row">
+        <span class="set-label">保存到<i class="info" id="cf-baidu-destination-tip" tabindex="0" aria-label="百度网盘转存说明" hidden></i></span>
+        <input id="cf-dir" class="field cf-dir" type="text" autocomplete="off" spellcheck="false" placeholder="点这里可以从用过的目录里选，也可以直接粘路径">
+        <button class="ghost" id="cf-pick">更改…</button>
+      </div>
+      <div class="set-row" id="cf-baidu-code-row" hidden>
+        <label class="set-label" for="cf-baidu-code">提取码</label>
+        <input id="cf-baidu-code" class="field" type="text" autocomplete="off" maxlength="4" placeholder="无需提取码可留空" spellcheck="false">
+      </div>
+      <div class="set-row">
+        <span class="set-label">链接</span>
+        <span class="set-path" id="cf-url" role="button" tabindex="0">—</span>
+      </div>
+      <div class="set-row" id="cf-baidu-cleanup-row" hidden>
+        <span class="set-label" id="cf-baidu-cleanup-label">清理网盘转存</span>
+        <button type="button" class="switch" id="cf-baidu-cleanup" role="switch" aria-checked="true" aria-labelledby="cf-baidu-cleanup-label" aria-describedby="cf-baidu-cleanup-desc"></button>
+        <span class="modal-note" style="margin:0" id="cf-baidu-cleanup-desc">本地文件校验通过后，删除本次转存目录</span>
+      </div>
+      <div id="cf-baidu-setup" hidden>
+        <div class="set-row" id="cf-baidu-method-row" hidden>
+          <span class="set-label" id="cf-baidu-method-label">百度授权</span>
+          <div class="seg" id="cf-baidu-methods" role="group" aria-labelledby="cf-baidu-method-label">
+            <button type="button" value="web" aria-pressed="false">网页授权</button>
+            <button type="button" value="device" aria-pressed="false">扫码授权</button>
+          </div>
+        </div>
+        <div class="set-row" id="cf-baidu-status-row" hidden>
+          <span class="set-label" aria-hidden="true"></span>
+          <span id="cf-baidu-state" class="probe-state" role="status" aria-live="polite"></span>
+        </div>
+        <img id="cf-baidu-qr" width="156" height="156" alt="百度网盘授权二维码" hidden>
+      </div>
+      <div id="cf-collection-state" class="cf-files cf-collection-state probe-state" role="status" aria-live="polite" hidden></div>
+      <div id="cf-files" class="cf-files" hidden></div>
+      <div id="cf-check-state" class="modal-note probe-state" role="status" aria-live="polite" style="margin-left:142px" hidden></div>
+      <!-- 视频网站才有：画质、字幕、仅音频（Mac 版确认框同款，选完会被记住） -->
+      <div class="set-row" id="cf-video-row" hidden>
+        <span class="set-label">画质</span>
+        <div class="seg" id="cf-quality">
+          <button type="button" data-h="0" class="on">最高</button>
+          <button type="button" data-h="1080">1080P</button>
+          <button type="button" data-h="720">720P</button>
+        </div>
+        <span class="probe-state" id="cf-quality-state" role="status" aria-live="polite" hidden></span>
+      </div>
+      <div class="set-row" id="cf-opt-row" hidden>
+        <span class="set-label">内容</span>
+        <label class="modal-note" style="margin:0"><input type="checkbox" id="cf-subs"> 下载字幕</label>
+        <label class="modal-note" id="cf-polish-wrap" style="margin:0" hidden><input type="checkbox" id="cf-polish"> 润色字幕</label>
+        <span class="modal-note" id="cf-subs-state" role="status" aria-live="polite" style="margin:0" hidden></span>
+        <label class="modal-note" style="margin:0"><input type="checkbox" id="cf-audio"> 仅音频</label>
+      </div>
+      <!-- 字幕语言：勾了「下载字幕」才出现。语义标签（zh/en/zh+en/all），
+           下载前会先探测站点实际代码，每个语系只挑一个精确代码，避免一次落多个文件 -->
+      <section class="cf-subtitles" id="cf-subtitles" aria-label="字幕设置" hidden>
+      <hr class="set-divider" aria-hidden="true">
+      <div class="cf-subtitle-heading">
+        <h2 class="set-section-title"><button type="button" class="cf-fold-toggle" id="cf-subsettings-toggle" aria-label="展开字幕设置" aria-expanded="false" aria-controls="cf-subsettings-body">字幕设置</button><i class="info" id="cf-sub-hint" data-tip="下载后可在「已完成」中调整样式、保存预设。" hidden></i></h2>
+      </div>
+      <div id="cf-subsettings-body" hidden>
+      <div class="set-row" id="cf-sub-row" hidden>
+        <span class="set-label">语言</span>
+        <div class="seg" id="cf-sublangs">
+          <button type="button" data-langs="zh" class="on">中文</button>
+          <button type="button" data-langs="en">英文</button>
+          <button type="button" data-langs="zh+en">中英</button>
+          <button type="button" data-langs="all">全部</button>
+        </div>
+      </div>
+      <div class="set-row" id="cf-subfmt-row" hidden>
+        <span class="set-label">格式</span>
+        <div class="seg" id="cf-subfmt">
+          <button type="button" data-fmt="vtt" class="on">VTT</button>
+          <button type="button" data-fmt="srt">SRT</button>
+          <button type="button" data-fmt="ass">ASS</button>
+        </div>
+      </div>
+      <!-- 字幕样式（只对 ASS）：简易 = 下面三行；预设 = 用「字幕样式」窗口里存的预设 -->
+      <div class="set-row" id="cf-submode-row" hidden>
+        <span class="set-label cf-style-label">
+          <button type="button" class="cf-fold-toggle" id="cf-substyle-toggle" aria-label="折叠字幕样式选项" aria-expanded="true" aria-controls="cf-substyle-body">样式</button>
+          <span>样式</span>
+        </span>
+        <div class="seg" id="cf-submode">
+          <button type="button" data-mode="simple" class="on">简易</button>
+          <button type="button" data-mode="preset">预设</button>
+        </div>
+        <div class="select-wrap cf-subpreset-wrap" id="cf-subpreset-wrap" hidden><select class="select" id="cf-subpreset"></select></div>
+        <span class="cf-subpreset-empty" id="cf-subpreset-empty" hidden>还没有预设</span>
+      </div>
+      <!-- 着色同样只对 ASS 有效：srt/vtt 是纯文本，没有颜色这个概念 -->
+      <div id="cf-substyle-body">
+      <div class="set-row" id="cf-subcolor-row" hidden>
+        <span class="set-label">着色</span>
+        <div class="seg" id="cf-subcolor">
+          <button type="button" data-color="off">不着色</button>
+          <button type="button" data-lang="zh" title="点开改中文行颜色">中文<i class="sub-dot" id="sub-dot-zh"></i></button>
+          <button type="button" data-lang="en" title="点开改英文行颜色">英文<i class="sub-dot" id="sub-dot-en"></i></button>
+          <button type="button" data-lang="all" title="点开改全部字幕的颜色">全部<i class="sub-dot" id="sub-dot-all"></i></button>
+        </div>
+      </div>
+      <!-- 字号只对 ASS 有效：srt/vtt 没有样式，字多大由播放器决定 -->
+      <div class="set-row" id="cf-subsize-row" hidden>
+        <span class="set-label">字号</span>
+        <div class="seg" id="cf-subsize">
+          <button type="button" data-scale="0.8">小</button>
+          <button type="button" data-scale="1" class="on">标准</button>
+          <button type="button" data-scale="1.25">大</button>
+        </div>
+      </div>
+      <!-- 阴影、黑底也只对 ASS 有效。两个可以分别开关 -->
+      <div class="set-row" id="cf-subfx-row" hidden>
+        <span class="set-label">效果</span>
+        <div class="seg" id="cf-subfx">
+          <button type="button" data-fx="shadow" class="on">阴影</button>
+          <button type="button" data-fx="box">黑底</button>
+        </div>
+      </div>
+      </div>
+      </div>
+      </section>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <label class="modal-note"><input type="checkbox" id="cf-remember"> 不再询问（可在设置中打开）</label>
+      <button class="ghost" id="cf-cancel">取消</button>
+      <button class="primary" id="cf-ok">开始下载</button>
+    </div>
+  </div>
+  <div class="ctx-menu cf-dir-menu" id="cf-dir-menu" hidden></div>
+</div>
+
+<!-- 移除确认：和 Mac 版 RemovalConfirm 一致——移除 + 可选「同时删除文件」 -->
+<div class="modal-mask" id="rm-confirm" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="rm-title">移除任务？</h3>
+    <div class="modal-body">
+      <p class="modal-note" id="rm-desc" style="margin:0 0 10px"></p>
+      <label class="modal-note" id="rm-files-row" style="margin:0">
+        <input type="checkbox" id="rm-files"><span id="rm-files-label">同时删除已下载的文件</span>
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" id="rm-cancel">取消</button>
+      <button class="primary" id="rm-ok">移到回收站</button>
+    </div>
+  </div>
+</div>
+
+<!-- 扩展抓到的一批链接：同一部片子常有多个版本，让用户勾选再下 -->
+<div class="modal-mask" id="grab" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="grab-title">
+    <h3 id="grab-title"></h3>
+    <div class="grab-list" id="grab-list"></div>
+    <div class="modal-foot">
+      <label class="modal-note grab-all"><input type="checkbox" id="grab-all"> 全选</label>
+      <button class="ghost" id="grab-cancel">取消</button>
+      <button class="primary" id="grab-ok"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用确认框（app.js 的 askChoice）：WebView2 里系统 confirm 不可靠 -->
+<div class="modal-mask" id="choice" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+    <button class="modal-x" id="choice-x" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+    <h3 id="choice-title"></h3>
+    <div class="modal-body">
+      <p class="choice-desc" id="choice-desc"></p>
+    </div>
+    <div class="modal-foot" id="choice-foot"></div>
+  </div>
+</div>
+
+<!-- 文件抽屉：平时隐藏，点任务行上的「n 项」从右边滑出。看进度，也能选下载哪些 -->
+<aside class="files-drawer closed" id="files-panel" hidden>
+  <div class="fd-grip" id="files-grip"></div>
+  <div class="fd-head">
+    <h3 id="files-title"></h3>
+    <button class="modal-x" id="files-x" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="fd-scroll" id="files-scroll">
+    <div class="fd-cols"><span>文件名</span><span>进度</span><span>大小</span></div>
+    <div id="files-list-status" class="probe-state fd-list-status" role="status" hidden></div>
+    <div class="fd-list" id="files-list"></div>
+  </div>
+  <section class="fd-audio" id="files-audio" hidden aria-label="音频试听">
+    <div class="fd-audio-title"></div>
+    <div class="fd-audio-controls">
+      <div class="fd-audio-wave">
+        <canvas aria-hidden="true"></canvas>
+        <input type="range" min="0" max="1000" value="0" aria-label="播放进度" disabled>
+      </div>
+      <span class="fd-audio-time">0:00 / 0:00</span>
+      <div class="fd-audio-buttons">
+        <button type="button" id="files-audio-mode" class="circle sm fd-play-control" aria-label="播放模式" aria-haspopup="true" aria-expanded="false"><svg class="ic"><use href="#i-music"/></svg></button>
+        <button type="button" id="files-audio-play" class="circle sm fd-play-control" aria-label="播放音频"><svg class="ic"><use href="#i-media-play"/></svg></button>
+      </div>
+    </div>
+    <div class="fd-audio-status" role="status" hidden></div>
+    <audio preload="metadata" crossorigin="anonymous" hidden></audio>
+  </section>
+  <div class="fd-foot">
+    <label id="files-all-label"><input type="checkbox" id="files-all"> 全选</label>
+    <span class="fd-count" id="files-count"></span>
+    <button type="button" class="ghost sm" id="files-fill-subtitles" hidden>补齐字幕</button>
+  </div>
+</aside>
+
+<!-- 边下边播：内核把文件按顺序往后下，<video> 直接吃它的 /play 地址，拖进度条也能跳 -->
+<div class="player-mask" id="player" hidden>
+  <div class="player-box">
+    <div class="player-head">
+      <span>边下边播</span><small id="player-status" class="player-status"></small>
+      <button class="circle sm" id="player-close" title="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <video id="player-video" controls playsinline></video>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="tip" class="tip" hidden></div>
+
+<!-- 右键菜单空壳：菜单项由 app.js 按场景塞进来。放在 app.js 前面，脚本一跑就能拿到 -->
+<div class="ctx-menu" id="ctx-menu" hidden></div>
+
+<!-- 新建下载弹窗：贴一批链接 → 下面实时预览识别结果 → 点下载。和 #confirm 同款结构，
+     放在 app.js 前面让脚本一跑就能拿到；里面的行由 app.js 解析链接后往 #nd-list 里塞 -->
+<div class="modal-mask" id="new-sheet" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3>新建下载</h3>
+    <div class="modal-body">
+      <textarea id="nd-text" placeholder="粘贴磁力、视频链接或直链，一行一个" spellcheck="false"></textarea>
+      <div id="nd-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="ghost" id="nd-cancel">取消</button>
+      <button class="primary" id="nd-ok">下载</button>
+    </div>
+  </div>
+</div>
+<!-- 取色面板：设置页强调色和确认框里的字幕颜色共用这一个。
+     必须放在 app.js 之前——脚本是同步执行的，放在后面拿不到这些节点，拖动就绑不上 -->
+<div class="acc-pop" id="acc-pop" hidden>
+  <div class="acc-body">
+    <div class="acc-sv" id="acc-sv">
+      <span class="acc-thumb" id="acc-thumb"></span>
+    </div>
+    <div class="acc-hue" id="acc-hue">
+      <span class="acc-hue-mark" id="acc-hue-mark"></span>
+    </div>
+  </div>
+  <div class="acc-foot">
+    <!-- 色块：点一下复制当前色值 -->
+    <button class="acc-chip" id="acc-chip" type="button" title="点击复制色值"></button>
+    <!-- 色值：点一下变成可输入，能直接敲 #RRGGBB -->
+    <input class="acc-hex" id="acc-hex" type="text" value="#000000" maxlength="7"
+           spellcheck="false" autocomplete="off" title="可以直接输入十六进制色值">
+    <button class="acc-drop" id="acc-drop" type="button" title="吸取屏幕颜色" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5l3 3M12.5 8.5l3 3-7.6 7.6-3.4.8.8-3.4zM13.5 5.5l1.6-1.6a2.1 2.1 0 0 1 3 0l1.5 1.5a2.1 2.1 0 0 1 0 3l-1.6 1.6"/></svg></button>
+  </div>
+</div>
+<script src="legal.js"></script>
+<script src="feedback.js"></script>
+<script src="drawer-audio.js"></script>
+<script src="app.js"></script>
+<script src="window-frame.js"></script>
+</body>
+</html>
