@@ -12,13 +12,14 @@
 
 磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书和轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
-[Apple 芯片安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [Intel 安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[Apple 芯片安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [Intel 安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 简体中文 | [English](README.en.md)
 
 [![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
 ![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
@@ -137,6 +138,15 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 2. 首次打开时，系统会提示「无法验证开发者」（本应用未经过 Apple 公证）。点击「完成」，前往「系统设置 → 隐私与安全性」，在页面下方点击「仍要打开」。此后可正常打开
 3. 如需下载视频平台内容，请安装 ffmpeg：已安装 Homebrew 时，在终端运行 `brew install ffmpeg`
 
+## Windows 版
+
+Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（x64，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
+
+- **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
+- **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
+
+Windows 版基于 Tauri 与 WebView2 开发，延续与 macOS 版一致的界面和核心体验（磁力、种子、ed2k、直链、视频平台、飞书与轻雀文档音视频、百度网盘分享、本机 MCP 及 Chrome / Edge 扩展），并额外提供多网盘直链取链、GitHub / Hugging Face 镜像加速以及本机 Ollama 字幕润色等功能。Windows 版的相关问题与发布节奏由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
+
 ## 浏览器扩展
 
 扩展有两个版本，都支持 Chrome 与 Edge，按需要选择一个即可：
@@ -249,6 +259,7 @@ swift build -c release                # 只编译 App
 
 ## 致谢
 
+- [@cgeek-dev](https://github.com/cgeek-dev)：Windows 版开发与长期维护
 - [Gopeed](https://github.com/GopeedLab/gopeed)（GPL-3.0）：下载内核
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)（Unlicense）：视频平台下载
 - [FFmpeg](https://ffmpeg.org)：音视频合并
