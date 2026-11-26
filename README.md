@@ -1,18 +1,18 @@
-<!-- 搜索关键词：Mac 下载工具, macOS 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, 网页音频下载, 网页音视频嗅探, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, MCP 下载, mac download manager, magnet downloader, torrent client for mac, ed2k client mac, audio sniffer, yt-dlp gui, native macos downloader -->
+<!-- 搜索关键词：下载工具, 全能下载器, Mac 下载工具, macOS 下载器, Windows 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, IDM 替代, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, 网页音频下载, 网页音视频嗅探, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, MCP 下载, download manager, macos download manager, windows download manager, magnet downloader, torrent client, ed2k client, audio sniffer, yt-dlp gui -->
 <div align="center">
 
 <img src="docs/images/icon.png" width="128" alt="闪电全能下载图标">
 
 # 闪电全能下载 · Shandian Download Manager
 
-<strong>快速、全能的原生 macOS 下载工具</strong>
+<strong>快速、全能的开源下载工具（macOS / Windows）</strong>
 
-免费开源，纯 SwiftUI 打造。一个窗口搞定磁力、种子、ed2k、直链、网盘、视频网站与网页音视频侦测，<br>
-多连接高速下载，BT 遇阻时自动换路下完
+免费开源、无广告、轻量原生（macOS 纯 SwiftUI · Windows 基于 Tauri）。<br>
+一个窗口搞定磁力、种子、ed2k、直链、网盘、视频网站与网页音视频侦测，多连接高速下载，BT 卡 0% 自动换路下完
 
 磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书和轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
-[Apple 芯片安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [Intel 安装包](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 简体中文 | [English](README.en.md)
 
@@ -21,16 +21,16 @@
 ![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
-![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
+![SwiftUI & Tauri](https://img.shields.io/badge/SwiftUI%20%7C%20Tauri-native-orange)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <img src="docs/images/screenshot-downloading.png" alt="闪电全能下载：正在下载" width="900">
 
 </div>
 
-闪电全能下载（Shandian Download Manager）是一款面向 Mac 的开源下载管理工具，集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享和视频平台下载。复制链接后按 ⌘V 即可添加。搭配 Chrome / Edge 浏览器扩展，还可批量抓取网页下载链接，侦测和试听网页媒体，并从飞书和轻雀文档中选择可下载的原始音视频。单个附件直接保存，多个附件放进同一个文件夹。
+闪电全能下载（Shandian Download Manager）是一款面向 **macOS 与 Windows** 的开源全能下载工具（macOS 原生版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护），集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享和主流视频平台下载。复制链接后粘贴即可添加；搭配 Chrome / Edge 浏览器扩展，还可批量抓取网页下载链接、侦测和试听网页媒体，并从飞书和轻雀文档中选择可下载的原始音视频。单个附件直接保存，多个附件放进同一个文件夹。
 
-应用基于 SwiftUI 原生开发，下载内核为 [Gopeed](https://github.com/GopeedLab/gopeed) 的定制版本，视频平台下载由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
+macOS 版基于 SwiftUI 原生开发，Windows 版基于 Tauri 与 WebView2 构建。下载内核均为 [Gopeed](https://github.com/GopeedLab/gopeed) 的定制版本，视频平台下载由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
 
 ## 核心亮点
 
@@ -40,7 +40,13 @@
 - <strong>网页链接与媒体侦测</strong>。批量添加当前网页的可下载链接，播放时捕获音视频，支持试听和按需保存
 - <strong>百度网盘分享下载</strong>：粘贴分享链接和提取码，首次授权后可用闪电保存到本机，无需安装百度网盘桌面客户端。下载校验完成后自动清理本次云端转存
 - <strong>冷门任务自动换路</strong>：BT / 磁力卡在 0% 时自动转交本机迅雷或 PikPak 云盘离线，下完自动归位到原保存目录并清理中转副本
-- <strong>原生顺手，支持 AI 接入</strong>：纯 SwiftUI 编写，支持边下边播、定时下载、自动记忆各类保存位置；内置本机 MCP 服务，支持 Claude Code、Codex、Cursor、ChatGPT 桌面版等直接管理下载任务
+- <strong>原生顺手，支持 AI 接入</strong>：macOS 纯 SwiftUI、Windows 基于 Tauri，均支持边下边播、定时下载、自动记忆各类保存位置；内置本机 MCP 服务，支持 Claude Code、Codex、Cursor、ChatGPT 桌面版等直接管理下载任务
+
+<div align="center">
+<img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="760">
+
+<sub>冷门 BT 卡在 0% 时自动换路云盘离线并取回本机（演示动画已加速，实际速度取决于资源和网络）</sub>
+</div>
 
 ## 支持的下载类型
 
@@ -93,11 +99,10 @@
 
 ## 系统要求
 
-- macOS 14 或更新版本
-- Apple 芯片（M 系列）或 Intel 处理器的 Mac，两种芯片分别提供安装包
-- 下载视频平台内容需要 ffmpeg（用于合并音视频，安装方式见下文）
+- **macOS**：macOS 14 或更新版本（分别提供 Apple 芯片与 Intel 安装包）；下载视频平台内容需要 `ffmpeg`
+- **Windows**：Windows 10 / 11（64 位 x64，简体中文界面），由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护，详见下方 [Windows 版](#windows-版)
 
-## 安装
+## 安装（macOS）
 
 ### 方式一：命令行安装（推荐）
 
@@ -212,12 +217,6 @@ Windows 版基于 Tauri 与 WebView2 开发，延续与 macOS 版一致的界面
 | 其他支持 MCP 的工具 | 使用通用的 `mcpServers` 配置 |
 
 ## 云盘离线与自动换路（可选）
-
-<div align="center">
-<img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="760">
-
-<sub>演示动画已加速，数据为示意；实际速度取决于资源和网络</sub>
-</div>
 
 <strong>用途</strong>：部分资源在 BT 网络中几乎无人分享，下载速度长期为 0。此时可自动转交本机迅雷或 PikPak 云盘处理：由云端服务器先完成下载，再拉回本地并清理云端副本。
 

@@ -4,14 +4,14 @@
 
 # Shandian Download Manager
 
-<strong>A fast, all-in-one native macOS download manager.</strong>
+<strong>A fast, all-in-one open-source download manager for macOS &amp; Windows.</strong>
 
-Free, open-source, and built with SwiftUI. One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection —<br>
-fast multi-connection downloads, with automatic route switching when BitTorrent stalls
+Free, open-source, ad-free, and lightweight (native SwiftUI on macOS · Tauri on Windows).<br>
+One window for magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web audio/video detection — fast multi-connection downloads, with automatic route switching when BitTorrent stalls
 
 Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
-[Apple Silicon download](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [Intel download](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows (x64)](#windows-edition) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows (x64)](#windows-edition) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 [简体中文](README.md) | English
 
@@ -20,16 +20,16 @@ Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and 
 ![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
-![SwiftUI](https://img.shields.io/badge/SwiftUI-native-orange?logo=swift)
+![SwiftUI & Tauri](https://img.shields.io/badge/SwiftUI%20%7C%20Tauri-native-orange)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <!-- screenshot --><img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
 
 </div>
 
-Shandian Download Manager (闪电全能下载) is an open-source Mac app for magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms. Copy a link and press ⌘V to add it. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and download original audio and video attachments from Feishu and Qingque Docs. Save one file directly or group multiple originals in one folder.
+Shandian Download Manager (闪电全能下载) is an open-source download manager for **macOS and Windows** (macOS native edition maintained here; Windows edition independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Manage magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms in one window. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and download original audio and video attachments from Feishu and Qingque Docs. Save one file directly or group multiple originals in one folder.
 
-The app is written in SwiftUI and supports both Simplified Chinese and English. Downloads are handled by a patched build of [Gopeed](https://github.com/GopeedLab/gopeed), and video platforms are supported through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+The macOS edition is written natively in SwiftUI (Simplified Chinese & English), and the Windows edition is built with Tauri and WebView2. Both use a patched build of [Gopeed](https://github.com/GopeedLab/gopeed) as the download engine and [yt-dlp](https://github.com/yt-dlp/yt-dlp) for video platforms.
 
 ## Highlights
 
@@ -92,11 +92,10 @@ For Baidu Netdisk shares, bdpan saves a copy in your authorized account's app da
 
 ## Requirements
 
-- macOS 14 or later
-- Apple silicon (M-series) or Intel Mac — a separate package is provided for each
-- ffmpeg for video platforms (used to merge audio and video; see below)
+- **macOS**: macOS 14 or later (separate Apple silicon and Intel builds); `ffmpeg` is required for video platforms
+- **Windows**: Windows 10 / 11 (x64, Simplified Chinese UI), maintained by [@cgeek-dev](https://github.com/cgeek-dev) — see [Windows edition](#windows-edition) below
 
-## Installation
+## Installation (macOS)
 
 ### Option 1: one-line install (recommended)
 

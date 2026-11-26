@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Windows 版问题反馈 / Windows Edition Issues
+    url: https://github.com/cgeek-dev/shandian-download/issues
+    about: Windows 版由 @cgeek-dev 独立维护，请前往 Windows 仓库提交 Bug 或更新相关问题。

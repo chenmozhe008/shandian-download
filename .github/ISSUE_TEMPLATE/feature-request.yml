@@ -1,0 +1,25 @@
+name: 功能建议 / Feature Request
+description: 提出新功能想法、体验改进或新网站适配建议
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 适用平台 / Platform
+      options:
+        - macOS
+        - 通用 / 浏览器扩展
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景 / Use Case
+      placeholder: 你在什么场景下遇到不便，或者希望支持哪个网站 / 功能？
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 期望效果 / Expected Behavior
+      placeholder: 简单说说你希望它怎么工作。
