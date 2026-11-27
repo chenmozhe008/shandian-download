@@ -135,6 +135,16 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 <img src="docs/images/windows-queue.png" alt="Windows download queue: videos, collections, cloud drives and files" width="840">
 </div>
 
+### 5. Batch Downloads from a Cloud Drive
+
+In this Quark Drive example, select two files and click **Download with Shandian** in the toolbar to send both to the queue. Personal drives on Aliyun and UC offer the same entry point with the full Chrome / Edge extension.
+
+<div align="center">
+<img src="docs/images/workflow-cloud-drive-en.gif" alt="Example workflow showing two files selected in Quark Drive and sent to the Shandian download queue" width="760">
+
+<sub>Cloud drive batch-download demonstration with sample files</sub>
+</div>
+
 ---
 
 ## Supported Sources
@@ -154,6 +164,8 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 | Baidu Netdisk shares | Paste share link + access code; authorize official [bdpan](https://github.com/baidu-netdisk/bdpan-storage) once, then save locally with auto cloud cleanup |
 | Aliyun Drive, Quark Drive, UC Drive | Select files in the web drive and click the **Download with Shandian** toolbar button injected by the full extension |
 | Other direct cloud links | Paste direct links directly or send via [LinkSwift](https://github.com/hmjz100/LinkSwift) |
+
+[Watch the cloud drive batch-download demo](#5-batch-downloads-from-a-cloud-drive)
 
 ### Protocols & Open Source
 

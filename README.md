@@ -139,6 +139,16 @@ Windows 版同样支持双语 ASS 样式自定义、合集管理与统一队列�
 <img src="docs/images/windows-queue.png" alt="Windows 版下载队列：视频、合集、网盘与其他文件统一管理" width="840">
 </div>
 
+### 5. 网盘文件批量下载
+
+以夸克个人网盘为例。勾选两个文件，点网页工具栏里的「闪电下载」，两个任务就会出现在闪电队列中。阿里云盘和 UC 网盘的个人网盘页面也支持这个入口，需要安装 Chrome / Edge 完整版扩展。
+
+<div align="center">
+<img src="docs/images/workflow-cloud-drive.gif" alt="示例操作，在夸克个人网盘中勾选两个文件，点击闪电下载后，两项任务进入闪电队列" width="760">
+
+<sub>网盘批量下载操作演示 · 使用示例文件</sub>
+</div>
+
 ---
 
 ## 支持的下载来源
@@ -158,6 +168,8 @@ Windows 版同样支持双语 ASS 样式自定义、合集管理与统一队列�
 | 百度网盘分享 | 粘贴分享链接与提取码，首次授权官方 [bdpan](https://github.com/baidu-netdisk/bdpan-storage) 后直接保存并自动清理云端转存 |
 | 阿里云盘、夸克网盘、UC 网盘 | 在网页版个人网盘勾选文件，点完整版扩展注入的「闪电下载」按钮直下 |
 | 其他网盘直链 | 直接粘贴直链，或配合 [LinkSwift](https://github.com/hmjz100/LinkSwift) 发送 |
+
+[查看网盘批量下载演示](#5-网盘文件批量下载)
 
 ### 通用协议与开源资源
 
