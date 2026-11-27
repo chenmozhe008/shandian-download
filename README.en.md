@@ -30,15 +30,19 @@ Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-resc
 - **Fast by default, even on stalled torrents**: Multi-connection HTTP chunking, 4-way concurrent video fragments, automatic mirror racing for **GitHub & Hugging Face** with failover resume, fresh BitTorrent trackers with a fixed port, and automatic route switching to local Thunder or PikPak cloud offline when a torrent stalls at 0%.
 - **4K video with clean bilingual ASS subtitles**: Automatically saves video and subtitles into a dedicated folder. AI mode re-segments fragmented YouTube captions, keeps terminology consistent across the video, and writes a single styled bilingual `.ass` file ready to play without track conflicts.
 - **Seamless browser extension**: Click once in Chrome or Edge to send videos, cloud drive files, Feishu/Qingque attachments, sniffed web audio (with waveform preview), or bulk page links straight to Shandian.
-- **Native on macOS & Windows + local MCP**: Native SwiftUI on macOS and Tauri on Windows (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Both platforms support multi-connection acceleration, cloud drives, GitHub / Hugging Face mirrors, bilingual ASS subtitles, and auto-sorted libraries; macOS also includes stream-while-downloading and a built-in local MCP server for Claude Code, Codex, Cursor, and ChatGPT Desktop.
+- **Native on macOS & Windows + local MCP**: Native **SwiftUI on macOS** and **Tauri on Windows** (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Both platforms support multi-connection acceleration, cloud drives, GitHub / Hugging Face mirrors, bilingual ASS subtitles, scheduled downloads, one-click updates, and auto-sorted libraries; also supports stream-while-downloading and a built-in local MCP server for Claude Code, Codex, Cursor, and ChatGPT Desktop.
 
 ---
 
 ## Quick Install
 
-### macOS (14 or later)
+### Option 1: Install via an AI Coding Assistant (Recommended)
 
-**Option 1: Command line (recommended)**
+Send this prompt to Claude Code, Codex, Cursor, or any terminal-capable AI assistant:
+
+> Please install Shandian Download Manager (https://github.com/chenmozhe008/shandian-download): on macOS run `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash` in Terminal; on Windows download the latest installer from https://github.com/cgeek-dev/shandian-download/releases/latest. Then guide me step-by-step to install its Chrome/Edge browser extension.
+
+### Option 2: Command Line (macOS)
 
 With Homebrew:
 
@@ -53,31 +57,14 @@ Without Homebrew (auto-detects chip, verifies SHA-256, installs, and avoids the 
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
-**Option 2: Install via an AI coding assistant**
+### Option 3: Manual Download (macOS & Windows)
 
-Send this prompt to Claude Code, Codex, Cursor, or any terminal-capable AI assistant:
-
-> Please install Shandian Download Manager (https://github.com/chenmozhe008/shandian-download) by running `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash` in Terminal, then guide me step-by-step to install its Chrome/Edge browser extension.
-
-<details>
-<summary>Option 3: Manual download</summary>
-
-1. Download the build for your Mac: [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) for M-series chips or [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) for Intel Macs, then drag the app into Applications.
-2. On first launch (open-source build is not notarized), click **Done**, open **System Settings → Privacy & Security**, and click **Open Anyway**.
-3. Install `ffmpeg` (`brew install ffmpeg`) if you download from video sites.
-
-</details>
-
-### Windows (10 / 11 x64)
-
-Independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev) in [`windows/`](windows/):
-
-- **Download**: [Windows Installer (v0.2.23)](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [Portable ZIP](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip) · [All Releases](https://github.com/cgeek-dev/shandian-download/releases/latest)
-- **Docs**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
+- **macOS (14 or later)**: Download [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) for M-series chips or [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) for Intel Macs, then drag the app into Applications. On first launch, click **Done**, open **System Settings → Privacy & Security**, and click **Open Anyway**. Install `ffmpeg` (`brew install ffmpeg`) for video sites.
+- **Windows (10 / 11 x64)**: Download the [Windows Installer (v0.2.23)](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) or [Portable ZIP](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip). See [windows/README.md](windows/README.md) and [windows/CHANGELOG.md](windows/CHANGELOG.md) for details.
 
 ### Chrome / Edge Extension
 
-- **Full version (recommended — unlocks video, cloud drives, docs & sniffing)**: Open **Shandian → Browser Extension…** in the menu bar, click **Install manually**, enable **Developer mode** in your browser, and drag the `BrowserExtension` folder onto the extensions page. Updates automatically with the app.
+- **Full version (recommended — unlocks video, cloud drives, docs & sniffing)**: Open the **Browser Extension** guide inside Shandian, click **Install manually**, enable **Developer mode** in your browser, and drag the `BrowserExtension` folder onto the extensions page. Updates automatically with the app.
 - **Store version (one-click install for direct links & torrents)**: [Chrome Web Store](https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg) · [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei)
 
 | Capability | Full (Recommended) | Store |
@@ -102,7 +89,7 @@ When subtitles are enabled, Shandian creates a dedicated folder for each video. 
 <div align="center">
 <img src="docs/images/subtitle-translation-comparison-en.png" alt="Before and after subtitle processing at 03:31.70: broken auto-captions vs clean bilingual ASS" width="880">
 
-<sub>Real comparison at 03:31.70: overlapping raw captions on the left vs. re-segmented bilingual ASS on the right (<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">sample video</a>)</sub>
+<sub>Real comparison at 03:31.70: overlapping raw captions on the left vs. re-segmented bilingual ASS on the right (<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">sample video</a> · <a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4">watch 14s demo</a>)</sub>
 </div>
 
 - Works with **local Ollama (free & offline)** as well as DeepSeek, Kimi, Qwen, Doubao, GLM, OpenAI, Gemini, and Claude; **Test Connection** fetches the latest model list at zero cost.
@@ -128,7 +115,7 @@ When a magnet or BitTorrent task has no active peers and stalls at 0%, Shandian 
 
 ### 4. Auto-Sorted Library, Stream While Downloading & Windows UI
 
-Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files, with **stream-while-downloading**, ⌘/Shift multi-select, folder drawers, and menu-bar speed monitoring.
+Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files, with **stream-while-downloading**, ⌘/Ctrl + Shift multi-select, folder drawers, and menu-bar / tray speed monitoring.
 
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="Shandian: auto-sorted movie library" width="880">
@@ -138,26 +125,9 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 | :---: | :---: |
 | <img src="docs/images/windows-subtitle-style.png" alt="Windows bilingual ASS style preview" width="340"> | <img src="docs/images/windows-collection.png" alt="Windows collection list and subtitle status" width="500"> |
 
-<details>
-<summary>More demos & screenshots (workflow GIFs, macOS Light/Dark home, Windows queue)</summary>
-
 <div align="center">
-<img src="docs/images/workflow-browser-en.gif" alt="Send a video from the browser extension to Shandian" width="760">
-<br>
-<img src="docs/images/workflow-playback-en.gif" alt="Open local video with bilingual ASS subtitles" width="760">
-<br>
-<a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4">Watch full 14s demo (MP4)</a>
-<br><br>
-<img src="docs/images/macos-home.png" alt="macOS light home screen" width="800">
-<br>
-<img src="docs/images/macos-home-dark.png" alt="macOS dark home screen" width="800">
-<br>
-<img src="docs/images/windows-queue.png" alt="Windows download queue" width="800">
-<br>
-<img src="docs/images/windows-audio-playback.png" alt="Windows audio waveform preview" width="760">
+<img src="docs/images/windows-queue.png" alt="Windows download queue: videos, collections, cloud drives and files" width="840">
 </div>
-
-</details>
 
 ---
 
@@ -165,7 +135,7 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 
 | Category | Sources | How to Add |
 | --- | --- | --- |
-| **Video & Subtitles** | YouTube, Bilibili, X, Weibo, Douban trailers, Xigua, Kuaishou, Vimeo | Copy & paste (`⌘V`) or send via the browser extension; highest quality by default (H.264 / AAC preferred) |
+| **Video & Subtitles** | YouTube, Bilibili, X, Weibo, Douban trailers, Xigua, Kuaishou, Vimeo | Copy & paste or send via the browser extension; highest quality by default (H.264 / AAC preferred) |
 | | Douyin, Xiaohongshu, Xinpianchang | Open the video page and click **Download this video** in the full extension (watermark-free where available) |
 | | WeChat Channels | Paste the share link and follow the prompt to parse via the full extension on a signed-in Tencent Yuanbao page |
 | **Cloud Drives** | Baidu Netdisk shares | Paste share link + access code; authorize official [bdpan](https://github.com/baidu-netdisk/bdpan-storage) once, then save locally with auto cloud cleanup |
@@ -203,24 +173,24 @@ Shandian ships a local-only MCP server so AI tools can add downloads, inspect pr
 
 ## FAQ
 
-- **"Unidentified developer" warning**: Use the one-line installer above, or allow it once in **System Settings → Privacy & Security → Open Anyway**.
+- **macOS "Unidentified developer" warning**: Use the one-line installer above, or allow it once in **System Settings → Privacy & Security → Open Anyway**.
 - **Video has no audio / merge failed**: Install `ffmpeg` (`brew install ffmpeg`).
 - **YouTube / updates / PikPak unreachable**: Enable your system proxy or VPN (Shandian follows system proxy settings automatically).
 - **Cannot control local Thunder**: Enable Shandian under **System Settings → Privacy & Security → Accessibility** (toggle off and on if already enabled).
 - **Change default save folders**: Configure separate folders for torrents, video sites, and other files under **Settings → General**.
 
-<details>
-<summary>Build from source (macOS)</summary>
+---
 
-```bash
-swift build -c release          # Build SwiftUI app
-./script/build_engine.sh        # Build patched Gopeed v1.9.3 engine (requires Go)
-./script/build_app.sh package   # Package dist/闪电全能下载.app
-```
+## Building from Source
 
-The patched engine diff lives in `engine/shandian-gopeed-v1.9.3.patch` (skip re-verification on relaunch, global speed limit, stream-while-downloading, HTTP backoff/retry). Adjust local paths in the build scripts for your machine.
-
-</details>
+- **macOS**:
+  ```bash
+  swift build -c release          # Build SwiftUI app
+  ./script/build_engine.sh        # Build patched Gopeed v1.9.3 engine (requires Go)
+  ./script/build_app.sh package   # Package dist/闪电全能下载.app
+  ```
+  The patched engine diff lives in `engine/shandian-gopeed-v1.9.3.patch` (skip re-verification on relaunch, global speed limit, stream-while-downloading, HTTP backoff/retry). Adjust local paths in the build scripts for your machine.
+- **Windows**: See [windows/README.md](windows/README.md).
 
 ---
 

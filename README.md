@@ -26,21 +26,25 @@
 
 ---
 
-## 下载亮点
+## 主要功能
 
-- **常用资源全覆盖，连难下的都能下（全能）**：除了磁力、BT 种子、ed2k、HTTP 直链，还直接支持 **YouTube、B 站、抖音、小红书（无水印）、微信视频号**，以及 **百度 / 阿里 / 夸克 / UC 四大网盘**、**飞书与轻雀文档里的原始音视频**、**网页播放中隐藏的音视频嗅探**——平时最麻烦的下载场景，一个窗口全解决。
-- **多连接提速，冷门资源不死等（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、**GitHub / Hugging Face** 公开文件自动测速选镜像并在中断时换站续传；磁力每次启动更新公开 tracker，冷门 BT 卡在 0% 时可自动换路本机迅雷或 PikPak 云盘离线，下完取回并清理云端副本。
+- **常用资源全覆盖，连难下的都能下（全能）**：除了磁力、BT 种子、ed2k、HTTP 直链，还支持 **YouTube、B 站、抖音、小红书（无水印）、微信视频号**，以及 **百度 / 阿里 / 夸克 / UC 四大网盘**、**飞书与轻雀文档里的原始音视频**、**网页播放中隐藏的音视频嗅探**——平时最麻烦的下载场景，一个窗口全解决。
+- **多连接提速，冷门资源不死等（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、**GitHub / Hugging Face** 公开文件自动测速优选镜像并在中断时换站续传；磁力每次启动合并最新公开 tracker，冷门 BT 卡在 0% 时可自动换路本机迅雷或 PikPak 云盘离线，下完取回并清理云端副本。
 - **外语视频自动配中英双语字幕**：支持最高 4K 与仅音频，勾选字幕自动建独立文件夹；AI 模式先重排 YouTube 碎片断句并统一全片术语，输出带合理字号比例的 `.ass` 双语字幕，打开直接看，不和原英文轨冲突。
-- **浏览器扩展无缝联动**：搭配 Chrome / Edge 完整版扩展，在网页上点一下就能发给闪电；支持网页音视频实时侦测与波形试听、页面直链批量抓取，以及网盘和飞书 / 轻雀文档的一键批量保存。
-- **macOS 与 Windows 双端原生，内置 MCP**：macOS 使用 SwiftUI 原生开发，Windows 由 [@cgeek-dev](https://github.com/cgeek-dev) 基于 Tauri 独立维护，双端均支持多连接加速、多网盘直下、GitHub / Hugging Face 镜像加速、YouTube 双语 ASS 字幕与自动分类资料库；macOS 另支持边下边播与内置本机 MCP（直接接入 Claude Code、Codex、Cursor、ChatGPT 桌面版）。
+- **浏览器扩展无缝联动**：搭配 Chrome / Edge 完整版扩展，在网页上点一下即可发送到闪电；支持网页音视频实时侦测与波形试听、页面直链批量抓取，以及网盘和飞书 / 轻雀文档的一键批量保存。
+- **双端原生体验 + 本机 MCP**：同时支持 **macOS（SwiftUI 原生）** 与 **Windows（Tauri，由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护）**，均内置自动分类资料库、定时下载、一键更新、多网盘直下与双语 ASS 字幕；还支持边下边播与本机 MCP（可直接接入 Claude Code、Codex、Cursor、ChatGPT 桌面版）。
 
 ---
 
 ## 快速安装
 
-### macOS（14 及以上）
+### 方式一：让 AI 助手帮你装（推荐）
 
-**方式一：命令行安装（推荐）**
+使用 Claude Code、Codex、Cursor、WorkBuddy 等 AI 工具时，直接复制下面这段发给它：
+
+> 请帮我安装「闪电全能下载」（https://github.com/chenmozhe008/shandian-download）：macOS 请在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash`；Windows 请从 https://github.com/cgeek-dev/shandian-download/releases/latest 下载最新安装包。装好后，一步步告诉我怎么在浏览器里装它的扩展。
+
+### 方式二：命令行一键安装（macOS）
 
 已安装 Homebrew 时：
 
@@ -55,31 +59,14 @@ brew install ffmpeg   # 下载视频网站合并音视频所需
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
-**方式二：让 AI 助手帮你装**
+### 方式三：手动下载安装包（macOS & Windows）
 
-使用 Claude Code、Codex、Cursor、WorkBuddy 等 AI 工具时，直接复制下面这段发给它：
-
-> 请帮我安装「闪电全能下载」（https://github.com/chenmozhe008/shandian-download）：在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash`。装好后，一步步告诉我怎么在浏览器里装它的扩展。
-
-<details>
-<summary>方式三：手动下载安装包</summary>
-
-1. 按芯片下载：Apple 芯片（M 系列）选 [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip)，Intel 处理器选 [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip)，解压后拖入「应用程序」。
-2. 首次打开若提示「无法验证开发者」（开源软件未公证），点「完成」后前往「系统设置 → 隐私与安全性」底部点「仍要打开」。
-3. 下载视频网站内容需要 `ffmpeg`（`brew install ffmpeg`）。
-
-</details>
-
-### Windows（10 / 11 x64）
-
-Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护，源码位于 [`windows/`](windows/) 目录：
-
-- **直接下载**：[Windows 安装器（v0.2.23）](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [免安装便携版](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip) · [全部发布](https://github.com/cgeek-dev/shandian-download/releases/latest)
-- **说明文档**：[windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
+- **macOS（14 及以上）**：Apple 芯片（M 系列）下载 [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip)，Intel 处理器下载 [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip)，解压后拖入「应用程序」。首次打开若提示「无法验证开发者」，点「完成」后前往「系统设置 → 隐私与安全性」底部点「仍要打开」；下载视频网站内容需安装 `ffmpeg`（`brew install ffmpeg`）。
+- **Windows（10 / 11 x64）**：下载 [Windows 安装器（v0.2.23）](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) 或 [免安装便携版](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip)，更多说明见 [windows/README.md](windows/README.md) 与 [windows/CHANGELOG.md](windows/CHANGELOG.md)。
 
 ### Chrome / Edge 浏览器扩展
 
-- **完整版（推荐，支持视频、网盘、文档与嗅探）**：打开应用菜单「闪电全能下载 → 浏览器扩展…」，点「手动安装」，在浏览器扩展页开启「开发者模式」后把 `BrowserExtension` 文件夹拖入即可，随应用自动更新。
+- **完整版（推荐，支持视频、网盘、文档与嗅探）**：在应用内打开「浏览器扩展」引导页，点「手动安装」，在浏览器扩展页开启「开发者模式」后把 `BrowserExtension` 文件夹拖入即可，随应用自动更新。
 - **商店版（一键安装，适合直链与种子接管）**：[Chrome 商店](https://chromewebstore.google.com/detail/achpnnoffkoeomkmofbcjpnmifaeanjg) · [Edge 商店](https://microsoftedge.microsoft.com/addons/detail/onnpjcddpnfmaahjjdcibcofebfgopei)
 
 | 能力 | 完整版（推荐） | 商店版 |
@@ -95,7 +82,7 @@ Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护�
 
 ---
 
-## 功能演示
+## 界面与演示
 
 ### 1. 视频下载与双语字幕
 
@@ -104,7 +91,7 @@ Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护�
 <div align="center">
 <img src="docs/images/subtitle-translation-comparison.png" alt="同一帧 03:31.70 字幕处理前后对比：左侧重叠混乱的原始自动字幕，右侧干净规范的中英双语 ASS" width="880">
 
-<sub>同一帧 03:31.70 实测对比：左侧原始自动字幕重叠且混杂标记，右侧为重排断句后的中英双语 ASS（<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">示例视频</a>）</sub>
+<sub>同一帧 03:31.70 实测对比：左侧原始自动字幕重叠且混杂标记，右侧为重排断句后的中英双语 ASS（<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">示例视频</a> · <a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4">观看 14 秒完整操作视频</a>）</sub>
 </div>
 
 - 支持 **本机 Ollama（免费离线）** 及 DeepSeek、Kimi、通义千问、豆包、智谱 GLM、OpenAI、Gemini、Claude 等接口，点「测试连接」可免费拉取最新模型列表。
@@ -130,7 +117,7 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 
 ### 4. 自动分类资料库、边下边播与双端界面
 
-已完成的任务按电影、视频、网盘、其他文件自动归类，支持**边下边播**、⌘/Shift 批量管理与合集文件抽屉；关掉窗口后仍在后台下载，菜单栏实时显示速度。
+已完成的任务按电影、视频、网盘、其他文件自动归类，支持**边下边播**、⌘/Ctrl 与 Shift 批量管理、合集文件抽屉；关掉窗口后仍在后台下载，托盘 / 菜单栏实时显示速度。
 
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="闪电全能下载：自动分类电影资料库" width="880">
@@ -140,26 +127,9 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 | :---: | :---: |
 | <img src="docs/images/windows-subtitle-style.png" alt="Windows 版双语 ASS 样式预览" width="340"> | <img src="docs/images/windows-collection.png" alt="Windows 版合集管理与每集字幕状态" width="500"> |
 
-<details>
-<summary>查看更多演示动图与双端截图（操作动图、macOS 浅/深色首页、Windows 队列）</summary>
-
 <div align="center">
-<img src="docs/images/workflow-browser.gif" alt="浏览器扩展发送到闪电新建视频任务" width="760">
-<br>
-<img src="docs/images/workflow-playback.gif" alt="本地播放器打开视频直接加载中英双语 ASS 字幕" width="760">
-<br>
-<a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4">观看 14 秒完整操作视频（MP4）</a>
-<br><br>
-<img src="docs/images/macos-home.png" alt="macOS 浅色首页" width="800">
-<br>
-<img src="docs/images/macos-home-dark.png" alt="macOS 深色首页" width="800">
-<br>
-<img src="docs/images/windows-queue.png" alt="Windows 下载队列" width="800">
-<br>
-<img src="docs/images/windows-audio-playback.png" alt="Windows 音频波形试听" width="760">
+<img src="docs/images/windows-queue.png" alt="Windows 版下载队列：视频、合集、网盘与其他文件统一管理" width="840">
 </div>
-
-</details>
 
 ---
 
@@ -167,7 +137,7 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 
 | 分类 | 支持来源 | 使用方式 |
 | --- | --- | --- |
-| **视频与字幕** | YouTube、B 站、X、微博、豆瓣预告片、西瓜视频、快手、Vimeo | 复制链接按 ⌘V 或通过扩展发送；默认最高画质（优先 H.264 / AAC） |
+| **视频与字幕** | YouTube、B 站、X、微博、豆瓣预告片、西瓜视频、快手、Vimeo | 复制链接粘贴或通过扩展发送；默认最高画质（优先 H.264 / AAC） |
 | | 抖音、小红书、新片场 | 在浏览器打开视频页，点完整版扩展「下载这个视频」（支持无水印下载） |
 | | 微信视频号 | 粘贴分享链接，按提示在已登录的腾讯元宝页面用完整版扩展下载 |
 | **网盘直下** | 百度网盘分享 | 粘贴分享链接与提取码，首次授权官方 [bdpan](https://github.com/baidu-netdisk/bdpan-storage) 后直接保存并自动清理云端转存 |
@@ -191,7 +161,7 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 
 ---
 
-## 给 AI 工具用（内置本机 MCP）
+## 接入 AI 工具（MCP）
 
 内置本机 MCP 服务（仅在本机运行，支持提交任务、查进度、暂停和继续，**不能删除任务或文件**）。在「设置 → AI 工具」复制配置即可接入：
 
@@ -205,24 +175,24 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 
 ## 常见问题
 
-- **打开提示「无法验证开发者」**：用上方一键脚本安装可自动处理；手动下载请到「系统设置 → 隐私与安全性」底部点「仍要打开」。
-- **视频没有声音或提示合并失败**：未安装 `ffmpeg`，终端运行 `brew install ffmpeg`。
+- **macOS 打开提示「无法验证开发者」**：用上方一键脚本安装可自动处理；手动下载请到「系统设置 → 隐私与安全性」底部点「仍要打开」。
+- **视频没有声音或提示合并失败**：未安装 `ffmpeg`，macOS 终端运行 `brew install ffmpeg`。
 - **YouTube / 检查更新 / PikPak 连不上**：这些服务在境外，请先开启系统代理（闪电会自动跟随）。
 - **控制不了本机迅雷**：在「系统设置 → 隐私与安全性 → 辅助功能」里勾选闪电全能下载（已勾选仍无效时关掉重开一次）。
 - **修改默认保存路径**：在「设置 → 通用」中可按磁力/种子、视频平台、其他文件分别指定保存目录。
 
-<details>
-<summary>从源码构建（macOS）</summary>
+---
 
-```bash
-swift build -c release          # 编译 SwiftUI 应用
-./script/build_engine.sh        # 编译定制版 Gopeed v1.9.3 内核（需 Go 环境）
-./script/build_app.sh package   # 打包为 dist/闪电全能下载.app
-```
+## 从源码构建
 
-下载内核补丁位于 `engine/shandian-gopeed-v1.9.3.patch`（含重启免重校验、全局限速、边下边播、限流退避重试等）。构建脚本中的路径请按本机环境调整。
-
-</details>
+- **macOS**：
+  ```bash
+  swift build -c release          # 编译 SwiftUI 应用
+  ./script/build_engine.sh        # 编译定制版 Gopeed v1.9.3 内核（需 Go 环境）
+  ./script/build_app.sh package   # 打包为 dist/闪电全能下载.app
+  ```
+  下载内核补丁位于 `engine/shandian-gopeed-v1.9.3.patch`（含重启免重校验、全局限速、边下边播、限流退避重试等）。构建脚本中的路径请按本机环境调整。
+- **Windows**：详见 [windows/README.md](windows/README.md)。
 
 ---
 
