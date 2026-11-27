@@ -8,7 +8,7 @@
 
 Download, resume, and organize video, bilingual subtitles, cloud files, document attachments, torrents, ed2k links, and large files.
 
-[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [Windows (x64)](#windows-edition) · [Video & subtitles](#video-and-subtitles) · [Cloud drive downloads](#cloud-drive-downloads) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [Windows download (x64)](https://github.com/cgeek-dev/shandian-download/releases/latest) · [Video & subtitles](#video-and-subtitles) · [Cloud drive downloads](#cloud-drive-downloads) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 [简体中文](README.md) | English
 
@@ -18,23 +18,92 @@ Download, resume, and organize video, bilingual subtitles, cloud files, document
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
-<!-- screenshot --><img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
+<img src="docs/images/demo-download-en.gif" alt="Browser download, 720p selection, optional AI translation, and bilingual local playback" width="900">
+
+<sub>25-second macOS workflow demo with simulated interactions and sample data. Waiting time is condensed.</sub>
+
+[HD video (MP4)](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/demo-download-en.mp4)
 
 </div>
 
-Paste a link or send a download directly from Chrome or Edge. Choose video quality and subtitle handling per task, queue files from cloud drives, and save Feishu and Qingque document attachments with their original filenames. Large HTTP downloads can use parallel connections and resume. Public files from GitHub and Hugging Face can be routed through tested mirrors.
-
 The macOS edition is maintained in this repository (Simplified Chinese & English), while the Windows edition is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev). Downloads are powered by a customized [Gopeed](https://github.com/GopeedLab/gopeed) engine, with video platform support from [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
-## Highlights
+## Video and subtitles
 
-- <strong>Unified download management</strong>: Magnet links, torrents, ed2k, direct links, cloud drive shares, and video sites in one window, with clipboard detection and browser download takeover
-- <strong>Multi-connection acceleration</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and per-domain proxy routing
-- <strong>Document media downloads</strong>: Scan Feishu and Qingque Docs for original audio and video attachments, select what you need, and keep original filenames (multiple items save into one folder)
-- <strong>Web link &amp; media capture</strong>: Batch-extract downloadable links from web pages, or capture playing audio and video with waveform preview and selective saving
-- <strong>Direct Baidu Netdisk share downloads</strong>: Paste a share link and access code; after initial authorization, save directly to your computer without installing the Baidu Netdisk desktop client, with automatic cloud transfer cleanup once verified
-- <strong>Automatic route switching for stalled torrents</strong>: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back and clean up temporary copies
-- <strong>Lightweight &amp; MCP-ready</strong>: Stream while downloading, schedule download hours, and remember save folders by category; includes a built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
+On macOS, YouTube downloads let you choose video quality, save only the audio, and decide whether to download subtitles. The full Chrome / Edge extension can send a YouTube video to Shandian. Keep the new-task confirmation enabled to choose 720p and subtitle handling for that download.
+
+| Option | Result |
+| --- | --- |
+| Original subtitles | Downloads an available source-language track. Optional local cleanup uses no AI |
+| AI translation into Chinese | Generates styled bilingual ASS or Simplified Chinese SRT, depending on your settings |
+
+Use local Ollama or a configured API. Local processing time depends on the model and your computer. Selecting an online API sends the subtitle text to that provider and may incur usage charges. A subtitle failure leaves the downloaded video available. Formats and subtitle tracks depend on what YouTube makes available.
+
+<details>
+<summary>See the macOS home screen</summary>
+
+<div align="center">
+<img src="docs/images/macos-home.png" alt="Shandian 0.22.8 for macOS showing its common download sources" width="840">
+
+<sub>macOS idle page and its browser extension workflow</sub>
+</div>
+
+<img src="docs/images/macos-home-dark.png" alt="Shandian home in dark mode" width="840">
+
+</details>
+
+## Cloud drive downloads
+
+| Source | macOS workflow |
+| --- | --- |
+| Baidu Netdisk shares | Paste the share link and access code. Install and authorize Baidu’s official bdpan tool first. Shandian clears its temporary cloud copy after verifying the downloaded files |
+| Aliyun Drive | Use the **full Chrome / Edge extension 1.12.1**. Select files in your own web drive and click Download with Shandian. Save shares to your own drive first |
+| Quark Drive and UC Drive | Select files after signing in and use the same extension. Share-page downloads depend on permissions. If the provider requires it, save the files to your own drive first |
+| Existing direct links | Paste the HTTP or HTTPS download URL, or send it with a supported browser tool |
+
+Download permissions, available space, and transfer requirements depend on the provider. Baidu prevents saving your own shares back to the same account. See the [Windows edition](#windows-edition) for its separate cloud drive workflows.
+
+## Windows edition
+
+The Windows edition (Windows 10 / 11, x64, Simplified Chinese UI) is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev), with its source code hosted in [`windows/`](windows/).
+
+- **Download**: [Latest Windows Release](https://github.com/cgeek-dev/shandian-download/releases/latest) (installer & portable builds, with built-in auto-update)
+- **Docs & Changelog**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
+
+Windows **0.2.23** has its own download queue, collection management, and cloud drive integrations. Choose subtitle languages and formats for YouTube tasks, and use local Ollama for proofreading or translation. Preview bilingual ASS subtitles and adjust typeface, size, outline, background, or position.
+
+| Bilingual ASS style preview | Collection and subtitle status |
+| --- | --- |
+| <img src="docs/images/windows-subtitle-style.png" alt="Windows bilingual subtitle preview with typeface and outline settings" width="340"> | <img src="docs/images/windows-collection.png" alt="Windows collection showing bilingual subtitle status for individual episodes" width="520"> |
+
+<details>
+<summary>Download queue and waveform preview</summary>
+
+<div align="center">
+<img src="docs/images/windows-queue.png" alt="Shandian for Windows download queue with YouTube subtitle progress and cloud files" width="840">
+
+<sub>Windows download queue for videos, collections, cloud files, and direct links</sub>
+</div>
+
+<img src="docs/images/windows-audio-playback.png" alt="Windows waveform playback of a downloaded audio file" width="760">
+
+</details>
+
+Windows screenshots come from [@cgeek-dev’s Windows 0.2.23 release source](https://github.com/cgeek-dev/shandian-download/tree/v0.2.23-windows/docs/images). Windows releases and issue reports are maintained in that project.
+
+## Capture media and files from web pages
+
+- **Save a playing clip or track.** In the full Chrome / Edge extension, start media detection, then play the page. Preview detected audio with the waveform player and save selected results.
+- **Save original document attachments.** Scan a Feishu or Qingque document, select the audio and video files, and save them to one folder with their original names. Feishu requires its official CLI authorization.
+- **Queue multiple files.** Scan a web page for download links, select just the files you need, and send them to Shandian in a single batch.
+
+## Recover a stalled torrent
+
+If a BT or magnet download stays at 0%, Shandian can hand it to a configured alternative and bring the completed file back to your Mac. See the offline-download settings for requirements.
+
+<img src="docs/images/demo-rescue.gif" alt="A stalled BT task switches to cloud offline downloading and returns to the Mac" width="760">
+
+<sub>Simulated workflow, sped up. Availability and speed depend on the torrent and the configured service.</sub>
 
 ## Supported sources
 
@@ -57,34 +126,6 @@ The macOS edition is maintained in this repository (Simplified Chinese & English
 
 Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
 
-## Video and subtitles
-
-On macOS, YouTube downloads let you choose video quality, save only the audio, and decide whether to download subtitles. When subtitles are enabled, choose how each task handles them:
-
-| Option | Result |
-| --- | --- |
-| Original subtitles | Downloads an available source-language track. Optional local cleanup uses no AI |
-| AI translation into Chinese | Generates styled bilingual ASS or Simplified Chinese SRT, depending on your settings |
-
-Use local Ollama or a configured API. Local processing time depends on the model and your computer. Selecting an online API sends the subtitle text to that provider and may incur usage charges. A subtitle failure leaves the downloaded video available. Formats and subtitle tracks depend on what YouTube makes available.
-
-<div align="center">
-<img src="docs/images/macos-home.png" alt="Shandian 0.22.8 for macOS showing its common download sources" width="840">
-
-<sub>macOS idle page and its browser extension workflow</sub>
-</div>
-
-## Cloud drive downloads
-
-| Source | macOS workflow |
-| --- | --- |
-| Baidu Netdisk shares | Paste the share link and access code. Install and authorize Baidu’s official bdpan tool first. Shandian clears its temporary cloud copy after verifying the downloaded files |
-| Aliyun Drive | Use the **full Chrome / Edge extension 1.12.1**. Select files in your own web drive and click Download with Shandian. Save shares to your own drive first |
-| Quark Drive and UC Drive | Select files after signing in and use the same extension. Share-page downloads depend on permissions. If the provider requires it, save the files to your own drive first |
-| Existing direct links | Paste the HTTP or HTTPS download URL, or send it with a supported browser tool |
-
-Download permissions, available space, and transfer requirements depend on the provider. Baidu prevents saving your own shares back to the same account. See the [Windows edition](#windows-edition) for its separate cloud drive workflows.
-
 ## Performance
 
 - <strong>Fast magnet start</strong>: fresh trackers are merged from public lists on every launch, and a fixed BT listening port makes it easier for peers to connect. In tests with public-domain films, magnet downloads started within 5–18 seconds
@@ -93,9 +134,11 @@ Download permissions, available space, and transfer requirements depend on the p
 - <strong>Cloud offline download (optional)</strong>: resources with no active seeders can be fetched by PikPak's servers first, then pulled down from the cloud. Directories with 500 or more entries or a paginated response are not pulled until their complete contents can be confirmed; cloud folders are retained
 - <strong>Per-domain proxy routing</strong>: follows the system proxy setting — overseas sites go through the proxy, while mainland China sites and BT traffic connect directly
 
+- **Public GitHub / Hugging Face files** can use mirror speed tests and switch mirrors if a download stalls.
+
 > Figures above were measured on the author's network. Actual speed depends on network conditions and resource availability.
 
-## Features
+## Download management and library
 
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="Shandian: movie library" width="900">
@@ -147,36 +190,6 @@ The script downloads the latest release, checks its SHA-256 when provided by Git
 Controlling Thunder automatically requires Accessibility permission: allow Shandian in System Settings → Privacy & Security → Accessibility. If it is already on, turn it off and on again.
 
 Updates come from GitHub, and PikPak and some video sites are hosted overseas. In regions where they are blocked, you need a VPN or proxy; the app shows a message when it can't reach them.
-
-## Windows edition
-
-The Windows edition (Windows 10 / 11, x64, Simplified Chinese UI) is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev), with its source code hosted in [`windows/`](windows/).
-
-- **Download**: [Latest Windows Release](https://github.com/cgeek-dev/shandian-download/releases/latest) (installer & portable builds, with built-in auto-update)
-- **Docs & Changelog**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
-
-Windows **0.2.23** has its own download queue, collection management, and cloud drive integrations. Choose subtitle languages and formats for YouTube tasks, and use local Ollama for proofreading or translation. Preview bilingual ASS subtitles and adjust typeface, size, outline, background, or position.
-
-<div align="center">
-<img src="docs/images/windows-queue.png" alt="Shandian for Windows download queue with YouTube subtitle progress and cloud files" width="840">
-
-<sub>Windows download queue for videos, collections, cloud files, and direct links</sub>
-</div>
-
-| Collection and subtitle status | Bilingual ASS style preview |
-| --- | --- |
-| <img src="docs/images/windows-collection.png" alt="Windows collection showing bilingual subtitle status for individual episodes" width="520"> | <img src="docs/images/windows-subtitle-style.png" alt="Windows bilingual subtitle preview with typeface and outline settings" width="340"> |
-
-<details>
-<summary>Windows waveform preview and macOS dark mode</summary>
-
-<img src="docs/images/windows-audio-playback.png" alt="Windows waveform playback of a downloaded audio file" width="760">
-
-<img src="docs/images/macos-home-dark.png" alt="macOS idle page in dark mode" width="760">
-
-</details>
-
-Windows screenshots come from [@cgeek-dev’s Windows 0.2.23 release source](https://github.com/cgeek-dev/shandian-download/tree/v0.2.23-windows/docs/images). Windows releases and issue reports are maintained in that project.
 
 ## Browser extension
 

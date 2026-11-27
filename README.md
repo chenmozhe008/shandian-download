@@ -9,7 +9,7 @@
 
 从网页视频、双语字幕、网盘和文档附件，到磁力、BT、ed2k 和大文件直链，统一下载、续传和归档。
 
-[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [Windows 版（x64）](#windows-版) · [视频与字幕](#视频与字幕) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [下载 Windows 版（x64）](https://github.com/cgeek-dev/shandian-download/releases/latest) · [视频与字幕](#视频与字幕) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 简体中文 | [English](README.en.md)
 
@@ -19,29 +19,92 @@
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
-<img src="docs/images/screenshot-downloading.png" alt="闪电全能下载：正在下载" width="900">
+<img src="docs/images/demo-download.gif" alt="浏览器发起下载，选 720P 和字幕，最后打开本地双语视频" width="900">
+
+<sub>25 秒 macOS 流程演示。使用模拟操作和示例数据，等待过程已加速。</sub>
+
+[高清演示视频（MP4）](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/demo-download.mp4)
 
 </div>
-
-把链接发给闪电，或者用 Chrome / Edge 扩展在网页上直接发起下载。视频按任务选画质和字幕，网盘文件可成批交给下载列表，飞书与轻雀附件可保留原名保存。大文件直链支持多连接与断点续传，GitHub 和 Hugging Face 公开文件可测速切换镜像。
 
 macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护。下载内核基于定制版 [Gopeed](https://github.com/GopeedLab/gopeed)，视频平台解析由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
 
-## 主要功能
+## 视频与字幕
 
-- <strong>统一管理多种下载来源</strong>：支持磁力、种子、ed2k、HTTP 直链、网盘分享与主流视频网站；剪贴板自动识别链接，浏览器扩展自动接管网页下载
-- <strong>多连接并行加速</strong>：HTTP 大文件自动分段并行、视频支持 4 路分片并发、磁力自动合并最新公开 tracker 并固定端口，按域名分流系统代理
-- <strong>文档音视频批量保存</strong>：扫描飞书与轻雀文档中的原始音视频附件，按需勾选并保留原文件名；多选时自动归入同一文件夹
-- <strong>网页链接抓取与媒体侦测</strong>：批量提取当前页面的可下载链接，或在播放网页音视频时实时捕获，支持波形试听与按需保存
-- <strong>百度网盘分享直接下载</strong>：粘贴分享链接与提取码，完成首次授权后即可直接保存至本地，无需安装百度网盘客户端；文件校验完成后自动清理云端临时转存
-- <strong>冷门 BT 自动换路</strong>：BT 或磁力任务长期无速度时，自动转交本机迅雷或 PikPak 云盘离线下载，取回本地后自动归位并清理云端副本
-- <strong>轻量高效，内置 MCP</strong>：支持边下边播、定时下载与按类型记忆保存目录；内置本机 MCP 服务，可供 Claude Code、Codex、Cursor、ChatGPT 桌面版等工具直接管理下载任务
+macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取字幕。用 Chrome / Edge 完整版扩展可把 YouTube 视频交给闪电。保留新建任务确认窗口，就能逐条选择 720P 和字幕处理方式。
+
+| 选项 | 结果 |
+| --- | --- |
+| 只下载原字幕 | 默认选项。优先使用可用的源语言字幕，支持本地结构修整，无需 AI |
+| AI 翻译成中文 | 按设置生成中外双语 ASS 或简体中文 SRT，供播放器加载或剪辑使用 |
+
+可使用本机 Ollama 或已配置的 API。在本机运行时，速度取决于模型和电脑性能。选在线 API 时，字幕文本才会发送给对应服务商，可能消耗额度或产生费用。字幕不可用或处理失败时，已保存的视频仍可打开。YouTube 可用画质和字幕轨由平台决定。
+
+<details>
+<summary>查看 macOS 首页</summary>
 
 <div align="center">
-<img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="760">
+<img src="docs/images/macos-home.png" alt="闪电全能下载 macOS 0.22.8 空闲首页，展示视频与字幕、直链、网盘和文档来源" width="840">
 
-<sub>冷门 BT 卡在 0% 时自动换路云盘离线并取回本机（演示动画已加速，实际速度取决于资源和网络）</sub>
+<sub>macOS 空闲首页 · 浏览器扩展发起下载，闪电统一管理</sub>
 </div>
+
+<img src="docs/images/macos-home-dark.png" alt="闪电全能下载 macOS 深色首页" width="840">
+
+</details>
+
+## 网盘下载
+
+| 来源 | macOS 使用方式 |
+| --- | --- |
+| 百度网盘分享 | 粘贴链接与提取码，首次按提示安装并授权百度官方 bdpan。下载校验完成后自动清理本次云端临时转存 |
+| 阿里云盘 | 用 Chrome / Edge **完整版扩展 1.12.1**，在个人网盘勾选文件后点「闪电下载」。分享先保存到自己的网盘 |
+| 夸克网盘、UC 网盘 | 用同一完整版扩展，在已登录的网盘中勾选下载。分享页能否直下取决于权限，页面要求保存时先转存 |
+| 已获取的网盘直链 | 可直接粘贴 HTTP / HTTPS 下载链接，也可通过支持的工具发给闪电 |
+
+下载权限、可用空间和转存条件取决于网盘服务。百度不允许把自己发出的分享转存回同一账号，可到个人网盘找到原文件。[Windows 版](#windows-版)有独立的网盘解析和账号流程，详见其使用说明。
+
+## Windows 版
+
+Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（64 位，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
+
+- **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
+- **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
+
+Windows **0.2.23** 支持独立的下载队列、合集管理和多网盘解析。YouTube 任务可选择字幕语言和格式，以本机 Ollama 校对或翻译。双语 ASS 可预览和调整字体、字号、描边、背景及位置，合集内也能查看每集的字幕状态。
+
+| 中英双语 ASS 样式预览 | 合集与字幕状态 |
+| --- | --- |
+| <img src="docs/images/windows-subtitle-style.png" alt="Windows 版中英字幕样式预览和字体描边设置" width="340"> | <img src="docs/images/windows-collection.png" alt="Windows 合集文件列表及每集的中英字幕状态" width="520"> |
+
+<details>
+<summary>查看 Windows 下载队列与波形试听</summary>
+
+<div align="center">
+<img src="docs/images/windows-queue.png" alt="Windows 版下载队列，展示 YouTube 字幕进度与网盘任务" width="840">
+
+<sub>Windows 下载队列 · 视频、合集、网盘和其他文件集中管理</sub>
+</div>
+
+<img src="docs/images/windows-audio-playback.png" alt="Windows 已完成音频文件的波形试听" width="760">
+
+</details>
+
+Windows 界面图来自 [@cgeek-dev 的 Windows 0.2.23 发布源码](https://github.com/cgeek-dev/shandian-download/tree/v0.2.23-windows/docs/images)。Windows 的发布和问题反馈由该项目维护。
+
+## 侦测网页音视频与批量链接
+
+- **播放一下，侦测并试听。** 在 Chrome / Edge 完整版扩展中开启音视频侦测，再播放网页中的内容。侦测到的录音可以看波形、先试听，再按需保存。
+- **勾选文档附件，保留原名。** 扫描飞书或轻雀文档后，可勾选原始音视频，多选时统一存到同一个文件夹。飞书首次需要官方 CLI 授权。
+- **一页链接，批量交给闪电。** 用扩展抓取页面里的可下载链接，勾选所需文件后一次加入任务列表。
+
+## BT 卡在 0% 时自动换路
+
+BT 或磁力任务长期无进展时，可交给已配置的备用通道。备用通道下完后，闪电再把文件取回本机。具体条件见[云盘离线与自动换路](#云盘离线与自动换路可选)。
+
+<img src="docs/images/demo-rescue.gif" alt="卡在 0% 的 BT 任务切换到云端离线，完成后取回本机" width="760">
+
+<sub>操作模拟，过程已加速。能否下载及实际速度取决于资源和所用服务。</sub>
 
 ## 支持的下载类型
 
@@ -64,34 +127,6 @@ macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cge
 
 常规视频站默认选择最高可用画质，优先 H.264 与 AAC；抖音、小红书支持下载无平台水印的视频。视频号使用元宝返回的可用视频，暂不提供画质和字幕选择，需要登录腾讯元宝；视频号分享链接只在用户点击解析后提交给腾讯。具体平台、视频和画质能否下载取决于网站及账号权限。
 
-## 视频与字幕
-
-macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取字幕。勾选字幕后，每条任务可独立选择：
-
-| 选项 | 结果 |
-| --- | --- |
-| 只下载原字幕 | 默认选项。优先使用可用的源语言字幕，支持本地结构修整，无需 AI |
-| AI 翻译成中文 | 按设置生成中外双语 ASS 或简体中文 SRT，供播放器加载或剪辑使用 |
-
-可使用本机 Ollama 或已配置的 API。在本机运行时，速度取决于模型和电脑性能。选在线 API 时，字幕文本才会发送给对应服务商，可能消耗额度或产生费用。字幕不可用或处理失败时，已保存的视频仍可打开。YouTube 可用画质和字幕轨由平台决定。
-
-<div align="center">
-<img src="docs/images/macos-home.png" alt="闪电全能下载 macOS 0.22.8 空闲首页，展示视频与字幕、直链、网盘和文档来源" width="840">
-
-<sub>macOS 空闲首页 · 浏览器扩展发起下载，闪电统一管理</sub>
-</div>
-
-## 网盘下载
-
-| 来源 | macOS 使用方式 |
-| --- | --- |
-| 百度网盘分享 | 粘贴链接与提取码，首次按提示安装并授权百度官方 bdpan。下载校验完成后自动清理本次云端临时转存 |
-| 阿里云盘 | 用 Chrome / Edge **完整版扩展 1.12.1**，在个人网盘勾选文件后点「闪电下载」。分享先保存到自己的网盘 |
-| 夸克网盘、UC 网盘 | 用同一完整版扩展，在已登录的网盘中勾选下载。分享页能否直下取决于权限，页面要求保存时先转存 |
-| 已获取的网盘直链 | 可直接粘贴 HTTP / HTTPS 下载链接，也可通过支持的工具发给闪电 |
-
-下载权限、可用空间和转存条件取决于网盘服务。百度不允许把自己发出的分享转存回同一账号，可到个人网盘找到原文件。[Windows 版](#windows-版)有独立的网盘解析和账号流程，详见其使用说明。
-
 ## 下载性能
 
 - <strong>磁力任务启动快</strong>：每次启动时从公开列表合并获取最新 tracker，并固定 BT 监听端口以便其他节点连入。使用公开片源测试，磁力链接 5–18 秒开始下载
@@ -100,9 +135,11 @@ macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取�
 - <strong>冷门资源云端离线（可选）</strong>：BT 网络中无人分享的资源，可自动交由 PikPak 服务器先行下载，取回本地后清理云端副本
 - <strong>按域名分流代理</strong>：读取系统代理设置，境外站点经代理下载，国内站点与 BT 任务直连，无需手动切换
 
+- **GitHub / Hugging Face 公开文件**可测速选择镜像，下载中断时可改用其他镜像尝试续传。
+
 > 以上数据为作者在本机网络环境下的实测结果，实际速度取决于网络条件与资源热度。
 
-## 功能特性
+## 下载管理与资料库
 
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="闪电全能下载：电影资料库" width="900">
@@ -165,36 +202,6 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 1. 在 [Releases](../../releases) 按芯片下载安装包：Apple 芯片（M 系列）选 `Shandian-版本号-AppleSilicon.zip`，Intel 处理器选 `Shandian-版本号-Intel.zip`（不确定时点屏幕左上角苹果菜单 →「关于本机」，看「芯片」或「处理器」一栏）。解压后将应用拖入「应用程序」
 2. 首次打开时，系统会提示「无法验证开发者」（本应用未经过 Apple 公证）。点击「完成」，前往「系统设置 → 隐私与安全性」，在页面下方点击「仍要打开」。此后可正常打开
 3. 如需下载视频平台内容，请安装 ffmpeg：已安装 Homebrew 时，在终端运行 `brew install ffmpeg`
-
-## Windows 版
-
-Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（64 位，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
-
-- **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
-- **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
-
-Windows **0.2.23** 支持独立的下载队列、合集管理和多网盘解析。YouTube 任务可选择字幕语言和格式，以本机 Ollama 校对或翻译。双语 ASS 可预览和调整字体、字号、描边、背景及位置，合集内也能查看每集的字幕状态。
-
-<div align="center">
-<img src="docs/images/windows-queue.png" alt="Windows 版下载队列，展示 YouTube 字幕进度与网盘任务" width="840">
-
-<sub>Windows 下载队列 · 视频、合集、网盘和其他文件集中管理</sub>
-</div>
-
-| 合集与字幕状态 | 中英双语 ASS 样式预览 |
-| --- | --- |
-| <img src="docs/images/windows-collection.png" alt="Windows 合集文件列表及每集的中英字幕状态" width="520"> | <img src="docs/images/windows-subtitle-style.png" alt="Windows 版中英字幕样式预览和字体描边设置" width="340"> |
-
-<details>
-<summary>查看 Windows 波形试听和 macOS 深色首页</summary>
-
-<img src="docs/images/windows-audio-playback.png" alt="Windows 已完成音频文件的波形试听" width="760">
-
-<img src="docs/images/macos-home-dark.png" alt="macOS 深色模式下的下载来源介绍" width="760">
-
-</details>
-
-Windows 界面图来自 [@cgeek-dev 的 Windows 0.2.23 发布源码](https://github.com/cgeek-dev/shandian-download/tree/v0.2.23-windows/docs/images)。Windows 的发布和问题反馈由该项目维护。
 
 ## 浏览器扩展
 
