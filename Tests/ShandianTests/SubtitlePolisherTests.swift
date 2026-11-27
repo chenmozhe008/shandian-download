@@ -3,6 +3,24 @@ import Testing
 @testable import Shandian
 
 struct SubtitlePolisherTests {
+    @Test func stripsSpeakerMarkersWithoutRemovingOperatorsFromSubtitleText() {
+        let source = """
+        WEBVTT
+
+        00:00:01.000 --> 00:00:03.000
+        &gt;&gt; Welcome to the video.
+
+        00:00:04.000 --> 00:00:07.000
+        >> Shift with x >> 1 and compare x > 1.
+
+        00:00:08.000 --> 00:00:10.000
+        ＞＞ 这一句切换说话人。
+        """
+        let cues = SubtitlePolisher.parse(source)
+        #expect(cues.map(\.text) == ["Welcome to the video.", "Shift with x >> 1 and compare x > 1.", "这一句切换说话人。"])
+        #expect(cues.map(\.startMs) == [1000, 4000, 8000])
+    }
+
     @Test func rejectsMalformedAndOverflowTimestampsWithoutCrashing() {
         #expect(SubtitlePolisher.parseTimestamp("") == nil)
         #expect(SubtitlePolisher.parseTimestamp("00:00:") == nil)

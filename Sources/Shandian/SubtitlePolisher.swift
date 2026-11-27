@@ -468,6 +468,7 @@ enum SubtitlePolisher {
             .replacingOccurrences(of: "&quot;", with: "\"")
         return out.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^(?:>{2,}|＞{2,})(?: +|$)"#, with: "", options: .regularExpression)
     }
 
     /// 解析 VTT 或 SRT 字幕为 Cue 数组。

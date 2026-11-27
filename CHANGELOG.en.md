@@ -12,7 +12,7 @@
 - Add GitHub API rate-limit backoff and `releases.atom` fallback for update checks.
 - Refresh the idle download page with browser-extension guidance and a list of common sources that adapts to the window width.
 - Fix published notes being duplicated as development notes when both builds have the same version number.
-- Use the current system proxy for YouTube and refresh media addresses after a temporary connection failure or HTTP 403. AI subtitle tasks show progress and explain local processing time or possible API charges.
+- Use the current system proxy for YouTube and refresh media addresses after a temporary connection failure or HTTP 403. AI subtitle tasks show progress and explain local processing time or possible API charges. Subtitle cleanup removes leading speaker-change markers from YouTube captions.
 
 ## 0.22.6 · 2026-11-23
 
