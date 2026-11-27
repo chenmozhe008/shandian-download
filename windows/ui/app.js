@@ -893,13 +893,18 @@ function updateTaskStatus(el, value, spin) {
   }
 }
 
+function taskKind(t) {
+  return (t.kind || "") + (String(t.id).startsWith("xl:") ? " · 迅雷" : "");
+}
+
 function rowHtml(t) {
   const v = rowVals(t);
   const q = state.query.trim().toLowerCase();
   const err = t.shandianError || "";
   const paused = t.status === "pause";
   const isErr = t.status === "error";
-  const kind = (t.kind || "") + (String(t.id).startsWith("xl:") ? " · 迅雷" : "");
+  const kind = taskKind(t);
+  const origin = t.originLabel || kind;
   const ownShare = isOwnBaiduShare(t);
   const actBtn = t.creating ? "" :
     t.status === "done"
@@ -925,7 +930,7 @@ function rowHtml(t) {
     <div class="task-body">
       <div class="task-name" title="${escapeHtml(v.name)}">${highlightName(v.name, q)}</div>
       <div class="task-meta">
-        ${kind ? `<span class="kind">${escapeHtml(kind)}</span>` : ""}
+        ${origin ? `<span class="kind">${escapeHtml(origin)}</span>` : ""}
         ${metaBody}
         ${hasFileList(t) ? `<button class="files-chip" data-act="files" data-tip="${isBaiduFileTask(t) ? "查看文件下载进度" : "查看和选择里面的文件"}"><span>${escapeHtml(fileChipText(t))}</span><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg></button>` : ""}
         ${t.collectionFiles ? `<span class="gone collection-missing" data-tip="在文件抽屉里查看缺失的子项"${t.collectionMissing ? "" : " hidden"}>${t.collectionMissing} 项缺失</span>` : missing ? `<span class="gone" data-tip="原路径未找到文件，可能已移动、重命名或删除。">文件不在原位置</span>` : ""}
@@ -1274,6 +1279,32 @@ function setSearchCount(n) {
   el.textContent = n == null ? "" : `${n} 项匹配`;
 }
 
+function downloadEmptyMarkup(watchClipboard) {
+  const linkHint = watchClipboard
+    ? "复制链接自动检测"
+    : "复制链接后按 Ctrl+N 新建下载";
+  return `<section class="download-empty" aria-labelledby="download-empty-title">
+  <svg class="download-empty-outline" aria-hidden="true" focusable="false"><rect x="0.6" y="0.6" rx="21.4"/></svg>
+  <svg class="download-empty-glyph" aria-hidden="true" viewBox="0 0 424 680"><use href="#i-bolt"/></svg>
+  <h2 id="download-empty-title">开始下载</h2>
+  <p class="download-empty-hint">网页闪电按钮 · 扩展侦测 · ${linkHint} · 拖入种子</p>
+  <ul class="download-empty-sources" aria-label="下载来源与入口">
+    <li>直链</li><li>磁力</li><li>种子</li>
+    <li title="支持合集选集和可用字幕">哔哩哔哩</li>
+    <li title="支持合集选集和可用字幕">YouTube</li>
+    <li>GitHub</li><li>Hugging Face</li><li>Vimeo</li><li>Pixabay</li>
+    <li title="粘贴百度网盘分享链接">百度分享</li>
+    <li title="在夸克、阿里云盘、UC、123 云盘等网页用扩展选择文件">扩展选文件</li>
+    <li>网页音视频</li>
+    <li title="通过扩展查找网页提供的 VTT、SRT 等字幕文件">字幕文件</li>
+    <li title="关联 PikPak 后可离线中转">PikPak 离线</li>
+    <li>爱给</li><li>轻雀文档</li><li>飞书文档</li><li>抖音</li>
+    <li>小红书</li><li>微信视频号</li><li>快手</li><li>微博</li>
+    <li>新片场</li><li>ed2k</li>
+  </ul>
+</section>`;
+}
+
 function renderTasks() {
   if (rowDragging) return; // 拖动中别重排，松手再画
   const box = $("task-list");
@@ -1315,13 +1346,24 @@ function renderTasks() {
   // 空状态要在速度卡下方的剩余高度里垂直居中，靠 .scroll-empty 把列表区拉满
   box.closest(".scroll")?.classList.toggle("scroll-empty", list.length === 0);
   // 大速度卡片只在正在下载页显示，其它页面在标题旁显示紧凑速度。
-  $("hero").hidden = state.view !== "all";
+  const filtered = filterState.sources.size || filterState.types.size;
+  const downloadEmpty = !list.length && state.view === "all" && !q && !filtered;
+  $("hero").hidden = downloadEmpty || (state.view !== "all");
   syncSpeedVisibility(state.tasks.some(t=>ACTIVE.has(t.status)));
 
   if (!list.length) {
+    if (downloadEmpty) {
+      const watchClipboard = !!state.settings?.settings?.watchClipboard;
+      const emptyKey = watchClipboard ? "download-empty-clipboard" : "download-empty-manual";
+      if (box.__key !== emptyKey) box.innerHTML = downloadEmptyMarkup(watchClipboard);
+      box.__key = emptyKey;
+      syncVisibleSelection();
+      return;
+    }
     const text =
       state.view === "done" ? ["还没有下完的东西", "下完之后会归到这里"]
       : q ? ["没有匹配的任务", "换个关键词试试"]
+      : state.view === "all" && filtered ? ["没有符合筛选条件的任务", "可在筛选菜单中调整条件"]
       : ["粘贴链接开始下载", "磁力、种子、ed2k、直链都行"];
     box.innerHTML = `<div class="empty">
       <span class="glyph"><svg viewBox="0 0 424 680"><use href="#i-bolt"/></svg></span>
@@ -1749,6 +1791,9 @@ async function loadTrashThumbs() {
 function updateRow(row, t) {
   if (!row || !row.classList.contains("task")) return;
   const v = rowVals(t);
+  const origin = row.querySelector(".task-meta .kind");
+  const originText = t.originLabel || taskKind(t);
+  if (origin && origin.textContent !== originText) origin.textContent = originText;
   const barBox = row.querySelector(".bar");
   const bar = row.querySelector(".bar > i");
   if (barBox) barBox.classList.toggle("indet", !!v.indet);
@@ -1925,6 +1970,7 @@ async function loadSettings() {
   try {
     state.settings = await invoke("get_settings");
     renderSettings();
+    if (state.view === "all" && $("download-empty-title")) renderTasks();
   } catch (e) {
     console.warn("取设置失败", e);
   }
@@ -2701,16 +2747,16 @@ async function flushExtBuffer() {
     if (x.name) grabNames.set(x.url, x.name);
   }
   if (pushDialog && openDialogs.has(pushDialog)) {
-    await window.__TAURI__.event.emitTo(pushDialog, "dialog-append", { items: items.map((x) => ({ url: x.url, name: x.name })) });
+    await window.__TAURI__.event.emitTo(pushDialog, "dialog-append", { items: items.map(({ url, name, size, sizeLabel }) => ({ url, name, size, sizeLabel })) });
     return;
   }
   pushOpening = true;
   // 超时兜底：用户取消了重复询问时不会有框打开
   setTimeout(() => { pushOpening = false; }, 8000);
-  if (items.length === 1) return submitLink(items[0].url, { name: items[0].name, headers: items[0].headers });
+  if (items.length === 1) return submitLink(items[0].url, { name: items[0].name, headers: items[0].headers, size: items[0].size, sizeLabel: items[0].sizeLabel });
   const infos = await Promise.all(items.map((x) => invoke("target_info", { link: x.url }).catch(() => null)));
   if (infos.some((info) => info?.collection || info?.baiduShare)) {
-    pendingLinks.push(...items.map(({ url, name, headers }) => ({ url, opts: { name, headers } })));
+    pendingLinks.push(...items.map(({ url, name, headers, size, sizeLabel }) => ({ url, opts: { name, headers, size, sizeLabel } })));
     return nextPending();
   }
   await submitBatch(items.map((x) => x.url), [...new Set(infos.filter(Boolean).map((i) => i.kind))]);
@@ -2770,8 +2816,8 @@ async function submitBatch(urls, kinds, forceConfirm, metadata = {}) {
   }
   // 文件丢了的旧条目，新的投成功后拿掉（和单条一样）
   // 确认框是独立窗口，看不到这边的 extInfo：名字要跟着带过去，不然只能显示链接里的乱码
-  items = items.map((x) => ({ url: x.url, name: extInfo.get(x.url)?.name || grabNames.get(x.url) || "", replaceId: x.dup?.missing && x.dup.id ? x.dup.id : null }));
-  if (items.length === 1) return submitLink(items[0].url, { force: true, replaceId: items[0].replaceId, name: extInfo.get(items[0].url)?.name || "", headers: extInfo.get(items[0].url)?.headers || null });
+  items = items.map((x) => ({ url: x.url, name: extInfo.get(x.url)?.name || grabNames.get(x.url) || "", size: extInfo.get(x.url)?.size, sizeLabel: extInfo.get(x.url)?.sizeLabel, replaceId: x.dup?.missing && x.dup.id ? x.dup.id : null }));
+  if (items.length === 1 && !isHuggingFaceFilePage(metadata.sourceUrl)) return submitLink(items[0].url, { force: true, replaceId: items[0].replaceId, name: extInfo.get(items[0].url)?.name || "", headers: extInfo.get(items[0].url)?.headers || null, size: items[0].size, sizeLabel: items[0].sizeLabel });
   if (forceConfirm || state.settings?.settings.confirmNew) return askConfirm(items[0].url, { ...metadata, batch: items, kinds });
   await runBatch(items, "", null);
   nextPending();
@@ -3919,12 +3965,17 @@ async function settleMulti(extra) {
   }
 }
 
+function isHuggingFaceFilePage(value) {
+  return /^https:\/\/huggingface\.co\/[^/]+\/[^/]+\/tree\//i.test(value || "");
+}
+
 async function runBatch(items, dir, video, selections, folder, extra) {
+  const keepTree = isHuggingFaceFilePage(extra?.sourceUrl);
   // 推送来的一批是一条多文件任务。NAS 内核还没有这个能力，存到 NAS 时仍走下面的合并显示
-  if (items.length > 1 && items.every((x) => extInfo.has(x.url)) && !String(dir || "").startsWith("/")) {
+  if ((items.length > 1 || keepTree) && items.every((x) => extInfo.has(x.url)) && !String(dir || "").startsWith("/")) {
     const files = items.filter((x) => selections?.get(x.url)?.length !== 0).map((x) => ({ url: x.url, name: extInfo.get(x.url)?.name || nameFromLink(x.url), headers: extInfo.get(x.url)?.headers || [] }));
     // 共同的最外层已经是任务文件夹，里面不再套一层
-    const head = multiCommonHead(files.map((f) => f.name));
+    const head = keepTree ? "" : multiCommonHead(files.map((f) => f.name));
     if (head) files.forEach((f) => { f.name = f.name.slice(head.length + 1); });
     const id = await invoke("add_multi", { name: folder || head || multiFolderName(files.map((f) => f.name)), dir: dir || null, files }).catch((e) => (toast(String(e)), null));
     if (id === null) return;
@@ -4258,10 +4309,13 @@ const grabNames = new Map();
 /// 抓到的链接直接进新建框，在那里勾选要下的文件，不用弹两层
 async function openGrab(links, metadata = {}) {
   if (!links.length) return;
-  links.forEach((l) => { if (l.name) grabNames.set(l.url, l.name); extInfo.set(l.url,{url:l.url,name:l.name||"",headers:l.headers||null}); });
+  links.forEach((l) => { if (l.name) grabNames.set(l.url, l.name); extInfo.set(l.url,{url:l.url,name:l.name||"",headers:l.headers||null, size: Number.isSafeInteger(l.sizeBytes) && l.sizeBytes >= 0 ? l.sizeBytes : undefined}); });
   const sourceUrl = typeof metadata.sourceUrl === "string" ? metadata.sourceUrl : "";
   const folderName = typeof metadata.folderName === "string" && metadata.folderName ? collectionFolderName(metadata.folderName) : "";
-  if (links.length === 1) return submitLink(links[0].url, { confirm: true, name:links[0].name||"",headers:links[0].headers||null, sourceUrl });
+  if (links.length === 1 && !isHuggingFaceFilePage(sourceUrl)) {
+    const { url, name, headers, size } = extInfo.get(links[0].url);
+    return submitLink(url, { confirm: true, name, headers, size, sourceUrl });
+  }
   const infos = await Promise.all(links.map((l) => invoke("target_info", { link: l.url }).catch(() => null)));
   if (infos.some((info) => info?.collection || info?.baiduShare)) {
     pendingLinks.push(...links.map((l) => ({ url: l.url, opts: { confirm: true, name: l.name, headers: l.headers } })));
@@ -4382,11 +4436,26 @@ for (const id of ["cf-subsettings-toggle","cf-substyle-toggle"]) $(id).addEventL
   renderCfVideo();
 });
 
+function renderCfSize(draft) {
+  const { extra, video, probedSize } = draft;
+  let label = "";
+  if (!extra?.batch && !extra?.collection) {
+    const currentVideoSize = probedSize && video
+      && probedSize.maxHeight === (video.maxHeight || 0) && probedSize.audioOnly === !!video.audioOnly
+      ? probedSize.size : undefined;
+    const size = extra?.size ?? currentVideoSize;
+    label = extra?.sizeLabel || (size != null ? bytes(size) : "");
+  }
+  $("cf-size").textContent = label;
+  $("cf-size").hidden = !label;
+}
+
 /// 视频选项控件 ←→ cf.video 同步。仅音频勾上时画质和字幕没意义，一起灰掉（Mac 同款）
 function renderCfVideo() {
   const row = $("cf-video-row");
   if (!row) return;
   const v = cf.video;
+  renderCfSize(cf);
   renderCfNameState();
   const collection = !!cf.extra?.collection;
   row.hidden = !v || collection;
@@ -4518,8 +4587,8 @@ async function askConfirm(url, opts = {}, info) {
   $("cf-dir").readOnly = !!opts.baiduRetryId;
   $("cf-pick").disabled = !!opts.baiduRetryId;
   $("cf-url").textContent = opts.sourceUrl || (batch ? `${batch.length} 个：${url} 等` : url);
-  $("cf-url").dataset.tip = opts.sourceUrl ? "点击复制文档链接" : opts.wechatTicket ? "来源分享链接；视频播放地址已在后台解析，点击复制来源" : "点击复制链接";
-  $("cf-url").closest(".set-row").querySelector(".set-label").textContent = opts.sourceUrl ? "文档链接" : opts.wechatTicket ? "来源链接" : collection ? "合集链接" : "链接";
+  $("cf-url").dataset.tip = opts.sourceUrl ? (isHuggingFaceFilePage(opts.sourceUrl) ? "点击复制模型文件页链接" : "点击复制文档链接") : opts.wechatTicket ? "来源分享链接；视频播放地址已在后台解析，点击复制来源" : "点击复制链接";
+  $("cf-url").closest(".set-row").querySelector(".set-label").textContent = opts.sourceUrl ? (isHuggingFaceFilePage(opts.sourceUrl) ? "来源链接" : "文档链接") : opts.wechatTicket ? "来源链接" : collection ? "合集链接" : "链接";
   // 扩展送来的名字先填上，用户可以改；粘贴进来的留空走链接里的名字
   $("cf-name").value = cf.name;
   delete $("cf-name").dataset.userEdited;
@@ -4606,7 +4675,7 @@ $("cf-name")?.addEventListener("input", () => { $("cf-name").dataset.userEdited 
 if (DIALOG) {
   window.__TAURI__?.event?.listen("dialog-append", ({ payload: { items } }) => {
     if (cf.extra?.collection || cf.extra?.baiduShare || cf.extra?.feishu) return;
-    const old = cf.extra?.batch || [{ url: cf.url, name: $("cf-name").value.trim() || cf.name }];
+    const old = cf.extra?.batch || [{ url: cf.url, name: $("cf-name").value.trim() || cf.name, size: cf.extra.size, sizeLabel: cf.extra.sizeLabel }];
     const previous = new Map((cfFiles || []).map((g) => [g.url, g]));
     const batch = [...old];
     for (const x of items) {
@@ -4617,8 +4686,9 @@ if (DIALOG) {
     cf.extra = { ...cf.extra, batch, kinds: cf.extra?.kinds || [$("cf-kind").textContent] };
     $("cf-title").textContent = `新建下载（${batch.length} 个）`;
     cfFolderRow(batch);
+    renderCfSize(cf);
     $("cf-url").textContent = `${batch.length} 个：${cf.url} 等`;
-    loadCfFiles(batch.map((x) => ({ url: x.url, name: x.name || grabNames.get(x.url) })), previous);
+    loadCfFiles(batch.map((x) => ({ url: x.url, name: x.name || grabNames.get(x.url), size: x.size, sizeLabel: x.sizeLabel })), previous);
   });
 }
 
@@ -4639,12 +4709,12 @@ function loadCfFiles(items, previous) {
     const old = previous?.get(x.url);
     const torrent = btLink(x.url);
     if (torrent && old?.state === "ok") return old;
-    return { url: x.url, name: x.name || nameFromLink(x.url) || x.url, size: x.size || undefined,
+    return { url: x.url, name: x.name || nameFromLink(x.url) || x.url, size: x.size, sizeLabel: x.sizeLabel,
       path: confirm.extra?.collection ? "" : x.name || "", icon: confirm.extra?.collection ? "#i-play" : null,
       on: old?.on ?? true, state: torrent ? "loading" : "ok", files: [] };
   });
   const box = $("cf-files");
-  box.hidden = !confirm.extra?.collection && !confirm.extra?.feishu && cfFiles.length < 2 && !btLink(cfFiles[0]?.url || "");
+  box.hidden = !confirm.extra?.collection && !confirm.extra?.feishu && !isHuggingFaceFilePage(confirm.extra?.sourceUrl) && cfFiles.length < 2 && !btLink(cfFiles[0]?.url || "");
   $("confirm").querySelector(".modal").classList.toggle("wide", !box.hidden);
   renderCfFiles();
   if (box.hidden) return;
@@ -4698,7 +4768,7 @@ function cfFileTree(files = cfFiles) {
       parent.pick = entry;
       return;
     }
-    parent.children.push({ name, path: entry.name, entries: [entry], key: JSON.stringify([...prefix, entry.i ?? entry.url]), size: entry.size, icon: entry.icon });
+    parent.children.push({ name, path: entry.name, entries: [entry], key: JSON.stringify([...prefix, entry.i ?? entry.url]), size: entry.size, sizeLabel: entry.sizeLabel, icon: entry.icon });
   }
   files.forEach((g, index) => {
     if (!btLink(g.url)) return add(root, g.path, g, ["batch"]);
@@ -4720,7 +4790,10 @@ function renderCfFiles() {
   const scrollTop = box.querySelector(".cf-files-list")?.scrollTop || 0;
   const all = files.flatMap((g) => g.files);
   const on = files.filter((g) => g.on).flatMap((g) => g.files.filter((f) => f.on));
-  const size = (preview ? files.filter((file) => file.on) : on).reduce((n, f) => n + (f.size || 0), 0);
+  const model = isHuggingFaceFilePage(cf.extra?.sourceUrl);
+  const selectedFiles = files.filter((file) => file.on);
+  const size = (preview || model ? selectedFiles : on).reduce((n, f) => n + (f.size || 0), 0);
+  const showTotal = model ? selectedFiles.length && selectedFiles.every((file) => file.size != null) : size;
   const vids = all.filter((f) => VIDEO_FILE.test(f.name));
   const others = all.filter((f) => !VIDEO_FILE.test(f.name));
   const wait = files.filter((g) => g.state === "loading").length;
@@ -4729,7 +4802,7 @@ function renderCfFiles() {
   const plainOn = files.filter((g) => g.on && !g.directory && !btLink(g.url)).length;
   const plainAll = files.filter((g) => !g.directory && !btLink(g.url)).length;
   const collection = cf.extra?.collection;
-  const selectable = collection || cf.extra?.feishu || baiduSelectable;
+  const selectable = collection || cf.extra?.feishu || baiduSelectable || model;
   if (selectable && !preview) $("cf-ok").disabled = plainOn === 0;
   if (cf.extra?.feishu) $("cf-name").closest(".set-row").hidden = plainOn <= 1;
   const active = document.activeElement;
@@ -4748,15 +4821,16 @@ function renderCfFiles() {
     const name = escapeHtml(node.name);
     const icon = node.children ? "#i-folder" : node.icon || iconOfFile(node.name);
     const tag = toggle ? "label" : "div";
+    const sizeLabel = node.sizeLabel || (node.size != null ? bytes(node.size) : "");
     return `<div class="cf-tree-row" style="--cf-depth:${Math.min(depth, 12)}">
       ${node.children?.length ? `<button type="button" class="cf-fold-toggle" data-folder="${index}" data-focus="folder${key}" aria-expanded="${expanded}" aria-label="${expanded ? "折叠" : "展开"} ${name}"></button>` : '<span class="cf-tree-spacer"></span>'}
       <${tag} class="${node.children ? "cf-group" : "cf-file"}">${toggle ? `<input type="checkbox" data-pick="${index}" data-focus="check${key}" ${selection}>` : ""}
         <svg class="ic" aria-hidden="true"><use href="${icon}"/></svg><span class="n" title="${escapeHtml(node.path || node.name)}">${name}</span>
-        ${node.size !== undefined && node.size !== null ? `<span class="s">${bytes(node.size)}</span>` : ""}${waitText}</${tag}></div>
+        ${sizeLabel ? `<span class="s">${escapeHtml(sizeLabel)}</span>` : ""}${waitText}</${tag}></div>
       ${expanded ? node.children.map((child) => row(child, depth + 1)).join("") : ""}`;
   }
   box.innerHTML = `<div class="cf-files-head">
-      <span class="sum">已选 ${preview && !baiduSelectable ? plainAll : `${on.length + plainOn}/${all.length + plainAll}`} 个${collection ? "视频" : "文件"}${size ? `，共 ${bytes(size)}` : ""}${wait ? `，还有 ${wait} 个在获取文件列表，不等也能下载` : ""}${collection && cf.extra.unavailable ? `，${cf.extra.unavailable} 个视频不可用` : ""}</span>
+      <span class="sum">已选 ${preview && !baiduSelectable ? plainAll : `${on.length + plainOn}/${all.length + plainAll}`} 个${collection ? "视频" : "文件"}${showTotal ? `，共 ${bytes(size)}` : ""}${wait ? `，还有 ${wait} 个在获取文件列表，不等也能下载` : ""}${collection && cf.extra.unavailable ? `，${cf.extra.unavailable} 个视频不可用` : ""}</span>
       ${selectable ? `<label><input type="checkbox" data-cat="all" data-focus="all" ${plainAll && plainOn === plainAll ? "checked" : ""}> 全选</label>` : all.length ? `<label><input type="checkbox" data-cat="v" ${checked(vids)}> 视频</label>
       <label><input type="checkbox" data-cat="o" ${checked(others)}> 其他</label>` : ""}
     </div>
@@ -4806,7 +4880,7 @@ function isSelectAllShortcut(e) {
 document.addEventListener("keydown", (e) => {
   if (!isSelectAllShortcut(e)) return;
   const baidu = canPickBaiduFiles(cf) && !cf.baiduAuth && !cf.baiduPreparing && !cf.baiduSubmitting;
-  if ((!baidu && !(cf.extra?.collection || cf.extra?.feishu)) || $("confirm").hidden || $("cf-files").hidden) return;
+  if ((!baidu && !(cf.extra?.collection || cf.extra?.feishu || isHuggingFaceFilePage(cf.extra?.sourceUrl))) || $("confirm").hidden || $("cf-files").hidden) return;
   if (!$("choice").hidden || !$("rm-confirm").hidden) return;
   const items = baidu ? cf.baiduFiles : cfFiles;
   if (!items?.length) return;
@@ -4849,7 +4923,7 @@ async function beginConfirmLookups() {
   if (cur.extra?.feishu) return probeCfFeishu(cur);
   if (cur.extra?.collection) return probeCfCollection(cur);
   const batch=cur.extra?.batch;
-  loadCfFiles(batch ? batch.map(x=>({url:x.url,name:x.name||grabNames.get(x.url)})) : [{url:cur.url,name:""}]);
+  loadCfFiles(batch ? batch.map(x=>({url:x.url,name:x.name||grabNames.get(x.url),size:x.size,sizeLabel:x.sizeLabel})) : [{url:cur.url,name:""}]);
   probeCfSubs();
   if(cur.extra?.checkDuplicate && !cur.extra.force && !batch && !cur.extra.wechatDuplicateChecked){
     const answer=await askDuplicate(cur.url,cur.dir);
@@ -5054,12 +5128,14 @@ async function probeCfSubs() {
   if(!cur.video || cur.extra?.batch)return;
   setProbeState(quality,"正在查询画质…",true);$("cf-quality").setAttribute("aria-busy","true");
   if(cur.supportsSubs)setProbeState(note,"正在查询字幕…",true);
-  const r=await invoke("probe_video",{url:cur.url}).catch(()=>null);
+  const video = { maxHeight: cur.video.maxHeight || 0, audioOnly: !!cur.video.audioOnly };
+  const r=await invoke("probe_video",{url:cur.url,video}).catch(()=>null);
   if(cf!==cur)return;
   $("cf-quality").setAttribute("aria-busy","false");quality.hidden=true;note.hidden=true;
   cur.nameLoading=false;
   if (!cur.extra?.batch) setCfDefaultName(cur.extra?.folderName || r?.title || cur.name,"留空就用视频标题");
   if(!r){cur.subtitleAvailability=cur.supportsSubs ? "failed" : "unsupported";setProbeState(quality,"画质查询未完成，保留默认选项",false);if(cur.supportsSubs)setProbeState(note,"字幕查询失败，暂不提供字幕选项",false);renderCfVideo();return;}
+  if (Number.isSafeInteger(r.size) && r.size > 0) cur.probedSize = { ...video, size: r.size };
   if(r.heights?.length)setQualityButtons(r.heights);
   if(cur.supportsSubs){
     cur.subtitleAvailability=r.subs===true ? "available" : r.subs===false ? "none" : "failed";
@@ -6289,7 +6365,7 @@ $("cf-ok").addEventListener("click", async () => {
   // 以输入框里最后的值为准（用户可能手改过）
   const dir = ($("cf-dir").value || "").trim();
   const name = $("cf-name").value.trim();
-  if (extra?.collection && !cfFiles?.some((entry) => entry.on)) return;
+  if ((extra?.collection || isHuggingFaceFilePage(extra?.sourceUrl)) && !cfFiles?.some((entry) => entry.on)) return;
   const remember = $("cf-remember").checked;
   // 关框前记下每条要下哪些文件
   const selections = new Map((extra?.batch ? extra.batch.map((x) => x.url) : [url]).map((u) => [u, cfSelection(u)]));
@@ -8145,7 +8221,7 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
   });
   window.__TAURI__.event.listen("mcp-add", ({ payload }) => {
     if (!payload?.url) return;
-    submitLink(payload.url, { confirm: true }).catch(error => toast(String(error)));
+    submitLink(payload.url, { confirm: true, mcpTarget: payload.target }).catch(error => toast(String(error)));
   });
 
   window.__TAURI__.event.listen("ext-add", (ev) => {
@@ -8160,7 +8236,9 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
     });
     if (isFeishuDocument(url)) return submitLink(url);
     // 网盘助手推文件夹是一个文件一次请求：攒一小会儿，合成一个确认框
-    extBuffer.push({ url, name: p.name || "", headers: Array.isArray(p.headers) ? p.headers : null });
+    const size = Number.isSafeInteger(p.sizeBytes) && p.sizeBytes >= 0 ? p.sizeBytes : undefined;
+    const sizeLabel = typeof p.sizeLabel === "string" && /^\d+(?:\.\d+)? [KMGT]?B$/.test(p.sizeLabel) ? p.sizeLabel : "";
+    extBuffer.push({ url, name: p.name || "", headers: Array.isArray(p.headers) ? p.headers : null, size, sizeLabel });
     clearTimeout(extTimer);
     if (p.group) extTimer = setTimeout(flushExtBuffer, 1500);
     else flushExtBuffer();
@@ -9567,9 +9645,10 @@ $("btn-linkswift")?.addEventListener("click", () => {
 });
 
 // 设置页「GitHub 仓库」：交给系统默认浏览器打开（Rust 侧 open_url 只放行 http/https）
+const aboutRepositoryUrl = "https://" + $("about-repo").textContent.trim();
 $("btn-open-repo")?.addEventListener("click", () => {
   if (!invoke) return;
-  invoke("open_url", { url: "https://github.com/chenmozhe008/shandian-download" })
+  invoke("open_url", { url: aboutRepositoryUrl })
     .catch((e) => toast("打不开仓库：" + e));
 });
 
@@ -9803,8 +9882,11 @@ $("btn-copy-diagnostics")?.addEventListener("click", async () => {
 $("btn-report-issue")?.addEventListener("click", async () => {
   try {
     const report = await feedbackInfo();
-    const issue = new URL("https://github.com/chenmozhe008/shandian-download/issues/new");
-    issue.searchParams.set("body", `### 问题描述\n\n### 复现步骤\n1. \n\n### 预期与实际结果\n\n### 环境信息\n${report}\n### 日志或截图\n如需附加日志，可在设置中打开日志目录后自行选择。\n`);
+    const issue = new URL(aboutRepositoryUrl + "/issues/new");
+    issue.searchParams.set("template", "windows-bug.yml");
+    const version = $("about-ver").textContent.trim();
+    if (/^v?\d+\.\d+\.\d+$/.test(version)) issue.searchParams.set("version", version.replace(/^v/, ""));
+    issue.searchParams.set("diagnostics", report);
     await invoke("open_url", { url: issue.toString() });
   } catch (e) { toast(String(e)); }
 });

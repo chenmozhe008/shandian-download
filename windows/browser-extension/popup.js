@@ -728,7 +728,11 @@ async function main() {
   }
   const scan = document.getElementById("scan");
   const capture = document.getElementById("capture");
-  if (/^(www\.)?aigei\.com$/.test(host)) {
+  if (huggingFaceTree(tab.url)) {
+    batch.hidden = false;
+    scan.hidden = true;
+    capture.hidden = true;
+  } else if (/^(www\.)?aigei\.com$/.test(host)) {
     showDetectedMedia(tab, capture, page.querySelector("#hint"));
   } else if (isWebPage && !onCloudPage) {
     const more = document.getElementById("more");

@@ -3486,7 +3486,7 @@ dependencies = [
 
 [[package]]
 name = "shandian-windows"
-version = "0.2.15"
+version = "0.2.20"
 dependencies = [
  "quick-xml",
  "rand 0.8.8",

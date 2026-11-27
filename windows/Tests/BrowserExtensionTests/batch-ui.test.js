@@ -9,7 +9,7 @@ for (const id of ['batch', 'batch-actions', 'results', 'select-all', 'download-s
 nodes['site-batch-format'].value='mp3';
 const document = { getElementById: id => nodes[id], createElement: element, body: { classList: { add() {} } } };
 const chrome = { tabs: { query: async () => [{ id: 1, url: 'https://example.com/' }] }, runtime: { sendMessage: async message => message.type === 'scanLinks' ? { items: [{ url: 'magnet:?xt=urn:btih:123', title: '第01集', kind: '磁力' },{url:'aigei:paid',title:'森林鸟叫',kind:'爱给',blocked:true,blockedReason:'需购买授权'},{url:'aigei:mixed',title:'不同格式权限',kind:'爱给',formats:{mp3:{blocked:false},wav:{blocked:true,blockedReason:'需购买授权'}}}], checked: true } : { ok: true } } };
-vm.runInNewContext(fs.readFileSync('windows/browser-extension/source-labels.js','utf8')+'\n'+fs.readFileSync('windows/browser-extension/batch-ui.js', 'utf8'), { document, chrome, URL });
+vm.runInNewContext(['source-labels.js', 'huggingface.js', 'batch-ui.js'].map(name => fs.readFileSync('windows/browser-extension/' + name, 'utf8')).join('\n'), { document, chrome, URL });
 setImmediate(async () => {
   await nodes.batch.onclick();
   const check = nodes.results.children[0].children[0];

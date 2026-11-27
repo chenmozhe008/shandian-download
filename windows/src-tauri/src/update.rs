@@ -40,6 +40,7 @@ struct Release {
 #[derive(Default, Serialize, Deserialize)]
 struct Cache {
     checked_at: u64,
+    checked_for: Option<String>,
     latest: Option<Release>,
     notified: Option<String>,
 }
@@ -318,10 +319,17 @@ fn cache_path(base: &Path) -> PathBuf {
     base.join(format!("update-windows-{EDITION}.json"))
 }
 
+fn load_version_cache(text: &[u8], current: &str) -> Cache {
+    serde_json::from_slice::<Cache>(text)
+        .ok()
+        .filter(|cache| cache.checked_for.as_deref() == Some(current))
+        .unwrap_or_default()
+}
+
 fn load(base: &Path) -> Cache {
     fs::read(cache_path(base))
         .ok()
-        .and_then(|text| serde_json::from_slice(&text).ok())
+        .map(|text| load_version_cache(&text, CURRENT))
         .unwrap_or_default()
 }
 
@@ -376,6 +384,7 @@ pub async fn update_check(
             .await
             .map_err(|_| "检查更新未完成")??;
         cache.checked_at = now();
+        cache.checked_for = Some(CURRENT.into());
     }
     let release = cache
         .latest
@@ -621,6 +630,22 @@ pub fn cleanup_old_backups() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discards_update_checks_from_other_app_versions() {
+        let stored = br#"{"checked_at":1234,"checked_for":"0.2.15","latest":null,"notified":"0.2.16"}"#;
+        let same = load_version_cache(stored, "0.2.15");
+        assert_eq!(same.checked_at, 1234);
+        assert_eq!(same.notified.as_deref(), Some("0.2.16"));
+
+        for current in ["0.2.14", "0.2.16"] {
+            let refreshed = load_version_cache(stored, current);
+            assert_eq!(refreshed.checked_at, 0);
+            assert!(refreshed.notified.is_none());
+        }
+        let legacy = br#"{"checked_at":1234,"latest":null,"notified":null}"#;
+        assert_eq!(load_version_cache(legacy, "0.2.15").checked_at, 0);
+    }
 
     #[test]
     fn fallback_sorts_versions_and_ignores_other_channels() {
