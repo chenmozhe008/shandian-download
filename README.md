@@ -7,7 +7,7 @@
 
 **免费开源、无广告的跨平台下载工具（macOS & Windows）**
 
-「闪电」在于快：多连接分段、镜像测速优选、冷门 BT 自动换路；<br>
+「闪电」在于快：多连接分段、镜像测速优选、冷门 BT 没速度自动转交迅雷或云盘离线；<br>
 「全能」在于全：磁力种子、视频与双语字幕、四大网盘、飞书文档与网页音视频，一个软件全部搞定。
 
 [**下载 Mac（Apple 芯片）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**下载 Mac（Intel）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**下载 Windows（x64）**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [快速安装](#快速安装) · [English](README.en.md)
@@ -29,7 +29,7 @@
 ## 主要功能
 
 - **常用资源全覆盖，连难下的都能下（全能）**：支持磁力、BT 种子、ed2k、HTTP 直链，还直接支持 **YouTube、B 站、抖音、小红书（无水印）、微信视频号**，以及 **百度 / 阿里 / 夸克 / UC 四大网盘**、**飞书与轻雀文档里的原始音视频**、**网页播放中隐藏的音视频嗅探**——平时最麻烦的下载需求，一个软件统一管理。
-- **多连接提速，冷门资源不死等（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、**GitHub / Hugging Face** 公开文件自动测速选镜像并在中断时换站续传；磁力每次启动合并最新公开 tracker，冷门 BT 卡在 0% 时可自动换路本机迅雷或 PikPak 云盘离线，下完取回并清理云端副本。
+- **多连接提速，冷门资源不死等（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、**GitHub / Hugging Face** 公开文件自动测速选镜像并在中断时换站续传；磁力每次启动合并最新公开 tracker，冷门 BT 一直没速度时可自动转交本机迅雷或 PikPak 云盘离线，下完取回并清理云端副本。
 - **外语视频自动配中英双语字幕**：支持最高 4K 与仅音频，勾选字幕自动建独立文件夹；AI 模式先重排 YouTube 碎片断句并统一全片术语，输出带合理字号比例的 `.ass` 双语字幕，打开直接看，不和原英文轨冲突。
 - **浏览器扩展一键联动**：搭配 Chrome / Edge 完整版扩展，在网页上点一下就能发给闪电；支持网页音视频实时侦测与波形试听、页面直链批量抓取，以及网盘和飞书 / 轻雀文档的一键批量保存。
 - **双端轻量好用，自动分类资料库**：同时支持 **macOS（SwiftUI）** 与 **Windows（Tauri，由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护）**，内置电影 / 视频 / 网盘 / 其他文件自动分类资料库、定时下载、一键更新、边下边播与合集文件抽屉，免费无广告、不限速。
@@ -44,11 +44,11 @@
 
 **macOS 用户复制：**
 
-> 请帮我安装「闪电全能下载」（https://github.com/chenmozhe008/shandian-download）：在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash`。装好后，一步步告诉我怎么在浏览器里装它的扩展。
+> 请帮我安装「闪电全能下载」，项目地址 https://github.com/chenmozhe008/shandian-download ：在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash`。装好后，一步步告诉我怎么在浏览器里装它的扩展。
 
 **Windows 用户复制：**
 
-> 请帮我安装「闪电全能下载」Windows 版（https://github.com/cgeek-dev/shandian-download/releases/latest）：下载最新的 `Shandian-*-Windows-x64-setup.exe` 安装包并运行安装。装好后，一步步告诉我怎么在浏览器里装它的扩展。
+> 请帮我安装「闪电全能下载」Windows 版，发布页 https://github.com/cgeek-dev/shandian-download/releases/latest ：下载最新的 `Shandian-*-Windows-x64-setup.exe` 安装包并运行安装。装好后，一步步告诉我怎么在浏览器里装它的扩展。
 
 ### 方式二：命令行一键安装（macOS）
 
@@ -103,12 +103,12 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 - 支持 **本机 Ollama（免费离线）** 及 DeepSeek、Kimi、通义千问、豆包、智谱 GLM、OpenAI、Gemini、Claude 等接口，点「测试连接」可免费拉取最新模型列表。
 - 也支持「只下载原字幕」（离线结构清理，不调 AI）或「仅下载音频（M4A）」。
 
-### 2. 冷门 BT 卡在 0% 自动换路
+### 2. 冷门 BT 没速度时自动离线接力
 
-BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本机迅雷或已关联的 PikPak 云盘离线，下完拉回原保存目录并自动清理云端临时副本。
+BT 或磁力任务长期没人做种、一直没速度时，可自动转交本机迅雷或已关联的 PikPak 云盘离线，下完拉回原保存目录并自动清理云端临时副本。
 
 <div align="center">
-<img src="docs/images/demo-rescue.gif" alt="冷门 BT 卡在 0% 时自动切换云盘离线并取回本机" width="760">
+<img src="docs/images/demo-rescue.gif" alt="冷门 BT 没速度时自动转交云盘离线并取回本机" width="760">
 </div>
 
 ### 3. 网页音视频嗅探、文档附件与批量抓链
@@ -128,6 +128,8 @@ BT 或磁力任务长期没人做种、速度卡在 0% 时，可自动交给本�
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="闪电全能下载：自动分类电影资料库" width="880">
 </div>
+
+Windows 版同样支持双语 ASS 样式自定义、合集管理与统一队列：
 
 | Windows 版 · 双语字幕样式预览 | Windows 版 · 合集与字幕状态 |
 | :---: | :---: |
