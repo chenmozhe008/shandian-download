@@ -5,12 +5,12 @@
 
 # 闪电全能下载 · Shandian Download Manager
 
-<strong>macOS / Windows 开源下载工具</strong>
+<strong>快速、简洁的开源下载工具，支持 macOS 与 Windows</strong>
 
-免费开源，macOS 用 SwiftUI 原生写，Windows 用 Tauri。<br>
-磁力、种子、ed2k、直链、网盘、视频网站和网页音视频都在一个窗口里管，BT 没速度时自动换路下完
+磁力、种子、ed2k、HTTP 直链、网盘分享、主流视频网站与网页音视频，统一在一个窗口管理。<br>
+多连接并行加速，冷门 BT 长期无速度时自动换路完成
 
-磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书和轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
+磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书与轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
 [macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
@@ -18,29 +18,27 @@
 
 [![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
-![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
-![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
-![SwiftUI & Tauri](https://img.shields.io/badge/SwiftUI%20%7C%20Tauri-native-orange)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <img src="docs/images/screenshot-downloading.png" alt="闪电全能下载：正在下载" width="900">
 
 </div>
 
-闪电全能下载（Shandian Download Manager）支持 **macOS 和 Windows**（macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发和维护），把磁力、种子、ed2k、HTTP 直链、百度网盘分享和常见视频网站收进同一个窗口。复制链接粘贴就能下；装上 Chrome / Edge 扩展，还可以批量抓网页链接、侦测并试听网页音视频，或者直接勾选保存飞书和轻雀文档里的原始音视频（单个直接存，多个自动归到同一个文件夹）。
+闪电全能下载（Shandian Download Manager）是一款支持 **macOS 与 Windows** 的免费开源下载工具，用于集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享以及主流视频平台下载。复制链接后粘贴即可创建任务；搭配 Chrome / Edge 浏览器扩展，可批量抓取网页下载链接、侦测并试听网页音视频，也可扫描并保存飞书与轻雀文档中的原始音视频附件（单选直接保存，多选归入同一文件夹）。
 
-macOS 版用 SwiftUI 原生开发，Windows 版用 Tauri + WebView2。下载内核均为打过补丁的 [Gopeed](https://github.com/GopeedLab/gopeed)，视频网站由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 支持。
+macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护。下载内核基于定制版 [Gopeed](https://github.com/GopeedLab/gopeed)，视频平台解析由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
 
-## 主要特点
+## 主要功能
 
-- <strong>一个窗口管常见下载</strong>：磁力、种子、ed2k、HTTP 直链、网盘和主流视频网站都能直接下；复制链接自动弹提示，浏览器扩展接管网页下载
-- <strong>多连接提速</strong>：HTTP 大文件分段并行、视频 4 路分片并发、磁力自动合并最新 tracker 并固定端口，按域名分流系统代理
-- <strong>飞书、轻雀文档音视频批量下</strong>：扫描文档里的原始音视频附件，按需勾选并保留原名，选两项及以上时自动存进同一个文件夹
-- <strong>网页链接与媒体侦测</strong>：批量抓取当前页面的可下载链接，或在播放网页音视频时捕获、波形试听并按需保存
-- <strong>百度网盘分享免装客户端</strong>：粘贴分享链接和提取码，首次授权后直接用闪电保存到本机，下完校验通过自动清理云端转存
-- <strong>冷门 BT 卡 0% 自动换路</strong>：BT / 磁力没速度时自动转给本机迅雷或 PikPak 云盘离线，下完自动归位到原目录并清理中转副本
-- <strong>轻量顺手，内置 MCP</strong>：支持边下边播、定时下载和按类型记忆保存目录；内置本机 MCP 服务，Claude Code、Codex、Cursor、ChatGPT 桌面版等可直接管理下载任务
+- <strong>统一管理多种下载来源</strong>：支持磁力、种子、ed2k、HTTP 直链、网盘分享与主流视频网站；剪贴板自动识别链接，浏览器扩展自动接管网页下载
+- <strong>多连接并行加速</strong>：HTTP 大文件自动分段并行、视频支持 4 路分片并发、磁力自动合并最新公开 tracker 并固定端口，按域名分流系统代理
+- <strong>文档音视频批量保存</strong>：扫描飞书与轻雀文档中的原始音视频附件，按需勾选并保留原文件名；多选时自动归入同一文件夹
+- <strong>网页链接抓取与媒体侦测</strong>：批量提取当前页面的可下载链接，或在播放网页音视频时实时捕获，支持波形试听与按需保存
+- <strong>百度网盘分享直接下载</strong>：粘贴分享链接与提取码，完成首次授权后即可直接保存至本地，无需安装百度网盘客户端；文件校验完成后自动清理云端临时转存
+- <strong>冷门 BT 自动换路</strong>：BT 或磁力任务长期无速度时，自动转交本机迅雷或 PikPak 云盘离线下载，取回本地后自动归位并清理云端副本
+- <strong>轻量高效，内置 MCP</strong>：支持边下边播、定时下载与按类型记忆保存目录；内置本机 MCP 服务，可供 Claude Code、Codex、Cursor、ChatGPT 桌面版等工具直接管理下载任务
 
 <div align="center">
 <img src="docs/images/demo-rescue.gif" alt="任务卡在 0%，自动交给云盘离线，取回本机后清理云端副本" width="760">
@@ -52,10 +50,10 @@ macOS 版用 SwiftUI 原生开发，Windows 版用 Tauri + WebView2。下载内�
 
 | 类型 | 添加方式 |
 | --- | --- |
-| 磁力链接、种子文件、ed2k | 复制链接后按 ⌘V，或将种子文件拖入窗口 |
-| HTTP / HTTPS 文件 | 复制链接后按 ⌘V；安装浏览器扩展后，网页上的下载自动接管 |
-| YouTube、X、哔哩哔哩、微博 | 复制视频页链接后按 ⌘V |
-| 豆瓣电影预告片 | 复制预告片页面链接后按 ⌘V |
+| 磁力链接、种子文件、ed2k | 复制链接后粘贴，或将种子文件拖入窗口 |
+| HTTP / HTTPS 文件 | 复制链接后粘贴；安装浏览器扩展后自动接管网页下载 |
+| YouTube、X、哔哩哔哩、微博 | 复制视频页链接后粘贴 |
+| 豆瓣电影预告片 | 复制预告片页面链接后粘贴 |
 | 微信视频号 | 粘贴分享链接，按指引在已登录的腾讯元宝页面使用完整版浏览器扩展下载 |
 | 网页音视频 | 在完整版浏览器扩展中开启「侦测本页面音视频」，播放即可捕获并支持波形试听、原名保存与多选保存到文件夹 |
 | 网页文件直链（MP4、MP3、ZIP 等） | 用完整版扩展「批量抓取页面下载链接」，按需勾选并批量添加 |
@@ -145,12 +143,12 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 
 ## Windows 版
 
-Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（x64，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
+Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（64 位，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
 
 - **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
 - **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
 
-Windows 版用 Tauri + WebView2 写的，界面和常用功能和 macOS 版基本一致，另外还多了多网盘直链取链、GitHub / Hugging Face 镜像加速和本机 Ollama 字幕润色。Windows 版的问题反馈和发版由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
+界面布局与核心功能与 macOS 版保持一致，并额外提供多网盘直链解析、GitHub / Hugging Face 镜像加速及本机 Ollama 字幕润色等功能。Windows 版的发版节奏与问题反馈由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
 
 ## 浏览器扩展
 

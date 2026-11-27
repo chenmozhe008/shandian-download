@@ -4,10 +4,10 @@
 
 # Shandian Download Manager
 
-<strong>Open-source download manager for macOS &amp; Windows.</strong>
+<strong>Fast, clean open-source download manager for macOS &amp; Windows.</strong>
 
-Free and open source — native SwiftUI on macOS, Tauri on Windows.<br>
-Manage magnet links, torrents, ed2k, direct links, cloud drives, video sites, and web media in one window, with automatic route switching when BitTorrent stalls
+Manage magnet links, torrents, ed2k, HTTP direct links, cloud drive shares, video platforms, and web media in one window.<br>
+Multi-connection acceleration with automatic route switching when BitTorrent stalls.
 
 Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
@@ -17,38 +17,36 @@ Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and 
 
 [![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
-![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
-![Apple Silicon | Intel](https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-arm64%20%7C%20x86__64-555)
-![SwiftUI & Tauri](https://img.shields.io/badge/SwiftUI%20%7C%20Tauri-native-orange)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
 <!-- screenshot --><img src="docs/images/screenshot-downloading.png" alt="Shandian: downloads in progress" width="900">
 
 </div>
 
-Shandian Download Manager (闪电全能下载) is an open-source download manager for **macOS and Windows** (macOS native edition maintained here; Windows edition independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Manage magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms in one window. The Chrome and Edge extension can scan a page for downloadable links, capture and preview web media, and download original audio and video attachments from Feishu and Qingque Docs. Save one file directly or group multiple originals in one folder.
+Shandian Download Manager is a free, open-source download manager for **macOS and Windows** that handles magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms in a single window. Copy a link and paste it to start; with the Chrome / Edge extension, you can also batch-extract downloadable links, capture and preview web audio and video, and save original media attachments from Feishu and Qingque Docs (single files save directly; multiple files are grouped into one folder).
 
-The macOS edition is written natively in SwiftUI (Simplified Chinese & English), and the Windows edition is built with Tauri and WebView2. Both use a patched build of [Gopeed](https://github.com/GopeedLab/gopeed) as the download engine and [yt-dlp](https://github.com/yt-dlp/yt-dlp) for video platforms.
+The macOS edition is maintained in this repository (Simplified Chinese & English), while the Windows edition is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev). Downloads are powered by a customized [Gopeed](https://github.com/GopeedLab/gopeed) engine, with video platform support from [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## Highlights
 
-- <strong>One window for everyday downloads</strong>: Magnet links, torrents, ed2k, direct links, cloud drives, and video sites in one place, with clipboard detection and browser download takeover
-- <strong>Multi-connection engine</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and per-domain proxy routing
-- <strong>Document media downloads</strong>: Scan Feishu and Qingque Docs for original audio and video attachments, pick what you need, and keep original filenames (multiple files save into one folder)
-- <strong>Web link &amp; media capture</strong>: Grab downloadable links in bulk, or capture audio and video as it plays with waveform preview and selective saving
-- <strong>Baidu Netdisk shares without the desktop client</strong>: Paste a share link and access code; after authorization, save directly with Shandian and let it clean up the temporary cloud copy once verified
+- <strong>Unified download management</strong>: Magnet links, torrents, ed2k, direct links, cloud drive shares, and video sites in one window, with clipboard detection and browser download takeover
+- <strong>Multi-connection acceleration</strong>: Parallel HTTP chunks, 4-way concurrent video segments, fresh public trackers with a fixed BitTorrent port, and per-domain proxy routing
+- <strong>Document media downloads</strong>: Scan Feishu and Qingque Docs for original audio and video attachments, select what you need, and keep original filenames (multiple items save into one folder)
+- <strong>Web link &amp; media capture</strong>: Batch-extract downloadable links from web pages, or capture playing audio and video with waveform preview and selective saving
+- <strong>Direct Baidu Netdisk share downloads</strong>: Paste a share link and access code; after initial authorization, save directly to your computer without installing the Baidu Netdisk desktop client, with automatic cloud transfer cleanup once verified
 - <strong>Automatic route switching for stalled torrents</strong>: When a BitTorrent or magnet task stalls at 0%, hand it over to a local Thunder client or PikPak cloud offline download, then move the file back and clean up temporary copies
-- <strong>Native workflow &amp; local MCP</strong>: Stream while downloading, schedule download hours, and remember save folders by category; built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
+- <strong>Lightweight &amp; MCP-ready</strong>: Stream while downloading, schedule download hours, and remember save folders by category; includes a built-in local MCP server for Claude Code, Codex, Cursor, ChatGPT Desktop, and other MCP clients
 
 ## Supported sources
 
 | Source | How to add |
 | --- | --- |
-| Magnet links, torrent files, ed2k | Copy the link and press ⌘V, or drag a torrent file into the window |
-| HTTP / HTTPS files | Copy the link and press ⌘V; with the browser extension installed, downloads are taken over automatically |
-| YouTube, X, Bilibili, Weibo | Copy the video page URL and press ⌘V |
-| Douban movie trailers | Paste the trailer-page URL |
+| Magnet links, torrent files, ed2k | Copy and paste the link, or drag a torrent file into the window |
+| HTTP / HTTPS files | Copy and paste the link; with the browser extension installed, web downloads are taken over automatically |
+| YouTube, X, Bilibili, Weibo | Copy and paste the video page URL |
+| Douban movie trailers | Copy and paste the trailer-page URL |
 | WeChat Channels | Paste the share link and follow the guide to use the browser extension on a signed-in Tencent Yuanbao page |
 | Web audio & video | Turn on “Detect Media on This Page” in the full extension, play to capture, preview with waveform, save with original names, or save multiple files to one folder |
 | Direct file links, including MP4, MP3 and ZIP | Scan the current page for downloadable links in the full extension, select items and add them in bulk |
@@ -132,7 +130,7 @@ The Windows edition (Windows 10 / 11, x64, Simplified Chinese UI) is independent
 - **Download**: [Latest Windows Release](https://github.com/cgeek-dev/shandian-download/releases/latest) (installer & portable builds, with built-in auto-update)
 - **Docs & Changelog**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
 
-Built with Tauri and WebView2, it shares the same design and core features as the macOS edition, and adds extra cloud drive link extraction, GitHub / Hugging Face mirror acceleration, and local Ollama subtitle polishing. Windows releases and issues are maintained by [@cgeek-dev](https://github.com/cgeek-dev/shandian-download).
+It keeps the same interface and core features as the macOS edition, and adds extra cloud drive link extraction, GitHub / Hugging Face mirror acceleration, and local Ollama subtitle polishing. Windows releases and issues are maintained by [@cgeek-dev](https://github.com/cgeek-dev/shandian-download).
 
 ## Browser extension
 
