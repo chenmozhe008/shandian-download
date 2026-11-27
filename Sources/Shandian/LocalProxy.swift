@@ -14,15 +14,32 @@ enum LocalProxy {
     static var url: String { "http://\(host):\(port)" }
     nonisolated(unsafe) static var isUp = true
 
+    private static func configuredHTTPEndpoint() -> (host: String, port: Int)? {
+        let sys = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] ?? [:]
+        for protocolName in ["HTTPS", "HTTP"] {
+            if (sys[protocolName + "Enable"] as? Int) == 1,
+               let host = sys[protocolName + "Proxy"] as? String, !host.isEmpty,
+               let port = sys[protocolName + "Port"] as? Int, (1...65535).contains(port) {
+                return (host, port)
+            }
+        }
+        return nil
+    }
+
+    /// YouTube 每次启动进程时读取系统代理配置，避免启动时的探测结果过期。
+    static func youtubeYtdlpArguments() -> [String] {
+        guard let endpoint = configuredHTTPEndpoint() else { return [] }
+        var proxy = URLComponents()
+        proxy.scheme = "http"
+        proxy.host = endpoint.host
+        proxy.port = endpoint.port
+        guard let url = proxy.url else { return [] }
+        return ["--proxy", url.absoluteString]
+    }
+
     /// 读系统代理（优先 HTTPS 那一项），能连上、拿到任何 HTTP 回应就算可用
     static func check() async {
-        let sys = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] ?? [:]
-        let pick: (String) -> (String, Int)? = { p in
-            guard (sys[p + "Enable"] as? Int) == 1, let h = sys[p + "Proxy"] as? String, !h.isEmpty,
-                  let port = sys[p + "Port"] as? Int else { return nil }
-            return (h, port)
-        }
-        guard let (h, p) = pick("HTTPS") ?? pick("HTTP") else { isUp = false; return }
+        guard let (h, p) = configuredHTTPEndpoint() else { isUp = false; return }
         host = h; port = p
         var req = URLRequest(url: URL(string: url)!)
         req.timeoutInterval = 1.5

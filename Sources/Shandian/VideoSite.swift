@@ -6,6 +6,7 @@ struct VideoOptions: Codable, Equatable {
     var maxHeight = 0          // 0 = 最高；否则不超过这个分辨率
     var subtitles = false      // 下载字幕并嵌入视频
     var audioOnly = false      // 只下音频（m4a）
+    var subtitleMode: SubtitleMode? // 老任务和无确认框下载默认只下载原字幕
 
     private static let key = "videoOptions"
     static var current: VideoOptions {
@@ -14,12 +15,24 @@ struct VideoOptions: Codable, Equatable {
     }
 
     /// 对应的 yt-dlp 参数
-    var arguments: [String] {
+    var arguments: [String] { arguments(for: "") }
+
+    func arguments(for rawURL: String) -> [String] {
         if audioOnly { return ["-f", "ba/b", "-x", "--audio-format", "m4a"] }
-        // 先比分辨率，同分辨率优先 H.264/AAC：默认会挑体积最小的 AV1，剪映、老 Mac 兼容差
-        var a = ["-f", "bv*+ba/b", "-S", (maxHeight > 0 ? "res:\(maxHeight)" : "res") + ",vcodec:h264,acodec:aac", "--merge-output-format", "mp4"]
-        if subtitles { a += ["--write-subs", "--sub-langs", "zh.*,en.*,ai-zh", "--embed-subs"] }
-        return a
+        // 先比分辨率，同分辨率优先 H.264/AAC。
+        var args = ["-f", "bv*+ba/b", "-S", (maxHeight > 0 ? "res:\(maxHeight)" : "res") + ",vcodec:h264,acodec:aac", "--merge-output-format", "mp4"]
+        if subtitles && !VideoSiteRunner.isYouTube(rawURL) {
+            args += ["--write-subs", "--write-auto-subs", "--sub-format", "srt/vtt/best", "--sub-langs", "zh-Hans,zh-CN,zh,en,ja,ko,ai-zh"]
+            if subtitleMode != .translate { args += ["--embed-subs"] }
+        }
+        return args
+    }
+
+    /// 勾选字幕时为视频建独立文件夹，视频与各语种字幕集中存放；未勾选时平铺存放。
+    var outputTemplate: String {
+        (subtitles && !audioOnly)
+            ? "%(title).80s [%(id)s]/%(title).80s [%(id)s].%(ext)s"
+            : "%(title).80s [%(id)s].%(ext)s"
     }
 }
 
@@ -33,16 +46,20 @@ struct VideoJob: Codable, Identifiable {
     var filePath: String?
     var downloaded: Int64 = 0
     var total: Int64 = 0
+    var progress: Double?
     var speed: Int64 = 0
     var state: State = .running
     var error: String?
     var createdAt = Date()
     var options: VideoOptions?     // 旧记录没有这一项，按默认处理
+    var outputDirectory: String?    // 重试沿用创建任务时的目录
+    var subtitleNotice: String?
+    var subtitleProcessing: Bool?
     var stage: Stage?              // 下载中处在哪一步，界面据此显示（旧记录没有）
 
     enum State: String, Codable { case running, done, failed }
-    /// 解析网页 → 下视频 → 下音频 → 合并（或只下音频 → 转换）。解析和合并时没有字节进度，界面不能停在 0
-    enum Stage: String, Codable { case preparing, video, audio, merging, converting }
+    /// 解析网页 → 下视频 → 下音频 → 合并（或只下音频 → 转换）→ 翻译字幕。解析、合并、翻译时没有字节进度，界面不能停在 0
+    enum Stage: String, Codable { case preparing, video, audio, merging, converting, translating }
 }
 
 /// App 自带一份 yt-dlp，放在配置目录、每周检查新版。视频站改版快，旧版会直接失效
@@ -61,45 +78,75 @@ enum YtDlp {
     static let bundled = dir.appendingPathComponent("yt-dlp_macos")
     static var packaged: URL? { Bundle.main.resourceURL?.appendingPathComponent("yt-dlp_macos/yt-dlp_macos") }
     static let legacy = EngineConfig.supportDir.appendingPathComponent("bin/yt-dlp")   // 0.14 及以前的单文件版
-    static let downloadURL = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos.zip")!
-    static let latestAPI = URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!
+    static let latestRelease = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest")!
 
-    /// 优先用自带的；还没下好时退回旧的单文件版、brew 装的
+    private static let packagedVersion = Bundle.main.resourceURL
+        .flatMap { try? String(contentsOf: $0.appendingPathComponent("yt-dlp-version.txt"), encoding: .utf8) }?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
     static var path: String? {
-        ([bundled.path, packaged?.path, legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].compactMap { $0 }).first { FileManager.default.isExecutableFile(atPath: $0) }
+        let fm = FileManager.default
+        let embedded = packaged.flatMap { fm.isExecutableFile(atPath: $0.path) ? $0.path : nil }
+        if fm.isExecutableFile(atPath: bundled.path) {
+            if let embedded, let packagedVersion,
+               run(["--version"]).map({ isOlder($0, than: packagedVersion) }) ?? true {
+                return embedded
+            }
+            return bundled.path
+        }
+        return embedded ?? ([legacy.path, "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].first {
+            fm.isExecutableFile(atPath: $0)
+        })
     }
 
-    /// 启动时调用：没有就下载，超过 7 天查一次新版
+    static func isOlder(_ current: String, than candidate: String) -> Bool {
+        current.compare(candidate, options: .numeric) == .orderedAscending
+    }
+
+    /// 只有查到有效版本时才记录检查时间，避免 GitHub 请求失败后继续用旧版等一周。
     static func ensureFresh() async {
         let fm = FileManager.default
-        guard fm.isExecutableFile(atPath: bundled.path) else { await install(); return }
+        let installedVersion = run(["--version"])
         let modified = (try? fm.attributesOfItem(atPath: bundled.path)[.modificationDate] as? Date) ?? .distantPast
-        guard Date().timeIntervalSince(modified) > 7 * 86400 else { return }
+        let embeddedIsNewer = packagedVersion.map { version in
+            installedVersion.map { isOlder($0, than: version) } ?? true
+        } ?? false
+        guard embeddedIsNewer || Date().timeIntervalSince(modified) > 7 * 86400 else { return }
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = LocalProxy.sessionDictionary
-        if let (data, _) = try? await URLSession(configuration: cfg).data(from: latestAPI),
-           let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tag_name"] as? String,
-           tag != run(["--version"]) {
-            await install()
-        } else {
-            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: bundled.path)  // 已是最新：记一下检查时间
+        let session = URLSession(configuration: cfg)
+        defer { session.finishTasksAndInvalidate() }
+        var request = URLRequest(url: latestRelease, timeoutInterval: 15)
+        request.httpMethod = "HEAD"
+        guard let (_, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let release = http.url, release.host == "github.com",
+              release.deletingLastPathComponent().path == "/yt-dlp/yt-dlp/releases/tag",
+              release.lastPathComponent.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil else { return }
+        let tag = release.lastPathComponent
+        if let installedVersion, !isOlder(installedVersion, than: tag) {
+            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: bundled.path)
+        } else if packagedVersion.map({ !isOlder(tag, than: $0) }) ?? true {
+            await install(version: tag)
         }
     }
 
     /// 下载目录版、解压后整个换上；成功后删掉旧的单文件版，并空跑一次让系统先扫描完（否则第一条视频要多等 16 秒）
-    private static func install() async {
+    private static func install(version: String) async {
         let fm = FileManager.default
         let cfg = URLSessionConfiguration.ephemeral
         cfg.connectionProxyDictionary = LocalProxy.sessionDictionary
-        guard let (zip, resp) = try? await URLSession(configuration: cfg).download(from: downloadURL),
+        let download = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/download/\(version)/yt-dlp_macos.zip")!
+        guard let (zip, resp) = try? await URLSession(configuration: cfg).download(from: download),
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
         let staging = dir.deletingLastPathComponent().appendingPathComponent(".yt-dlp-new")
         try? fm.removeItem(at: staging)
         let unzip = Process()
         unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         unzip.arguments = ["-x", "-k", zip.path, staging.path]
-        try? unzip.run(); unzip.waitUntilExit()
-        try? fm.removeItem(at: zip)
+        defer { try? fm.removeItem(at: zip) }
+        guard (try? unzip.run()) != nil else { return }
+        unzip.waitUntilExit()
         let exe = staging.appendingPathComponent("yt-dlp_macos")
         guard unzip.terminationStatus == 0, fm.fileExists(atPath: exe.path) else { try? fm.removeItem(at: staging); return }
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: exe.path)
@@ -124,8 +171,18 @@ enum YtDlp {
 }
 
 final class VideoSiteRunner: @unchecked Sendable {
-    private var processes: [UUID: Process] = [:]
+    private final class Transfer {
+        var process: Process?
+        var cancelled = false
+    }
+
+    private var transfers: [UUID: Transfer] = [:]
     private let lock = NSLock()
+    private let downloader: @Sendable () -> String?
+
+    init(downloader: @escaping @Sendable () -> String? = { YtDlp.path }) {
+        self.downloader = downloader
+    }
 
     static func siteName(_ url: String) -> String {
         let host = URL(string: url)?.host?.lowercased() ?? ""
@@ -135,71 +192,262 @@ final class VideoSiteRunner: @unchecked Sendable {
         return names.first { host.contains($0.0) }?.1 ?? host
     }
 
-    /// 启动下载；进度、标题、封面、成品路径通过 update 回调（在后台线程）
-    func start(_ job: VideoJob, into dir: URL, headers: [String: String] = [:], update: @escaping @Sendable (VideoJob) -> Void) {
-        guard let bin = YtDlp.path else {
-            var j = job; j.state = .failed; j.error = L("视频下载组件不可用，请重新安装应用后重试"); update(j); return
+    static func isYouTube(_ rawURL: String) -> Bool {
+        guard let host = URL(string: rawURL)?.host?.lowercased() else { return false }
+        return host == "youtube.com" || host.hasSuffix(".youtube.com") || host == "youtu.be"
+    }
+
+    /// 优先选与原声自动字幕同语种的人工轨，纯机翻轨不参与选择。
+    static func youtubeSubtitleArguments(metadata data: Data) -> [String] {
+        guard let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        let auto = (info["automatic_captions"] as? [String: [[String: Any]]] ?? [:])
+            .keys.filter { $0.hasSuffix("-orig") }.sorted()
+        let manual = (info["subtitles"] as? [String: [[String: Any]]] ?? [:])
+            .keys.filter { $0 != "live_chat" }.sorted()
+        let language = (info["language"] as? String)?.lowercased()
+        let matchingTrack = language.flatMap { lang -> String? in
+            if let exact = manual.first(where: { $0.lowercased() == lang }) { return exact }
+            if let exact = auto.first(where: { $0.lowercased() == lang + "-orig" }) { return exact }
+            guard let primary = SubtitlePolisher.normalizeLanguageTag(lang) else { return nil }
+            return manual.first { SubtitlePolisher.normalizeLanguageTag($0) == primary }
+                ?? auto.first { SubtitlePolisher.normalizeLanguageTag(String($0.dropLast(5))) == primary }
         }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = [
-            "-P", dir.path, "-o", "%(title).80s [%(id)s].%(ext)s",
-            "--no-playlist",
-            "--newline", "--no-colors",
-            "--progress",   // --print 默认开安静模式、不输出进度（10-29 用户：一直 0 然后突然下好）
-            // 分片并发：YouTube 单连接被限速，10-29 实测默认 1.4–1.6 MiB/s，-N 4 为 3.4–4.1；8、16 不比 4 明显快。
-            // B 站等整文件的站不分片，这个参数不起作用也无害
-            "--concurrent-fragments", "4",
+        let original = auto.first { $0 == "en-orig" } ?? auto.first
+        let matchingManual = original.flatMap { fallback in
+            let lang = String(fallback.dropLast(5))
+            return manual.first { $0 == lang }
+        }
+        let track = matchingTrack ?? matchingManual ?? original ?? manual.first { $0 == "en" } ?? manual.first
+        guard let track, track.range(of: #"^[A-Za-z0-9][A-Za-z0-9-]*$"#, options: .regularExpression) != nil else { return [] }
+        // yt-dlp 嵌入后用 --write-subs 决定是否保留外挂文件，自动轨也需要此开关。
+        var args = ["--ignore-errors", "--write-subs", "--sub-format", "srt/vtt", "--sub-langs", track]
+        if !manual.contains(track) { args += ["--write-auto-subs"] }
+        return args
+    }
+
+    /// 启动下载；进度、标题、封面、成品路径通过 update 回调（在后台线程）
+    func start(_ job: VideoJob, into dir: URL, headers: [String: String] = [:], subtitleConfig: SubtitlePolishConfig = .current, update: @escaping @Sendable (VideoJob) -> Void) {
+        let started = lock.withLock {
+            guard transfers[job.id] == nil else { return false }
+            transfers[job.id] = Transfer()
+            return true
+        }
+        guard started else { return }
+        DispatchQueue.global(qos: .utility).async {
+            defer { self.lock.withLock { self.transfers[job.id] = nil } }
+            self.download(job, into: dir, headers: headers, subtitleConfig: subtitleConfig, update: update)
+        }
+    }
+
+    private func download(_ job: VideoJob, into dir: URL, headers: [String: String], subtitleConfig: SubtitlePolishConfig, update: @escaping @Sendable (VideoJob) -> Void) {
+        var first = job
+        first.filePath = nil
+        first.subtitleNotice = nil
+        first.subtitleProcessing = nil
+        first.error = nil
+        first.stage = .preparing
+        update(first)
+        let state = JobState(first)
+        guard let bin = downloader() else {
+            update(state.fail(L("视频下载组件不可用，请重新安装应用后重试")))
+            return
+        }
+
+        let options = job.options ?? VideoOptions()
+        let youtube = Self.isYouTube(job.url)
+        let temporaryCookies = Self.temporaryCookieFile(headers, for: job.url)
+        defer { if let temporaryCookies { try? FileManager.default.removeItem(at: temporaryCookies) } }
+        var common = ["--no-playlist", "--newline", "--no-colors", "--encoding", "utf-8"]
+        if youtube { common += ["--ignore-config", "--abort-on-unavailable-fragments"] }
+        common += SiteCookies.ytdlpArguments(for: job.url)
+        common += Self.safeRequestArguments(headers)
+        if let temporaryCookies { common += ["--cookies", temporaryCookies.path] }
+        if let node = ["/opt/homebrew/bin/node", "/usr/local/bin/node"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            common += ["--js-runtimes", "node:" + node]
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for attempt in 0..<(youtube ? 2 : 1) {
+                let canRetry = youtube && attempt == 0
+                let proxy = youtube ? LocalProxy.youtubeYtdlpArguments() : LocalProxy.ytdlpArguments(for: job.url)
+                let completed = try downloadAttempt(bin, job: job, into: dir, options: options, common: common + proxy,
+                                                    state: state, subtitleConfig: subtitleConfig, canRetry: canRetry, update: update)
+                if completed { return }
+                state.beginRetry()
+            }
+        } catch is CancellationError {
+            update(state.fail(L("下载已取消")))
+        } catch {
+            update(state.fail(error.localizedDescription))
+        }
+    }
+
+    /// 返回 false 时由调用者重新提取一次签名地址；成品由正常完成流程处理。
+    private func downloadAttempt(_ bin: String, job: VideoJob, into dir: URL, options: VideoOptions,
+                                 common: [String], state: JobState, subtitleConfig: SubtitlePolishConfig,
+                                 canRetry: Bool, update: @escaping @Sendable (VideoJob) -> Void) throws -> Bool {
+        var arguments = options.arguments(for: job.url)
+        let input = ["--", job.url]
+        let output = ["-P", dir.path, "-o", options.outputTemplate]
+        let wantsSubtitles = Self.isYouTube(job.url) && options.subtitles && !options.audioOnly
+        if wantsSubtitles {
+            let metadata = FileManager.default.temporaryDirectory.appendingPathComponent("shandian-video-\(job.id).json")
+            defer { try? FileManager.default.removeItem(at: metadata) }
+            let status = try run(bin, common + arguments + ["--dump-json", "--write-auto-subs", "--sub-langs", "__none__"] + input,
+                                 id: job.id, state: state, output: nil)
+            guard status.code == 0 else {
+                if canRetry && state.shouldRetryYouTube { return false }
+                update(state.finish(ok: false))
+                return true
+            }
+            try PrivateFile.write(status.data, to: metadata)
+            let subtitles = Self.youtubeSubtitleArguments(metadata: status.data)
+            arguments += subtitles
+            // AI 翻译使用外挂字幕，避免播放器优先使用内嵌的英文轨。
+            if !subtitles.isEmpty && options.subtitleMode != .translate && Thumbnails.ffmpeg != nil {
+                arguments += ["--embed-subs"]
+            }
+            return try downloadMedia(bin, common + arguments + output + ["--load-info-json", metadata.path],
+                                     id: job.id, state: state, subtitleConfig: subtitleConfig,
+                                     wantsYouTubeSubtitles: true, hasTrack: !subtitles.isEmpty, canRetry: canRetry, update: update)
+        }
+        return try downloadMedia(bin, common + arguments + output + input, id: job.id, state: state,
+                                 subtitleConfig: subtitleConfig, wantsYouTubeSubtitles: false, hasTrack: false,
+                                 canRetry: canRetry, update: update)
+    }
+
+    private func downloadMedia(_ bin: String, _ args: [String], id: UUID, state: JobState, subtitleConfig: SubtitlePolishConfig,
+                               wantsYouTubeSubtitles: Bool, hasTrack: Bool, canRetry: Bool,
+                               update: @escaping @Sendable (VideoJob) -> Void) throws -> Bool {
+        let progress = [
+            "--progress", "--concurrent-fragments", "4",
             "--print", "before_dl:SDTITLE %(title)s",
             "--print", "before_dl:SDFMT %(format_id)s",
             "--print", "before_dl:SDSIZE %(filesize,filesize_approx)s",
             "--print", "before_dl:SDTHUMB %(thumbnail)s",
             "--print", "after_move:SDFILE %(filepath)s",
             "--progress-template", "download:SDPROG %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.status)s",
-            job.url,
         ]
-        p.arguments?.insert(contentsOf: (job.options ?? VideoOptions()).arguments + LocalProxy.ytdlpArguments(for: job.url)
-                                     + SiteCookies.ytdlpArguments(for: job.url), at: 0)
-        p.arguments?.insert(contentsOf: Self.safeRequestArguments(headers), at: 0)
-        // Cookie 仅限目标主机的临时文件，避免出现在命令行或持久化任务中。
-        let temporaryCookies = Self.temporaryCookieFile(headers, for: job.url)
-        if let temporaryCookies { p.arguments?.insert(contentsOf: ["--cookies", temporaryCookies.path], at: 0) }
-        // YouTube 需要 JS 运行环境解签名，没有时部分格式缺失（10-27 实测 44 → 52 个格式）；本机有 Node 就接上
-        if let node = ["/opt/homebrew/bin/node", "/usr/local/bin/node"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            p.arguments?.insert(contentsOf: ["--js-runtimes", "node:" + node], at: 0)
+        let result = try run(bin, progress + args, id: id, state: state, output: { line in
+            if let job = state.apply(line) { update(job) }
+        })
+        if result.code != 0 && canRetry && state.shouldRetryYouTube { return false }
+        var finished = state.finish(ok: result.code == 0)
+        guard finished.state == .done, finished.options?.subtitles == true,
+              finished.options?.audioOnly == false, let path = finished.filePath else {
+            update(finished)
+            return true
         }
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"  // 合并音视频要找到 ffmpeg
-        p.environment = env
-        let out = Pipe(); p.standardOutput = out
-        let err = Pipe(); p.standardError = err
+        let video = URL(fileURLWithPath: path)
+        let subtitle = SubtitlePolisher.findSubtitle(for: video)
+        if wantsYouTubeSubtitles && subtitle == nil {
+            finished.subtitleNotice = hasTrack
+                ? L("视频已下载，字幕下载失败")
+                : L("视频已下载，未获取到原文字幕轨")
+        }
+        let config = subtitleConfig
+        let mode = finished.options?.subtitleMode ?? .original
+        if subtitle != nil && mode.isAI {
+            // 翻译字幕是选了 AI 翻译后的最后一步：任务留在「正在下载」里显示实时进度，
+            // 等双语字幕全部写入文件夹后再标记完成移入「已完成」，避免点开文件夹时还没字幕。
+            var translating = finished
+            translating.state = .running
+            translating.stage = .translating
+            translating.speed = 0
+            translating.progress = 0.05
+            translating.subtitleProcessing = true
+            translating.subtitleNotice = L("提取术语中…")
+            update(translating)
 
-        var first = job; first.stage = .preparing; update(first)
-        let state = JobState(first)
-        out.fileHandleForReading.readabilityHandler = { h in
-            let data = h.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            for line in text.split(whereSeparator: \.isNewline) { if let j = state.apply(String(line)) { update(j) } }
+            let baseTranslating = translating
+            let finalJob = finished
+            Task.detached(priority: .utility) {
+                let summary = await SubtitlePolisher.process(videoURL: video, config: config, mode: mode, progress: { completed, total in
+                    var job = baseTranslating
+                    job.progress = max(0.05, min(0.99, Double(completed) / Double(max(1, total))))
+                    job.subtitleNotice = "\(completed)/\(total) " + L("条")
+                    update(job)
+                })
+                var done = finalJob
+                done.state = .done
+                done.stage = nil
+                done.progress = 1.0
+                done.subtitleProcessing = nil
+                done.subtitleNotice = summary ?? L("字幕文件无法处理，已保留原文")
+                update(done)
+            }
+            return true
         }
-        err.fileHandleForReading.readabilityHandler = { h in
-            let data = h.availableData
-            if let text = String(data: data, encoding: .utf8), let last = text.split(whereSeparator: \.isNewline).last(where: { $0.contains("ERROR") }) {
-                state.lastError = String(last).replacingOccurrences(of: "ERROR: ", with: "")
+        update(finished)
+        if subtitle != nil && config.autoCleanStructure {
+            let downloaded = finished
+            Task.detached(priority: .utility) {
+                let summary = await SubtitlePolisher.process(videoURL: video, config: config, mode: mode)
+                var processed = downloaded
+                processed.subtitleProcessing = nil
+                processed.subtitleNotice = summary ?? L("字幕文件无法处理，已保留原文")
+                update(processed)
             }
         }
-        p.terminationHandler = { [weak self] proc in
-            if let temporaryCookies { try? FileManager.default.removeItem(at: temporaryCookies) }
-            out.fileHandleForReading.readabilityHandler = nil
-            err.fileHandleForReading.readabilityHandler = nil
-            update(state.finish(ok: proc.terminationStatus == 0))
-            self?.lock.withLock { self?.processes[job.id] = nil }
+        return true
+    }
+
+    private func run(_ bin: String, _ args: [String], id: UUID, state: JobState,
+                     output: (@Sendable (String) -> Void)?) throws -> (code: Int32, data: Data) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: bin)
+        process.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        process.environment = env
+        process.standardInput = FileHandle.nullDevice
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try lock.withLock {
+            guard let transfer = transfers[id], !transfer.cancelled else { throw CancellationError() }
+            try process.run()
+            transfer.process = process
         }
-        do { try p.run() } catch {
-            if let temporaryCookies { try? FileManager.default.removeItem(at: temporaryCookies) }
-            var j = job; j.state = .failed; j.error = error.localizedDescription; update(j); return
+
+        // 消费两个管道直到 EOF，确保退出前的成品路径和报错都已读取。
+        let errors = DispatchGroup()
+        errors.enter()
+        DispatchQueue.global(qos: .utility).async {
+            Self.readLines(stderr.fileHandleForReading, consume: state.recordDiagnostic)
+            errors.leave()
         }
-        lock.withLock { processes[job.id] = p }
+        let data: Data
+        if let output {
+            Self.readLines(stdout.fileHandleForReading, consume: output)
+            data = Data()
+        } else {
+            data = stdout.fileHandleForReading.readDataToEndOfFile()
+        }
+        process.waitUntilExit()
+        errors.wait()
+        try lock.withLock {
+            guard let transfer = transfers[id], !transfer.cancelled else { throw CancellationError() }
+            transfer.process = nil
+        }
+        return (process.terminationStatus, data)
+    }
+
+    private static func readLines(_ handle: FileHandle, consume: (String) -> Void) {
+        var pending = Data()
+        while true {
+            let chunk = handle.availableData
+            if chunk.isEmpty { break }
+            pending.append(chunk)
+            let lines = pending.split(separator: 10, omittingEmptySubsequences: false)
+            for line in lines.dropLast() {
+                consume(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .newlines))
+            }
+            pending = Data(lines.last ?? Data())
+        }
+        if !pending.isEmpty { consume(String(decoding: pending, as: UTF8.self)) }
     }
 
     /// 仅转交浏览器标识及去掉参数的来源地址；Cookie 和授权头不写入进程参数或任务记录。
@@ -221,9 +469,11 @@ final class VideoSiteRunner: @unchecked Sendable {
     }
 
     /// Netscape Cookie 文件严格限定为当前 URL 的主机；文件只在下载期间存在，权限为 0600。
+    /// YouTube 公开视频带浏览器 Cookie 但无 PO Token 时，YouTube 会屏蔽视频流导致 Requested format is not available，因此跳过 YouTube。
     static func temporaryCookieFile(_ headers: [String: String], for rawURL: String) -> URL? {
         guard let raw = headers.first(where: { $0.key.lowercased() == "cookie" })?.value,
               raw.utf8.count <= 65536, let url = URL(string: rawURL), let host = url.host,
+              !isYouTube(rawURL),
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               !host.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
         let forbidden = CharacterSet.controlCharacters
@@ -253,22 +503,37 @@ final class VideoSiteRunner: @unchecked Sendable {
         }
     }
 
-    func cancel(_ id: UUID) { lock.withLock { processes[id] }?.terminate() }
-    func cancelAll() { lock.withLock { Array(processes.values) }.forEach { $0.terminate() } }
+    func cancel(_ id: UUID) {
+        lock.withLock {
+            transfers[id]?.cancelled = true
+            if let process = transfers[id]?.process, process.isRunning { process.terminate() }
+        }
+    }
+
+    func cancelAll() {
+        lock.withLock {
+            for transfer in transfers.values {
+                transfer.cancelled = true
+                if let process = transfer.process, process.isRunning { process.terminate() }
+            }
+        }
+    }
 }
 
 /// 解析 yt-dlp 输出。视频和音频是分两段下的，前一段下完的字节累加进 finishedBytes。
-private final class JobState: @unchecked Sendable {
+final class JobState: @unchecked Sendable {
     private var job: VideoJob
     private var finishedBytes: Int64 = 0
     private var currentTotal: Int64 = 0
     private var parts = 1          // 视频+音频分开下时是 2
     private var finishedParts = 0
     private var knownTotal: Int64 = 0  // 开下前 yt-dlp 给的整体大小（估算），有它总大小就不会中途变大、进度条不往回跳
+    private var maxProgress: Double = 0
     // 速度按最近 3 秒实际下到的字节自己算：yt-dlp 每个新分块都从头估，开头几个包能报出 200 MB/s（10-29 实测）
     private var samples: [(Date, Int64)] = []
     private var lastEmit = Date.distantPast
-    var lastError: String?
+    private var lastError: String?
+    private var challengeFailed = false
     private let lock = NSLock()
 
     init(_ job: VideoJob) { self.job = job }
@@ -289,6 +554,19 @@ private final class JobState: @unchecked Sendable {
                 else { currentTotal = total }
                 job.downloaded = finishedBytes + (f[5] == "finished" ? 0 : done)
                 job.total = max(knownTotal, finishedBytes + currentTotal, job.total)
+                // 分段单调进度：YouTube 视频+音频分两段且 HLS 总大小估算会波动；
+                // 视频段占 0–90%、音频段占 90–99%、合并后 100%，并做单调递增保护，杜绝进度条往回缩。
+                let rawProgress: Double
+                if finishedParts >= parts {
+                    rawProgress = 0.99
+                } else if parts > 1 {
+                    let partFrac = currentTotal > 0 ? min(1, max(0, Double(done) / Double(currentTotal))) : 0
+                    rawProgress = finishedParts == 0 ? (partFrac * 0.90) : (0.90 + partFrac * 0.09)
+                } else {
+                    rawProgress = job.total > 0 ? min(0.99, max(0, Double(job.downloaded) / Double(job.total))) : 0
+                }
+                maxProgress = max(maxProgress, rawProgress)
+                job.progress = maxProgress
                 let now = Date()
                 samples.append((now, job.downloaded))
                 samples.removeAll { now.timeIntervalSince($0.0) > 3 }
@@ -307,11 +585,55 @@ private final class JobState: @unchecked Sendable {
         }
     }
 
+    func recordDiagnostic(_ line: String) {
+        lock.withLock {
+            if line.hasPrefix("ERROR: ") {
+                lastError = String(line.dropFirst(7))
+            } else if line.contains("challenge solving failed") || line.contains("No supported JavaScript runtime") {
+                challengeFailed = true
+            }
+        }
+    }
+
+    var shouldRetryYouTube: Bool {
+        lock.withLock {
+            guard job.filePath == nil, let lastError else { return false }
+            return YtDlp.isConnectionError(lastError) || lastError.localizedCaseInsensitiveContains("HTTP Error 403")
+        }
+    }
+
+    func beginRetry() {
+        lock.withLock {
+            lastError = nil
+            challengeFailed = false
+            samples.removeAll(keepingCapacity: true)
+            finishedBytes = 0
+            finishedParts = 0
+            currentTotal = 0
+        }
+    }
+
+    func fail(_ message: String) -> VideoJob {
+        lock.withLock {
+            job.speed = 0
+            job.stage = nil
+            job.state = .failed
+            job.error = message
+            return job
+        }
+    }
+
     static func readableError(_ error: String?) -> String {
         guard let error else { return L("下载失败") }
         let lower = error.lowercased()
         if lower.contains("drm") || lower.contains("widevine") || lower.contains("fairplay") {
             return L("此视频受数字版权保护，无法下载")
+        }
+        if lower.contains("ffmpeg") && (lower.contains("not installed") || lower.contains("not found")) {
+            return L("缺少 FFmpeg，无法合并音视频或转换格式")
+        }
+        if lower.contains("http error 429") {
+            return L("网站限制了下载请求，请稍后重试")
         }
         if lower.contains("http error 403") || lower.contains("http error 401") {
             return L("视频资源拒绝访问，可能需要登录或链接已过期；请返回网页重新侦测")
@@ -323,7 +645,13 @@ private final class JobState: @unchecked Sendable {
     func finish(ok: Bool) -> VideoJob {
         lock.withLock {
             job.speed = 0; job.stage = nil
-            if ok { job.state = .done; job.downloaded = max(job.downloaded, job.total) }
+            let size = job.filePath.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0))?[.size] as? Int64 }
+            if ok, let size, size > 0 {
+                job.state = .done
+                job.total = size
+                job.downloaded = size
+                job.progress = 1.0
+            }
             else {
                 job.state = .failed
                 // 抖音、小红书没带登录信息时 yt-dlp 的报错看不懂，直接告诉怎么办
@@ -333,10 +661,11 @@ private final class JobState: @unchecked Sendable {
                     : SiteCookies.site(of: job.url) != nil && SiteCookies.ytdlpArguments(for: job.url).isEmpty
                     ? L("需要在浏览器里登录后，右键「用闪电全能下载这个视频」")
                     : YtDlp.isConnectionError(lastError) && LocalProxy.isOverseas(job.url)
-                    ? L("连不上这个网站：需要科学上网，请检查网络设置") : Self.readableError(lastError)
-            }
-            if let path = job.filePath, let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 {
-                job.total = size; if ok { job.downloaded = size }
+                    ? L("连不上这个网站：需要科学上网，请检查网络设置")
+                    : challengeFailed && (lastError?.localizedCaseInsensitiveContains("format is not available") ?? false)
+                    ? L("YouTube 播放器校验失败，请检查 JavaScript 运行环境和视频下载组件版本")
+                    : ok && lastError == nil
+                    ? L("下载程序未生成可用的视频文件") : Self.readableError(lastError)
             }
             return job
         }

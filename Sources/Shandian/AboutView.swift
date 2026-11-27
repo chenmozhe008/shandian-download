@@ -288,7 +288,7 @@ private struct ChangelogPage: View {
     private var releases: [HistoryEntry] {
         let text = Bundle.main.url(forResource: AppLanguage.isEnglish ? "CHANGELOG.en" : "CHANGELOG", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-        return ReleaseHistory.merge(local: ReleaseHistory.local(text, currentVersion: AppInfo.version, isDevelopment: AppInfo.isDev), online: online)
+        return ReleaseHistory.merge(local: ReleaseHistory.local(text, includeDevelopment: AppInfo.isDev), online: online)
     }
 
     @MainActor private func loadHistory() async {
@@ -296,7 +296,7 @@ private struct ChangelogPage: View {
         loading = true
         defer { loading = false }
         if online.isEmpty, let data = UserDefaults.standard.data(forKey: cacheKey), let cached = ReleaseHistory.online(data) { online = cached }
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/chenmozhe008/shandian-download/releases?per_page=100")!, timeoutInterval: 15)
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/chenmozhe008/shandian-download/releases?per_page=100")!, timeoutInterval: 25)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         do {
             let (data, response) = try await GitHubAPI.data(for: request)

@@ -1,5 +1,14 @@
 var T = globalThis.T || ((text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values?.[key]));  // 测试环境没有 i18n.js
-importScripts("i18n.js", "network-capture.js", "qingque-media.js");
+importScripts("i18n.js", "network-capture.js", "qingque-media.js", "ali.js", "quark.js");
+
+async function cloudDownloadTab(sender, tabId) {
+  if (sender?.tab?.id) return sender.tab;
+  if (tabId) return chrome.tabs.get(tabId);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function launchApp() { return false; }
 
 // 闪电全能下载浏览器扩展：把浏览器里的下载交给本机的闪电全能下载（127.0.0.1:6800）。
 // App 没开时什么都不拦，浏览器照常下载；App 只认本扩展的来源（manifest 里的 key 固定了扩展 ID），不需要填密钥。

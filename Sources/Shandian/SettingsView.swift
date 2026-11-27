@@ -190,6 +190,8 @@ struct SettingsView: View {
                 Text("时段外自动暂停，到点自动继续；时段外手动继续的任务不会被再次暂停。闪电全能下载需要开着。迅雷和视频网站的任务不受影响。")
                     .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
             }
+
+            SubtitleSettingsSection()
             }
             .formStyle(.grouped)
             .tabItem { Label("下载", systemImage: "arrow.down.circle") }
@@ -333,6 +335,170 @@ private struct UpdateToggle: View {
 
 /// 迅雷是第三方软件、可选：装了能把任务交给它下，没装也不用藏开关——
 /// 说清「不装也能下」，给出官网，装完点重新检测就能用（11-01 用户反馈：别人电脑上没装迅雷怎么办）
+struct SubtitleSettingsSection: View {
+    private static let manualTag = "__manual__"
+    @State private var config = SubtitlePolishConfig.current
+    @State private var keyInput = ""
+    @State private var manualModel = false
+    @State private var testing = false
+    @State private var testResult: (ok: Bool, message: String)?
+
+    private var modelChoice: Binding<String> {
+        Binding(
+            get: { manualModel ? Self.manualTag : config.model },
+            set: { value in
+                if value == Self.manualTag {
+                    manualModel = true
+                } else {
+                    manualModel = false
+                    config.model = value
+                    config.selectedModels[config.provider.rawValue] = value
+                    SubtitlePolishConfig.current = config
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        Section("视频字幕") {
+            Toggle("清理自动字幕重叠与断句", isOn: $config.autoCleanStructure)
+                .onChange(of: config.autoCleanStructure) { SubtitlePolishConfig.current = config }
+            Text("勾选下载字幕时自动建独立文件夹，清理滚动重复行并按标准语言代码命名（如 .en.srt / .zh-en.srt）；原字幕隐藏备份，可随时右键恢复。")
+                .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+
+            Toggle("在任务中提供 AI 字幕校对与翻译", isOn: $config.aiEnabled)
+                .onChange(of: config.aiEnabled) { SubtitlePolishConfig.current = config }
+
+            if config.aiEnabled {
+                Text("每次下载可单独选择，默认只下载原字幕。也可在完成后右键处理。")
+                    .font(.caption).foregroundStyle(Theme.sub)
+                Picker("服务", selection: $config.provider) {
+                    ForEach(SubtitlePolishConfig.Provider.allCases) { p in
+                        Text(p.displayName).tag(p)
+                    }
+                }
+                .onChange(of: config.provider) {
+                    keyInput = ""
+                    testResult = nil
+                    if !config.provider.needsBaseURLInput {
+                        config.baseURL = config.provider.defaultBaseURL
+                    }
+                    let list = config.availableModels
+                    let saved = config.selectedModels[config.provider.rawValue]
+                    if let saved, !saved.isEmpty {
+                        config.model = saved
+                        manualModel = !list.isEmpty && !list.contains(saved)
+                    } else if let first = list.first {
+                        config.model = first
+                        manualModel = false
+                    } else {
+                        config.model = ""
+                        manualModel = true
+                    }
+                    SubtitlePolishConfig.current = config
+                }
+
+                if config.provider.needsBaseURLInput {
+                    TextField("接口地址", text: $config.baseURL, prompt: Text("https://api.example.com/v1"))
+                        .onChange(of: config.baseURL) { SubtitlePolishConfig.current = config; testResult = nil }
+                }
+
+                if config.provider.needsAPIKey {
+                    SecureField("API 密钥", text: $keyInput, prompt: Text(config.hasKeyForCurrentProvider ? L("已保存，留空则不修改") : L("粘贴密钥")))
+                        .onSubmit { saveKey() }
+                    if config.hasKeyForCurrentProvider, keyInput.isEmpty {
+                        Label("密钥已保存在本机，重装或换新版本都不用再填", systemImage: "checkmark.circle")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                Picker("模型", selection: modelChoice) {
+                    ForEach(config.availableModels, id: \.self) { m in
+                        Text(m).tag(m)
+                    }
+                    Divider()
+                    Text("手动填写…").tag(Self.manualTag)
+                }
+
+                if manualModel {
+                    TextField("模型名称", text: $config.model, prompt: Text("按服务商文档填写"))
+                        .onChange(of: config.model) { SubtitlePolishConfig.current = config }
+                }
+
+                Toggle("外语视频默认生成中外双语字幕（中文在上，原文在下）", isOn: $config.bilingual)
+                    .onChange(of: config.bilingual) { SubtitlePolishConfig.current = config }
+
+                HStack(spacing: 8) {
+                    Button(testing ? L("正在测试…") : L("测试连接")) { runTest() }
+                        .disabled(testing || (config.provider.needsAPIKey && keyInput.isEmpty && !config.hasKeyForCurrentProvider) || config.effectiveBaseURL.isEmpty)
+                    Spacer()
+                    if config.provider.needsAPIKey {
+                        if !keyInput.isEmpty {
+                            Button("保存密钥") { saveKey() }.buttonStyle(.borderedProminent)
+                        } else if config.hasKeyForCurrentProvider {
+                            Button("删除密钥", role: .destructive) { deleteKey() }
+                        }
+                    }
+                }
+
+                if let testResult {
+                    Text(testResult.message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(testResult.ok ? .green : .red)
+                }
+
+                Text("测试连接只读取服务商最新模型列表，不产生费用；连接成功后「模型」下拉框会自动更新为最新可用模型。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func saveKey() {
+        let trimmed = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        config.apiKeys[config.provider.rawValue] = trimmed
+        SubtitlePolishConfig.current = config
+        keyInput = ""
+        runTest()
+    }
+
+    private func deleteKey() {
+        config.apiKeys.removeValue(forKey: config.provider.rawValue)
+        SubtitlePolishConfig.current = config
+        keyInput = ""
+        testResult = nil
+    }
+
+    private func runTest() {
+        testing = true
+        testResult = nil
+        let snapshot = config
+        let requestedProvider = snapshot.provider
+        let requestedBase = snapshot.effectiveBaseURL
+        let pendingKey = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            let res = await SubtitlePolisher.testAndFetchModels(config: snapshot, overrideKey: pendingKey.isEmpty ? nil : pendingKey)
+            // 异步测试期间若用户已切换服务或接口地址，丢弃过期结果，杜绝密钥串用
+            guard config.provider == requestedProvider, config.effectiveBaseURL == requestedBase else {
+                return
+            }
+            testing = false
+            if res.ok, !pendingKey.isEmpty {
+                config.apiKeys[requestedProvider.rawValue] = pendingKey
+                keyInput = ""
+            }
+            if !res.models.isEmpty {
+                config.fetchedModels[requestedProvider.rawValue] = res.models
+                if !manualModel, !res.models.contains(config.model) {
+                    config.model = res.models[0]
+                }
+            }
+            SubtitlePolishConfig.current = config
+            testResult = (res.ok, res.message)
+        }
+    }
+}
+
 struct ThunderSettingsSection: View {
     @AppStorage(Prefs.autoThunderKey) private var autoThunder = true
     @State private var installed = ThunderBridge.installed

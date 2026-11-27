@@ -76,6 +76,8 @@ final class NewTaskModel: ObservableObject {
     @Published var dir: URL
     @Published var dontAsk = false
     @Published var video = VideoOptions.current
+    @Published var subtitleMode = SubtitleMode.original
+    let subtitleConfig = SubtitlePolishConfig.current
 
     private let nameFromBrowser: String?
     private let defaultDir: URL
@@ -171,11 +173,16 @@ final class NewTaskModel: ObservableObject {
             UserDefaults.standard.set(Array(recent.prefix(5)), forKey: "recentDirs")
         }
         if dontAsk { NewTaskPanels.ask = false }
-        if kind == .videoSite { VideoOptions.current = video }
+        var videoOptions: VideoOptions?
+        if kind == .videoSite {
+            VideoOptions.current = video
+            videoOptions = video
+            if video.subtitles && !video.audioOnly { videoOptions?.subtitleMode = subtitleMode }
+        }
         let rename = single && !isTorrent && title != (nameFromBrowser ?? "") && !title.isEmpty ? title : nameFromBrowser
         for l in links {
             store.start(link: l, headers: headers, name: single ? rename : nil, dir: dir, forceVideo: forceVideo,
-                        selectFiles: single && isTorrent && !files.isEmpty ? selected.sorted() : nil)
+                        selectFiles: single && isTorrent && !files.isEmpty ? selected.sorted() : nil, videoOptions: videoOptions, subtitleConfig: subtitleConfig)
         }
         close()
     }
@@ -312,17 +319,49 @@ struct NewTaskView: View {
     }
 
     private var videoOptions: some View {
-        HStack(spacing: 16) {
-            Text("画质").font(.system(size: 13)).foregroundStyle(Theme.sub)
-            Picker("", selection: $model.video.maxHeight) {
-                Text("最高").tag(0)
-                Text("1080P").tag(1080)
-                Text("720P").tag(720)
+        let config = model.subtitleConfig
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 16) {
+                Text("画质").font(.system(size: 13))
+                Picker("", selection: $model.video.maxHeight) {
+                    Text("最高").tag(0)
+                    Text("1080P").tag(1080)
+                    Text("720P").tag(720)
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 200)
+                .disabled(model.video.audioOnly)
+                Toggle("下载字幕", isOn: $model.video.subtitles).toggleStyle(.checkbox).disabled(model.video.audioOnly)
+                Toggle("仅音频", isOn: $model.video.audioOnly).toggleStyle(.checkbox)
             }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 200)
-            .disabled(model.video.audioOnly)
-            Toggle("下载字幕", isOn: $model.video.subtitles).toggleStyle(.checkbox).disabled(model.video.audioOnly)
-            Toggle("仅音频", isOn: $model.video.audioOnly).toggleStyle(.checkbox)
+            if model.video.subtitles && !model.video.audioOnly {
+                HStack(spacing: 8) {
+                    Picker("字幕处理", selection: $model.subtitleMode) {
+                        ForEach(SubtitleMode.userChoices, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .fixedSize()
+                    .disabled(!config.isConfiguredForAI)
+                    if model.subtitleMode.isAI && config.isConfiguredForAI {
+                        Text(config.provider.displayName + " · " + config.model)
+                            .foregroundStyle(Theme.sub).lineLimit(1)
+                    } else if !config.isConfiguredForAI {
+                        Text("可在设置中启用并配置 AI 字幕服务")
+                            .foregroundStyle(Theme.sub).lineLimit(1)
+                    }
+                }
+                if model.subtitleMode.isAI && config.isConfiguredForAI {
+                    Text(config.usageNotice)
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if model.subtitleMode == .translate {
+                        Text(config.bilingual ? L("外语字幕生成中外双语 SRT，中文字幕做校对。") : L("外语字幕生成简体中文 SRT，中文字幕做校对。"))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if model.subtitleMode == .original {
+                    Text(L("原字幕不调用 AI。可在完成后右键翻译。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
         .font(.system(size: 13))
     }

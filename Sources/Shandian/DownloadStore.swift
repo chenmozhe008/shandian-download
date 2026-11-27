@@ -37,6 +37,7 @@ struct Item: Identifiable, Equatable {
     var fromThunder = false
     var fileGone = false        // 下完后文件被用户在访达里删了或移走（硬盘没插不算）
     var avgSpeed: Int64 = 0     // 平滑后的速度，算剩余时间用；瞬时速度跳得厉害，行内和顶部估算会对不上
+    var subtitleNotice: String?
     var videoStage: VideoJob.Stage?  // 视频站任务下载中处在哪一步
     var waitingLastPiece = false // 离完成只差一点、速度归零在干等（末块常和没选中的小文件共用，或源很慢）
     var thunderHasOriginal = false
@@ -51,6 +52,7 @@ struct Item: Identifiable, Equatable {
         let packing: Bool
     }
     var archiveProgress: ArchiveProgress?
+    var progressOverride: Double? = nil
     var canPause: Bool {
         switch source {
         case .engine: true
@@ -59,6 +61,7 @@ struct Item: Identifiable, Equatable {
         }
     }
     var progress: Double {
+        if let override = progressOverride { return min(1, max(0, override)) }
         if total > 0 { return min(1, Double(downloaded) / Double(total)) }
         if let progress = archiveProgress, progress.total > 0 { return Double(progress.saved) / Double(progress.total) }
         return 0
@@ -119,7 +122,74 @@ final class DownloadStore: ObservableObject {
     private var noticeTimer: Task<Void, Never>?
     @Published var hoveredID: String?
     @Published var removalTarget: Item?          // 等待确认移除的任务
+    @Published var folderDrawerTarget: Item?     // 展开查看文件夹/合集文件抽屉的目标任务
     @Published var selectedID: String?           // 列表里单击选中的任务（高亮、键盘操作对象）
+    @Published var selectedIDs: Set<String> = [] // ⌘ / Shift 多选集合
+
+    func isSelected(_ id: String) -> Bool {
+        selectedID == id || selectedIDs.contains(id)
+    }
+
+    func selectItem(_ id: String, in list: [Item], command: Bool, shift: Bool) {
+        if shift, let anchor = selectedID,
+           let i = list.firstIndex(where: { $0.id == anchor }),
+           let j = list.firstIndex(where: { $0.id == id }) {
+            let range = min(i, j)...max(i, j)
+            selectedIDs.formUnion(list[range].map(\.id))
+            selectedID = id
+        } else if command {
+            if selectedIDs.contains(id) {
+                selectedIDs.remove(id)
+                if selectedID == id { selectedID = selectedIDs.first }
+            } else {
+                if let current = selectedID { selectedIDs.insert(current) }
+                selectedIDs.insert(id)
+                selectedID = id
+            }
+        } else {
+            selectedID = id
+            selectedIDs = [id]
+        }
+    }
+
+    func clearSelection() {
+        selectedID = nil
+        selectedIDs.removeAll()
+    }
+
+    func polishSubtitles(for videoURL: URL, mode: SubtitleMode, config: SubtitlePolishConfig = .current) {
+        guard !mode.isAI || config.isConfiguredForAI else {
+            notice = L("请在设置中启用并配置 AI 字幕服务")
+            return
+        }
+        let jobIndex = videoJobs.firstIndex { $0.filePath == videoURL.path && $0.state == .done }
+        if let jobIndex, videoJobs[jobIndex].subtitleProcessing == true {
+            notice = L("此视频的字幕正在处理")
+            return
+        }
+        notice = mode.progressTitle
+        if let jobIndex, mode.isAI {
+            var job = videoJobs[jobIndex]
+            job.subtitleProcessing = true
+            job.subtitleNotice = notice
+            updateVideo(job)
+        }
+        Task {
+            let result = await SubtitlePolisher.process(videoURL: videoURL, config: config, mode: mode)
+                ?? L("未找到可处理的字幕文件")
+            notice = result
+            if let index = videoJobs.firstIndex(where: { $0.filePath == videoURL.path && $0.state == .done }) {
+                var job = videoJobs[index]
+                job.subtitleProcessing = nil
+                job.subtitleNotice = result
+                updateVideo(job)
+            }
+        }
+    }
+
+    func restoreSubtitles(for videoURL: URL) {
+        notice = SubtitlePolisher.restoreOriginal(for: videoURL) ? L("已恢复原字幕") : L("未找到原字幕备份")
+    }
     /// 要让列表滚过去的任务 id（重复添加时定位到已有那条）
     @Published var scrollTarget: String?
     /// 刚跳过去的任务：高亮闪两下，眼睛能跟上（值变化才会重放动画）
@@ -587,6 +657,10 @@ final class DownloadStore: ObservableObject {
     }
 
     private var sourceLinks: [String: String] = DownloadStore.loadSourceLinks()
+    private var mirrorTried: [String: Set<String>] = [:]
+    private var mirrorSwitching: Set<String> = []
+    private var mirrorExhausted: Set<String> = []
+    private var mirrorOriginalHeaders: [String: [String: String]] = [:]
     private static var sourceLinkFile: URL { EngineConfig.supportDir.appendingPathComponent("source-links.json") }
     private static func loadSourceLinks() -> [String: String] {
         (try? Data(contentsOf: sourceLinkFile)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
@@ -815,6 +889,10 @@ final class DownloadStore: ObservableObject {
             if sourceLinks.contains(where: { !alive.contains($0.key) }) {
                 sourceLinks = sourceLinks.filter { alive.contains($0.key) }; saveSourceLinks()
             }
+            mirrorTried = mirrorTried.filter { alive.contains($0.key) }
+            mirrorExhausted = mirrorExhausted.filter { alive.contains($0) }
+            mirrorOriginalHeaders = mirrorOriginalHeaders.filter { alive.contains($0.key) }
+            checkMirrorFallback(tasks)
             for k in engineItems.indices {
                 let id = engineItems[k].id
                 if engineItems[k].checking || engineItems[k].verificationFailed { continue }
@@ -1326,7 +1404,7 @@ final class DownloadStore: ObservableObject {
     /// carry 用于从迅雷收回：任务解析、校验期间先把迅雷已经下好的量显示出来，别让用户以为从头再来；
     /// title 同样用于收回——本地种子文件名是 `.magent_<hash>.torrent`，不能拿它当标题；
     /// originLink 也用于收回：建任务用本地种子，但原始磁力要留着给右键菜单用
-    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil, showWindow: Bool = true) {
+    func start(link: String, headers: [String: String] = [:], name: String? = nil, dir chosen: URL? = nil, forceVideo: Bool = false, selectFiles chosenFiles: [Int]? = nil, carry: (downloaded: Int64, total: Int64)? = nil, title givenTitle: String? = nil, originLink: String? = nil, verifyExisting: Bool = false, replacingThunderID: String? = nil, showWindow: Bool = true, videoOptions: VideoOptions? = nil, subtitleConfig: SubtitlePolishConfig = .current) {
         guard LinkKind.baiduShareURL(link) == nil, FeishuMedia.documentURL(link) == nil,
               let detectedKind = LinkKind.of(link) else { return }
         let kind: LinkKind = forceVideo ? .videoSite : detectedKind
@@ -1336,12 +1414,12 @@ final class DownloadStore: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         if kind == .videoSite {
-            let job = VideoJob(url: link, title: link, site: VideoSiteRunner.siteName(link), options: VideoOptions.current)
+            let job = VideoJob(url: link, title: link, site: VideoSiteRunner.siteName(link), options: videoOptions ?? VideoOptions.current, outputDirectory: dir.path)
             videoJobs.append(job); saveVideos(); rebuild()
             selectedID = job.id.uuidString
             notice = String(localized: "已添加：\(L(VideoSiteRunner.siteName(link))) 视频")
             if showWindow { presentActiveWindow() }
-            videoRunner.start(job, into: dir, headers: headers) { [weak self] updated in
+            videoRunner.start(job, into: dir, headers: headers, subtitleConfig: subtitleConfig) { [weak self] updated in
                 Task { @MainActor in self?.updateVideo(updated) }
             }
             return
@@ -1408,7 +1486,20 @@ final class DownloadStore: ObservableObject {
             if showWindow { presentActiveWindow() }
             Task {
                 do {
-                    let id = try await host.client.create(url: url, directory: dir.path, headers: headers, name: name)
+                    var targetURL = url
+                    var targetHeaders = headers
+                    if GitHubMirror.isSupported(url),
+                       let picked = await GitHubMirror.pick(original: url, headers: headers) {
+                        targetURL = picked
+                        if GitHubMirror.split(picked) != nil {
+                            targetHeaders = GitHubMirror.mirrorHeaders(headers)
+                        }
+                    }
+                    let id = try await host.client.create(url: targetURL, directory: dir.path, headers: targetHeaders, name: name)
+                    if GitHubMirror.isSupported(url) {
+                        mirrorTried[id, default: []].insert(targetURL)
+                        if !headers.isEmpty { mirrorOriginalHeaders[id] = headers }
+                    }
                     selectedID = id
                     notice = String(localized: "已添加：\(shownName)")
                 } catch { notice = String(localized: "添加失败：\(error.localizedDescription)") }
@@ -1545,7 +1636,7 @@ final class DownloadStore: ObservableObject {
             videoRunner.cancel(id)
             weChatTasks.removeValue(forKey: id)?.cancel()
             videoJobs.removeAll { $0.id == id }; saveVideos()
-            if moveFiles, let f = file { Self.trash(f) }
+            if moveFiles, let f = file { Self.trash(Self.videoTrashTarget(for: f)) }
             rebuild()
         case .pending:
             dropPending(item.id); rebuild()
@@ -2556,8 +2647,11 @@ final class DownloadStore: ObservableObject {
 
     private func updateVideo(_ job: VideoJob) {
         guard let i = videoJobs.firstIndex(where: { $0.id == job.id }) else { return }
+        if job.state == .running && videoJobs[i].state != .running { return }
+        let subtitleProgress = job.subtitleProcessing == true && videoJobs[i].subtitleProcessing == true
+        if !subtitleProgress, let summary = job.subtitleNotice, summary != videoJobs[i].subtitleNotice { notice = summary }
         videoJobs[i] = job
-        if job.state != .running { saveVideos() }
+        if job.state != .running && !subtitleProgress { saveVideos() }
         rebuild()
     }
 
@@ -2565,7 +2659,19 @@ final class DownloadStore: ObservableObject {
         guard let data = try? Data(contentsOf: videosFile),
               let list = try? JSONDecoder().decode([VideoJob].self, from: data) else { return }
         // 上次没下完的进程已经不在了，标成失败让用户重试
-        videoJobs = list.map { var j = $0; if j.state == .running { j.state = .failed; j.error = L("上次未完成"); j.speed = 0 }; return j }
+        videoJobs = list.map { saved in
+            var job = saved
+            if job.state == .running {
+                job.state = .failed
+                job.error = L("上次未完成")
+                job.speed = 0
+            }
+            if job.subtitleProcessing == true {
+                job.subtitleProcessing = nil
+                job.subtitleNotice = L("字幕处理未完成，可右键重试")
+            }
+            return job
+        }
     }
 
     private func saveVideos() {
@@ -2581,13 +2687,20 @@ final class DownloadStore: ObservableObject {
             // 原地重新开始；先删再 add 会被去重挡掉，任务直接消失
             guard let i = videoJobs.firstIndex(where: { $0.id == id }) else { return }
             if LinkKind.isWeChatChannelShare(videoJobs[i].url) { notice = L("请在已登录的腾讯元宝页面，通过浏览器扩展重新解析此链接。"); return }
+            if videoJobs[i].options?.subtitleMode?.isAI == true {
+                videoJobs[i].options?.subtitleMode = .original
+                notice = L("重试只下载原字幕，完成后可右键选择 AI 处理。")
+            }
             videoJobs[i].state = .running; videoJobs[i].error = nil
             videoJobs[i].downloaded = 0; videoJobs[i].total = 0; videoJobs[i].speed = 0
+            let dir = videoJobs[i].outputDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Folders.videos
             saveVideos(); rebuild()
-            videoRunner.start(videoJobs[i], into: Folders.videos) { [weak self] updated in
+            videoRunner.start(videoJobs[i], into: dir) { [weak self] updated in
                 Task { @MainActor in self?.updateVideo(updated) }
             }
-        case .engine: togglePause(item)
+        case .engine(let id):
+            mirrorExhausted.remove(id)
+            togglePause(item)
         case .thunder(let id):
             // 迅雷里任务被删了：重新交一次，别让这条一直停在「失败」
             resubmitToThunder(id)
@@ -2595,10 +2708,50 @@ final class DownloadStore: ObservableObject {
         }
     }
 
+    private func checkMirrorFallback(_ tasks: [EngineTask]) {
+        for t in tasks where t.status == "error" {
+            let currentURL = t.meta.req.url
+            let origURL = GitHubMirror.original(currentURL)
+            guard GitHubMirror.isSupported(origURL),
+                  !mirrorSwitching.contains(t.id),
+                  !mirrorExhausted.contains(t.id) else { continue }
+            var tried = mirrorTried[t.id] ?? []
+            tried.insert(currentURL)
+            // 最多自动换站 GitHubMirror.maxSwitches 次（初始 1 次 + 最多换 3 次）
+            guard tried.count <= GitHubMirror.maxSwitches else {
+                mirrorExhausted.insert(t.id)
+                continue
+            }
+            mirrorTried[t.id] = tried
+            mirrorSwitching.insert(t.id)
+            let wantSize = t.meta.res?.size ?? 0
+            let origHeaders = mirrorOriginalHeaders[t.id] ?? [:]
+            let taskID = t.id
+            Task {
+                defer { mirrorSwitching.remove(taskID) }
+                guard let nextURL = await GitHubMirror.pick(original: origURL, headers: origHeaders, skip: tried, wantSize: wantSize) else {
+                    mirrorExhausted.insert(taskID)
+                    return
+                }
+                mirrorTried[taskID, default: []].insert(nextURL)
+                let nextHeaders = GitHubMirror.split(nextURL) != nil ? GitHubMirror.mirrorHeaders(origHeaders) : origHeaders
+                do {
+                    try await host.client.patchRequest(id: taskID, url: nextURL, headers: nextHeaders)
+                    try await host.client.resume(taskID)
+                    notice = L("已切换加速站继续下载")
+                    await poll()
+                } catch {
+                    mirrorExhausted.insert(taskID)
+                }
+            }
+        }
+    }
+
     // MARK: 映射
 
     private static func item(from t: EngineTask) -> Item {
-        let url = t.meta.req.url
+        let rawURL = t.meta.req.url
+        let url = GitHubMirror.original(rawURL)
         let dir = URL(fileURLWithPath: t.meta.opts?.path ?? Folders.downloads.path)
         let files = t.meta.res?.files ?? []
         let selected = (t.meta.opts?.selectFiles?.isEmpty == false ? t.meta.opts!.selectFiles! : Array(files.indices)).filter { $0 < files.count }
@@ -2691,7 +2844,8 @@ final class DownloadStore: ObservableObject {
         return Item(id: j.id.uuidString, source: .video(j.id), title: j.title != j.url ? j.title : j.state == .running ? L("正在读取视频信息") : displayName(j.url), rawTitle: j.title,
                     origin: j.site, category: .video, status: status, downloaded: j.downloaded, total: j.total, speed: j.speed,
                     file: j.filePath.map { URL(fileURLWithPath: $0) }, createdAt: j.createdAt, thumbRemote: j.thumbnailURL,
-                    linkKey: linkKey(j.url), videoStage: j.state == .running ? (j.stage ?? .preparing) : nil)
+                    linkKey: linkKey(j.url), subtitleNotice: j.subtitleNotice, videoStage: j.state == .running ? (j.stage ?? .preparing) : nil,
+                    progressOverride: j.progress)
     }
 
     /// 磁力按 hash 去重（同一资源不同 tracker 参数算同一个）
@@ -2724,6 +2878,23 @@ final class DownloadStore: ObservableObject {
     static func torrentDataURL(_ path: String) -> String? {
         guard let d = FileManager.default.contents(atPath: path) else { return nil }
         return "data:application/x-bittorrent;base64," + d.base64EncodedString()
+    }
+
+    /// 判断视频文件是否位于字幕独立子文件夹内（父目录名与视频文件去扩展名一致，且不是下载根目录）；
+    /// 若是，移到废纸篓时整夹移走，避免残留装满 .srt 的空壳目录。
+    nonisolated static func videoTrashTarget(for videoURL: URL, rootDownloadDir: URL = Folders.videos) -> URL {
+        let parent = videoURL.deletingLastPathComponent().standardizedFileURL
+        let root = rootDownloadDir.standardizedFileURL
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        let videoStem = videoURL.deletingPathExtension().lastPathComponent
+        guard !videoStem.isEmpty,
+              parent.lastPathComponent == videoStem,
+              parent.path != root.path,
+              parent.path != home.path,
+              parent.pathComponents.count > 2 else {
+            return videoURL
+        }
+        return parent
     }
 
     static func trash(_ url: URL) {

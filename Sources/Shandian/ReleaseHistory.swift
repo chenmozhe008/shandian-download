@@ -10,18 +10,20 @@ struct HistoryEntry: Identifiable, Equatable {
 }
 
 enum ReleaseHistory {
-    static func local(_ text: String, currentVersion: String, isDevelopment: Bool) -> [HistoryEntry] {
+    static func local(_ text: String, includeDevelopment: Bool) -> [HistoryEntry] {
         var rows: [(String, [String])] = []
         for line in text.components(separatedBy: .newlines) {
             if line.hasPrefix("## ") { rows.append((String(line.dropFirst(3)), [])) }
             else if line.hasPrefix("- "), !rows.isEmpty { rows[rows.count - 1].1.append(String(line.dropFirst(2))) }
         }
-        return rows.map { title, notes in
+        return rows.compactMap { title, notes in
+            let isDevelopment = title.hasSuffix("（开发版）")
+            guard includeDevelopment || !isDevelopment else { return nil }
             let parts = title.components(separatedBy: " · ")
             let version = parts[0].trimmingCharacters(in: .whitespaces)
             let date = parts.dropFirst().first?.replacingOccurrences(of: "（开发版）", with: "") ?? ""
             return HistoryEntry(version: version, date: date, notes: notes, page: nil,
-                                isDevelopment: title.contains("开发版") || (version == currentVersion && isDevelopment))
+                                isDevelopment: isDevelopment)
         }
     }
 

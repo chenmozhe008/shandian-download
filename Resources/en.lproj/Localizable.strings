@@ -692,7 +692,7 @@
 "百度网盘不允许转存自己分享的文件。请从网盘中的原文件下载。" = "Baidu Netdisk cannot save your own shares back to your account. Download the original from your Netdisk.";
 
 "飞书文档" = "Feishu Docs";
-"轻雀文档" = "Qingque Docs";
+"青雀文档" = "Qingque Docs";
 "网页批量下载" = "Batch Web Download";
 "音视频合集" = "Media Collection";
 "下载到文件夹" = "Save to Folder";
@@ -704,3 +704,75 @@
 
 "闪电会先转存分享，再下载到本机。本地下载成功后会自动清理本次转存。网盘目录可在「我的应用数据 → bdpan → Shandian」查看或手动清理。" = "Shandian saves a cloud copy before downloading and cleans it up after a successful local download. Find or remove transfer folders in Baidu Netdisk under My App Data → bdpan → Shandian.";
 "网盘转存目录可在「我的应用数据 → bdpan → %@」手动清理。" = "You can manually clean up the cloud transfer folder under My App Data → bdpan → %@.";
+
+"视频已下载，字幕下载失败" = "Video saved. Subtitle download failed.";
+"视频已下载，未获取到原文字幕轨" = "Video saved. No original subtitle track was available.";
+"缺少 FFmpeg，无法合并音视频或转换格式" = "FFmpeg is required to merge audio and video or convert the format.";
+"网站限制了下载请求，请稍后重试" = "The website is limiting downloads. Try again later.";
+"YouTube 播放器校验失败，请检查 JavaScript 运行环境和视频下载组件版本" = "YouTube player verification failed. Check the JavaScript runtime and downloader version.";
+"下载程序未生成可用的视频文件" = "The downloader did not produce a usable video file.";
+"字幕已修整，部分条目未完成 AI 处理，已保留原文" = "Subtitles cleaned. Original text was kept for entries the AI missed.";
+"已修整字幕结构，AI 未返回可用结果，已保留原文" = "Subtitles cleaned. The AI returned no usable text, so the original was kept.";
+
+"只下载原字幕" = "Original subtitles only";
+"AI 校对原字幕" = "AI proofreading";
+"AI 翻译成中文" = "AI translation into Chinese";
+"AI 翻译（中外双语）" = "AI translation (Bilingual)";
+"正在翻译字幕" = "Translating subtitles";
+"正在生成双语字幕" = "Generating bilingual subtitles";
+"视频已下载 · 正在翻译双语字幕" = "Video downloaded · Translating bilingual subtitles";
+"提取术语中…" = "Extracting terms…";
+"准备中…" = "Preparing…";
+"条" = "lines";
+"在任务中提供 AI 字幕校对与翻译" = "Offer AI subtitle proofreading and translation";
+"每次下载可单独选择，默认只下载原字幕。也可在完成后右键处理。" = "Choose subtitle processing for each download. Original subtitles are the default. You can also use the context menu after downloading.";
+"字幕处理" = "Subtitle processing";
+"外语字幕生成中外双语 SRT，中文字幕做校对。" = "Create a bilingual SRT for foreign-language subtitles. Proofread Chinese subtitles.";
+"外语字幕生成简体中文 SRT，中文字幕做校对。" = "Create a Simplified Chinese SRT for foreign-language subtitles. Proofread Chinese subtitles.";
+"可在设置中启用并配置 AI 字幕服务" = "Enable and configure an AI subtitle service in Settings";
+"请在设置中启用并配置 AI 字幕服务" = "Enable and configure an AI subtitle service in Settings.";
+"正在 AI 校对字幕…" = "Proofreading subtitles with AI…";
+"正在 AI 翻译字幕…" = "Translating subtitles with AI…";
+"字幕文件无法处理，已保留原文" = "Subtitle processing failed. The original text was kept.";
+"此视频的字幕正在处理" = "This video’s subtitles are already being processed.";
+"AI 字幕服务尚未配置" = "The AI subtitle service is not configured.";
+"AI 字幕服务尚未配置，已保留原文" = "The AI subtitle service is not configured. The original text was kept.";
+"AI 字幕服务响应无效" = "The AI subtitle service returned an invalid response.";
+"AI 字幕服务拒绝授权，请检查密钥和权限" = "The AI subtitle service denied access. Check your key and permissions.";
+"AI 字幕服务余额不足" = "Insufficient balance for the AI subtitle service.";
+"AI 字幕服务请求过于频繁" = "The AI subtitle service is rate-limiting requests.";
+"AI 字幕服务返回错误" = "The AI subtitle service returned an error";
+"AI 字幕服务未返回可用文本" = "The AI subtitle service returned no usable text.";
+"AI 字幕服务响应超时" = "The AI subtitle service timed out.";
+"连不上 AI 字幕服务，请检查网络" = "Cannot reach the AI subtitle service. Check your connection.";
+"已生成中文字幕" = "Chinese subtitles generated";
+"AI 字幕校对完成" = "AI proofreading complete";
+"部分字幕已完成 AI 处理，其余保留原文" = "AI processed some entries. The remaining original text was kept.";
+"未生成 AI 字幕，已保留原文" = "No AI subtitles were generated. The original text was kept.";
+"字幕处理未完成，可右键重试" = "Subtitle processing was interrupted. Use the context menu to retry.";
+
+/* Idle download page */
+"全渠道高速下载" = "Fast Downloads Across Sources";
+"复制链接按 ⌘V、拖入种子，或通过浏览器扩展一键发送" = "Press ⌘V to paste a link, drop a torrent, or send from the browser extension";
+"支持来源" = "Supported Sources";
+"视频与字幕" = "Video & Subtitles";
+"YouTube · B 站 · 抖音" = "YouTube · Bilibili · Douyin";
+"小红书 · 微信视频号 · X" = "Xiaohongshu · WeChat Channels · X";
+"微博 · 新片场 · 豆瓣预告" = "Weibo · Xinpianchang · Douban";
+"网盘直下" = "Cloud Drives";
+"种子与直链" = "Torrents & Direct Links";
+"磁力链接 · BT 种子" = "Magnet · BT Torrents";
+"ed2k · HTTP 直链" = "ed2k · HTTP Direct";
+"GitHub · Hugging Face" = "GitHub · Hugging Face";
+"百度网盘 · 阿里云盘" = "Baidu Netdisk · Aliyun Drive";
+"夸克网盘 · UC 网盘" = "Quark Drive · UC Drive";
+"文档与网页" = "Docs & Web Media";
+"飞书 · 轻雀文档音视频" = "Feishu & Qingque Media";
+"网页音视频嗅探 · 批量链接" = "Web Media Sniffing · Batch Links";
+"在本机处理字幕，耗时取决于模型和电脑性能。" = "Subtitles are processed locally. Speed depends on the model and your computer.";
+"字幕文本会发送到所选 API，服务商可能按用量计费。" = "Subtitle text is sent to the selected API. The provider may charge based on usage.";
+"本机模型" = "Local model";
+"API 可能计费" = "API charges may apply";
+"原字幕不调用 AI。可在完成后右键校对或翻译。" = "Original subtitles use no AI. You can proofread or translate them from the context menu later.";
+"原字幕不调用 AI。可在完成后右键翻译。" = "Original subtitles use no AI. You can translate them from the context menu later.";
+"重试只下载原字幕，完成后可右键选择 AI 处理。" = "Retry downloads the original subtitles. Use the context menu afterward to run AI processing.";

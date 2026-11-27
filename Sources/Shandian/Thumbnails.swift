@@ -16,7 +16,7 @@ struct PosterHit: Decodable { var id: String?; var img: String?; var type: Strin
     private var inFlight = Set<String>()
     private(set) var remoteFailed = Set<String>()   // 站点封面取不到的，改从视频里截帧
     private let dir = EngineConfig.supportDir.appendingPathComponent("thumbs")
-    static let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first { FileManager.default.isExecutableFile(atPath: $0) }
+    nonisolated static let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first { FileManager.default.isExecutableFile(atPath: $0) }
 
     init() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

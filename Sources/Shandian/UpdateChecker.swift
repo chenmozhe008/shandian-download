@@ -85,6 +85,9 @@ final class UpdateChecker: ObservableObject {
         } else if ProcessInfo.processInfo.environment["SHANDIAN_UPDATE_FEED"] == nil,
                   let fallback = await Self.checkReleasePage() {
             release = fallback
+        } else if ProcessInfo.processInfo.environment["SHANDIAN_UPDATE_FEED"] == nil,
+                  let atomFallback = await Self.checkAtomFeed() {
+            release = atomFallback
         } else { return nil }
         let defaults = UserDefaults.standard
         defaults.set(Date(), forKey: Keys.lastCheck)
@@ -103,6 +106,51 @@ final class UpdateChecker: ObservableObject {
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let finalURL = http.url else { return nil }
         return releaseFromPage(finalURL)
+    }
+
+    private nonisolated static func checkAtomFeed() async -> Release? {
+        let url = URL(string: "https://github.com/chenmozhe008/shandian-download/releases.atom")!
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue("application/atom+xml, application/xml", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await GitHubAPI.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let newest = parseAtomVersions(data).first,
+              let page = URL(string: "https://github.com/chenmozhe008/shandian-download/releases/tag/v\(newest)") else { return nil }
+        return releaseFromPage(page)
+    }
+
+    /// 从 GitHub `releases.atom` 提取所有纯正式版 macOS 版本号（忽略 `-windows`、`rc`、`beta` 等），按版本号降序返回。
+    nonisolated static func parseAtomVersions(_ data: Data) -> [String] {
+        final class AtomLinkCollector: NSObject, XMLParserDelegate {
+            var inEntry = false
+            var closedFeed = false
+            var hrefs: [String] = []
+
+            func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+                if elementName == "entry" { inEntry = true }
+                else if elementName == "link", inEntry, let href = attributeDict["href"] {
+                    hrefs.append(href)
+                }
+            }
+
+            func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+                if elementName == "entry" { inEntry = false }
+                else if elementName == "feed" { closedFeed = true }
+            }
+        }
+        let collector = AtomLinkCollector()
+        let parser = XMLParser(data: data)
+        parser.delegate = collector
+        guard parser.parse(), collector.closedFeed else { return [] }
+        let prefix = "https://github.com/chenmozhe008/shandian-download/releases/tag/v"
+        var unique = Set<String>()
+        for href in collector.hrefs where href.hasPrefix(prefix) {
+            let raw = String(href.dropFirst(prefix.count))
+            let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
+            guard parts.count >= 2, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { continue }
+            unique.insert(raw)
+        }
+        return unique.sorted { isNewer($0, than: $1) }
     }
 
     nonisolated static func releaseFromPage(_ url: URL) -> Release? {
@@ -133,11 +181,15 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// The "- " lines under the release's "更新内容" heading.
-    nonisolated static func notes(_ body: String) -> [String] {
+    nonisolated static func notes(_ body: String, isEnglish: Bool = AppLanguage.isEnglish) -> [String] {
         var inSection = false
         var lines: [String] = []
         for line in body.components(separatedBy: .newlines) {
-            if line.hasPrefix("#") { inSection = line.contains(AppLanguage.isEnglish ? "What's New" : "更新内容"); continue }
+            if line.hasPrefix("#") {
+                let heading = line.replacingOccurrences(of: "’", with: "'")
+                inSection = heading.contains(isEnglish ? "What's New" : "更新内容")
+                continue
+            }
             if inSection, line.hasPrefix("- ") { lines.append(String(line.dropFirst(2))) }
         }
         return lines

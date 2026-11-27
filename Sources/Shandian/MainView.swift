@@ -363,7 +363,7 @@ private struct ActivePage: View {
         VStack(alignment: .leading, spacing: 0) {
             // 没有任务时不显示速度区，只留空状态
             if items.isEmpty {
-                EmptyState(store: store)
+                EmptyState()
             } else {
                 SpeedHero(store: store).frame(height: 156).padding(.top, 8).padding(.bottom, 20)
                 Text(items.allSatisfy(\.isFailed) ? L("未完成") : L("进行中"))
@@ -482,30 +482,144 @@ private struct SpeedChart: View {
     }
 }
 
-/// 空闲页：带暖光的放置区（⌘V 或拖入），下面列支持的来源和累计下载
+/// 无进行中任务时介绍浏览器扩展和常用下载来源。
 private struct EmptyState: View {
-    @ObservedObject var store: DownloadStore
-    private let sources = [L("磁力"), L("种子"), "ed2k", L("直链"), L("百度网盘"), L("飞书文档"), L("轻雀文档"), L("B 站"), "YouTube", "X", L("微博"), L("小红书"), L("新片场"), L("抖音"), L("豆瓣预告"), L("微信视频号"), L("网页音视频")]
+    private struct Capability: Identifiable {
+        let id: String
+        let icon: String
+        let title: String
+        let lines: [String]
+    }
+
+    private let capabilities = [
+        Capability(id: "video", icon: "play.rectangle", title: "视频与字幕",
+                   lines: ["YouTube · B 站 · 抖音", "小红书 · 微信视频号 · X", "微博 · 新片场 · 豆瓣预告"]),
+        Capability(id: "cloud", icon: "cloud", title: "网盘直下",
+                   lines: ["百度网盘 · 阿里云盘", "夸克网盘 · UC 网盘"]),
+        Capability(id: "links", icon: "link", title: "种子与直链",
+                   lines: ["磁力链接 · BT 种子", "ed2k · HTTP 直链", "GitHub · Hugging Face"]),
+        Capability(id: "docs", icon: "doc", title: "文档与网页",
+                   lines: ["飞书 · 轻雀文档音视频", "网页音视频嗅探 · 批量链接"]),
+    ]
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
-        VStack(spacing: 18) {
-            VStack(spacing: 14) {
-                Image(nsImage: BrandGlyph.image(height: 60)).foregroundStyle(Theme.tint)
-                    .shadow(color: Theme.tint.opacity(0.45), radius: 14)
-                Text("复制链接后按 ⌘V 开始下载").font(.system(size: 20, weight: .bold))
-                Text("也可拖入链接或种子文件。网页和文档音视频可通过浏览器扩展批量保存。").font(.system(size: 13.5)).foregroundStyle(Theme.sub)
-                FlowChips(items: sources)
+        GeometryReader { geometry in
+            let available = max(0, geometry.size.width - 40)
+            let mode: Int = available >= 640 ? 4 : (available >= 380 ? 2 : 1)
+            // 按列数收紧容器宽度，避免 2 列或 1 列时右侧留出大片空洞、整体偏左
+            let contentWidth: CGFloat = mode == 4
+                ? min(760, available)
+                : mode == 2
+                ? min(440, available)
+                : min(260, available)
+
+            ScrollView {
+                VStack(spacing: 38) {
+                    introduction
+                    sources(mode: mode)
+                        .frame(width: contentWidth)
+                }
+                .padding(.vertical, 32)
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 48)
-            .background(
-                shape.fill(RadialGradient(colors: [Theme.tint.opacity(0.12), Theme.tint.opacity(0.02)], center: .top, startRadius: 0, endRadius: 420))
-            )
-            .overlay(shape.strokeBorder(Theme.tint.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [7, 6])))
+            .scrollIndicators(.hidden)
         }
-        .frame(maxWidth: 760)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.bottom, 60)
+    }
+
+    private var introduction: some View {
+        VStack(spacing: 9) {
+            Image(nsImage: BrandGlyph.image(height: 40))
+                .foregroundStyle(Theme.tint)
+                .accessibilityHidden(true)
+                .padding(.bottom, 6)
+
+            Text(L("全渠道高速下载"))
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(L("复制链接按 ⌘V、拖入种子，或通过浏览器扩展一键发送"))
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text.opacity(0.68))
+                .padding(.horizontal, 16)
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func sources(mode: Int) -> some View {
+        VStack(spacing: 22) {
+            HStack(spacing: 14) {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                Text(L("支持来源"))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.sub)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+                Rectangle().fill(Theme.line).frame(height: 1)
+            }
+
+            if mode == 4 {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(capabilities.enumerated()), id: \.element.id) { index, capability in
+                        capabilityBlock(capability, preventWrap: true)
+                        if index < capabilities.count - 1 {
+                            Spacer(minLength: 16)
+                        }
+                    }
+                }
+            } else if mode == 2 {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(alignment: .top, spacing: 0) {
+                        capabilityBlock(capabilities[0], preventWrap: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 28)
+                        capabilityBlock(capabilities[1], preventWrap: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    HStack(alignment: .top, spacing: 0) {
+                        capabilityBlock(capabilities[2], preventWrap: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 28)
+                        capabilityBlock(capabilities[3], preventWrap: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(capabilities) { capability in
+                        capabilityBlock(capability, preventWrap: false)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func capabilityBlock(_ capability: Capability, preventWrap: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label {
+                Text(L(capability.title))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+            } icon: {
+                Image(systemName: capability.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.tint)
+                    .accessibilityHidden(true)
+            }
+            .accessibilityAddTraits(.isHeader)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(capability.lines, id: \.self) { line in
+                    Text(L(line))
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.text.opacity(0.68))
+                        .fixedSize(horizontal: preventWrap, vertical: false)
+                }
+            }
+        }
     }
 }
 
@@ -565,6 +679,9 @@ struct TaskRow: View {
                     Text(sizeText)
                     if let archive = item.archiveProgress {
                         Text("已下载 \(archive.saved)/\(archive.total) 个文件")
+                    }
+                    if item.videoStage == .translating {
+                        Text(L("视频已下载 · 正在翻译双语字幕")).foregroundStyle(Theme.tint)
                     }
                     if case .failed(let m) = item.status { Text(m).foregroundStyle(Theme.failed) }
                 }
@@ -665,6 +782,8 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: L("正在解析")
         case .running where item.videoStage == .merging: L("正在合并")
         case .running where item.videoStage == .converting: L("正在转换")
+        case .running where item.videoStage == .translating:
+            item.progress > 0.05 ? String(localized: "翻译字幕 \(Int(item.progress * 100))%") : L("正在翻译字幕")
         case .running where item.thunderClosed: L("迅雷没打开")
         case .running where item.isThunder: item.avgSpeed > 0 ? L("迅雷下载中") : L("请查看迅雷")
         case .running where item.cloudProgress == 100: L("云端已下好")
@@ -694,6 +813,7 @@ struct TaskRow: View {
         case .running where item.videoStage == .preparing: ""   // 标题已写「正在读取视频信息」
         case .running where item.videoStage == .merging: L("合并视频和音频")
         case .running where item.videoStage == .converting: L("转换为 M4A")
+        case .running where item.videoStage == .translating: item.subtitleNotice ?? L("准备中…")
         case .running where item.videoStage == .audio && item.avgSpeed == 0: L("正在下载音频")
         case .running:
             item.avgSpeed >= 1024 ? (remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed)).isEmpty ? L("速度较慢") : remainingText(Double(item.total - item.downloaded) / Double(item.avgSpeed))) : L("正在连接")
@@ -816,6 +936,15 @@ private struct ItemMenu: View {
         } else {
             if !item.isActive { Button("打开") { store.open(item) } }
             Button("在访达中显示") { store.reveal(item) }
+            if let folder = item.location, Self.isDirectory(folder) {
+                Button("查看文件列表…") { store.folderDrawerTarget = item }
+            }
+            if !item.isActive, let file = item.file, SubtitlePolisher.findSubtitle(for: file) != nil {
+                SubtitleActions(store: store, videoURL: file)
+                if SubtitlePolisher.hasBackup(for: file) {
+                    Button("恢复原字幕") { store.restoreSubtitles(for: file) }
+                }
+            }
             if item.isFailed {
                 Button("重试") { store.retry(item) }
             } else if item.canPause, item.isActive {
@@ -841,18 +970,61 @@ private struct ItemMenu: View {
             Button("移除…") { store.removalTarget = item }
         }
     }
+
+    private static func isDirectory(_ url: URL) -> Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &dir) && dir.boolValue
+    }
 }
 
 // MARK: - 已完成 / 分类
 
-private struct DonePage: View {
+private struct SubtitleActions: View {
+    let store: DownloadStore
+    let videoURL: URL
+
+    var body: some View {
+        Button(L("修整字幕结构")) { store.polishSubtitles(for: videoURL, mode: .original) }
+        let config = SubtitlePolishConfig.current
+        let mode = SubtitleMode.translate
+        let title = config.isConfiguredForAI ? mode.label + " · " + config.usageLabel : mode.label
+        Button(title) { store.polishSubtitles(for: videoURL, mode: mode, config: config) }
+            .help(config.usageNotice)
+    }
+}
+
+struct DonePage: View {
     @ObservedObject var store: DownloadStore
     let items: [Item]
     var subtitle: String?       // 分类页里「已完成」小标题；页面标题在窗口工具栏
     var rowLayout = true
+    private var selectedItems: [Item] { items.filter { store.selectedIDs.contains($0.id) } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let subtitle { Text(subtitle).font(.system(size: 15, weight: .semibold)).padding(.bottom, 10) }
+            if selectedItems.count > 1 {
+                HStack(spacing: 10) {
+                    Text(String(localized: "已选 \(selectedItems.count) 项"))
+                        .font(.system(size: 12.5, weight: .medium))
+                    Spacer()
+                    Button("在访达中显示") {
+                        let urls = selectedItems.compactMap { $0.location ?? $0.file }
+                        if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+                    }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    Button("全部移除") {
+                        for it in selectedItems { store.remove(it, moveFiles: false) }
+                        store.clearSelection()
+                    }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    Button("取消选择") { store.clearSelection() }
+                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Theme.sub)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.tint.opacity(0.08)))
+                .padding(.bottom, 8)
+            }
             if items.isEmpty {
                 Text("暂无").font(.system(size: 14)).foregroundStyle(Theme.sub)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 80)
@@ -861,18 +1033,24 @@ private struct DonePage: View {
                     ScrollView {
                         if rowLayout {
                             LazyVStack(spacing: 4) {
-                                ForEach(items) { DoneRow(store: store, item: $0).id($0.id) }
+                                ForEach(items) { DoneRow(store: store, item: $0, siblings: items).id($0.id) }
                             }
                             .padding(.bottom, 24)
                         } else {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 196, maximum: 240), spacing: 18, alignment: .top)], spacing: 22) {
-                                ForEach(items) { DoneCard(store: store, item: $0).id($0.id) }
+                                ForEach(items) { DoneCard(store: store, item: $0, siblings: items).id($0.id) }
                             }
                             .padding(.bottom, 24)
                         }
                     }
+                    .background(Color.clear.contentShape(Rectangle()).onTapGesture { store.clearSelection() })
                     .modifier(ScrollToTask(store: store, ids: items.map(\.id), proxy: proxy))
                 }
+            }
+        }
+        .sheet(item: $store.folderDrawerTarget) { target in
+            if let folder = target.location {
+                FolderDrawerSheet(store: store, title: target.title, folder: folder)
             }
         }
     }
@@ -881,7 +1059,9 @@ private struct DonePage: View {
 private struct DoneRow: View {
     @ObservedObject var store: DownloadStore
     let item: Item
+    let siblings: [Item]
     @State private var hovering = false
+    private var selected: Bool { store.isSelected(item.id) }
     var body: some View {
         HStack(spacing: 14) {
             Thumb(thumbs: store.thumbs, item: item, width: 112)
@@ -898,13 +1078,16 @@ private struct DoneRow: View {
                         CircleIconButton(symbol: "trash", help: L("移除")) { store.removalTarget = item }
                     }
                     .frame(width: 66, alignment: .trailing)
-                    .opacity(hovering || store.selectedID == item.id ? 1 : 0)
-                    .allowsHitTesting(hovering || store.selectedID == item.id)
+                    .opacity(hovering || selected ? 1 : 0)
+                    .allowsHitTesting(hovering || selected)
                     Text(item.fileGone ? L("文件不在原位置") : L("已完成"))
                         .font(.system(size: 12.5)).foregroundStyle(Theme.sub)
                         .fixedSize()
                 }
                 HStack(spacing: 8) {
+                    if let subtitleNotice = item.subtitleNotice {
+                        Text(subtitleNotice).lineLimit(1).help(subtitleNotice)
+                    }
                     if !item.origin.isEmpty { Text(L(item.origin)) }
                     if item.total > 0 { Text(item.total.bytesText) }
                     if item.createdAt != .distantPast {
@@ -916,13 +1099,16 @@ private struct DoneRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tint.opacity(store.selectedID == item.id ? 0.12 : (hovering ? 0.04 : 0))))
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.tint.opacity(selected ? 0.12 : (hovering ? 0.04 : 0))))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(count: 2) { store.primaryAction(item) }
-        .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
+        .simultaneousGesture(TapGesture().onEnded {
+            let flags = NSEvent.modifierFlags
+            store.selectItem(item.id, in: siblings, command: flags.contains(.command), shift: flags.contains(.shift))
+        })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开"))
+        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开（支持 ⌘ / Shift 多选）"))
     }
 
 }
@@ -930,6 +1116,8 @@ private struct DoneRow: View {
 private struct DoneCard: View {
     @ObservedObject var store: DownloadStore
     let item: Item
+    let siblings: [Item]
+    private var selected: Bool { store.isSelected(item.id) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             GeometryReader { g in Thumb(thumbs: store.thumbs, item: item, width: g.size.width) }
@@ -938,7 +1126,7 @@ private struct DoneCard: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(Theme.tint,
-                                      lineWidth: store.selectedID == item.id ? 3 : (store.flashID == item.id ? 2 : 0))
+                                      lineWidth: selected ? 3 : (store.flashID == item.id ? 2 : 0))
                 }
                 .animation(.easeInOut(duration: 0.45), value: store.flashID == item.id)
             Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1).truncationMode(.middle).padding(.top, 8).help(item.rawTitle)
@@ -948,15 +1136,117 @@ private struct DoneCard: View {
                 } else {
                     Text(item.total.bytesText)
                     Text(L(item.origin))
+                    if let subtitleNotice = item.subtitleNotice {
+                        Image(systemName: "captions.bubble").help(subtitleNotice).accessibilityLabel(subtitleNotice)
+                    }
                 }
             }
             .font(.system(size: 12.5)).foregroundStyle(Theme.sub).padding(.top, 2)
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { store.primaryAction(item) }
-        .simultaneousGesture(TapGesture().onEnded { store.selectedID = item.id })
+        .simultaneousGesture(TapGesture().onEnded {
+            let flags = NSEvent.modifierFlags
+            store.selectItem(item.id, in: siblings, command: flags.contains(.command), shift: flags.contains(.shift))
+        })
         .contextMenu { ItemMenu(store: store, item: item) }
-        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开"))
+        .help(item.fileGone ? L("文件已不在原位置，可右键从列表移除") : L("双击打开（支持 ⌘ / Shift 多选）"))
+    }
+}
+
+/// 文件夹 / 合集任务的文件抽屉：支持 ⌘ / Shift 多选、批量在访达中显示、复制路径和字幕润色。
+private struct FolderDrawerSheet: View {
+    @ObservedObject var store: DownloadStore
+    let title: String
+    let folder: URL
+    @Environment(\.dismiss) private var dismiss
+    @State private var files: [URL] = []
+    @State private var selected: Set<URL> = []
+    @State private var lastSelected: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    Text(folder.path).font(.system(size: 11.5)).foregroundStyle(Theme.sub).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer()
+                Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+
+            HStack(spacing: 8) {
+                Text(String(localized: "共 \(files.count) 个文件，已选 \(selected.count) 项"))
+                    .font(.system(size: 12)).foregroundStyle(Theme.sub)
+                Spacer()
+                Button(selected.count == files.count && !files.isEmpty ? L("取消全选") : L("全选")) {
+                    if selected.count == files.count { selected.removeAll() } else { selected = Set(files) }
+                }.buttonStyle(.bordered).controlSize(.small)
+                Button("在访达中显示") {
+                    let targets = selected.isEmpty ? [folder] : Array(selected)
+                    NSWorkspace.shared.activateFileViewerSelecting(targets)
+                }.buttonStyle(.bordered).controlSize(.small)
+                Button("复制路径") {
+                    let targets = selected.isEmpty ? [folder] : files.filter { selected.contains($0) }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(targets.map(\.path).joined(separator: "\n"), forType: .string)
+                    store.notice = L("已复制路径")
+                }.buttonStyle(.bordered).controlSize(.small)
+            }
+
+            List {
+                ForEach(files, id: \.self) { file in
+                    let isSel = selected.contains(file)
+                    HStack(spacing: 10) {
+                        Image(systemName: isSel ? "checkmark.circle.fill" : "doc")
+                            .foregroundStyle(isSel ? Theme.tint : Theme.sub)
+                        Text(file.lastPathComponent)
+                            .font(.system(size: 13))
+                            .lineLimit(1).truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init), size > 0 {
+                            Text(size.bytesText).font(.system(size: 11.5)).foregroundStyle(Theme.sub)
+                        }
+                        if SubtitlePolisher.findSubtitle(for: file) != nil {
+                            Menu(L("字幕处理")) { SubtitleActions(store: store, videoURL: file) }
+                                .menuStyle(.borderedButton).controlSize(.mini).fixedSize()
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { NSWorkspace.shared.open(file) }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        let flags = NSEvent.modifierFlags
+                        if flags.contains(.shift), let anchor = lastSelected,
+                           let a = files.firstIndex(of: anchor), let b = files.firstIndex(of: file) {
+                            selected.formUnion(files[min(a, b)...max(a, b)])
+                        } else if flags.contains(.command) {
+                            if selected.contains(file) { selected.remove(file) } else { selected.insert(file) }
+                        } else {
+                            selected = [file]
+                        }
+                        lastSelected = file
+                    })
+                }
+            }
+            .listStyle(.inset)
+            .background(Color.clear.contentShape(Rectangle()).onTapGesture { selected.removeAll() })
+        }
+        .padding(16)
+        .frame(minWidth: 540, minHeight: 380)
+        .onAppear { loadFiles() }
+    }
+
+    private func loadFiles() {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { return }
+        var list: [URL] = []
+        for case let url as URL in enumerator {
+            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                list.append(url)
+            }
+        }
+        files = list.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 }
 

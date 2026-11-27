@@ -155,8 +155,10 @@ final class EngineClient: @unchecked Sendable {
         if let name, !name.isEmpty { opts["name"] = name }
         if verifyExisting { opts["extra"] = ["shandianVerifyExisting": true] }
         var req: [String: Any] = ["url": url]
-        // 磁力 / 种子不设：内核全局代理已关，BT 直连
-        if url.lowercased().hasPrefix("http") { req["proxy"] = LocalProxy.engineRequest(for: url) }
+        // 磁力 / 种子不设：内核全局代理已关，BT 直连；国内加速站也不走系统代理
+        if url.lowercased().hasPrefix("http") {
+            req["proxy"] = GitHubMirror.split(url) != nil ? ["enable": false] : LocalProxy.engineRequest(for: url)
+        }
         if !headers.isEmpty { req["extra"] = ["header": headers] }  // 网盘直链要带浏览器的 Cookie、UA、Referer
         let id: String? = try await call("POST", "tasks", body: ["req": req, "opts": opts])
         return try Self.validateTaskID(id)
@@ -186,6 +188,16 @@ final class EngineClient: @unchecked Sendable {
     func verifyExisting(id: String) async throws {
         let _: String? = try await call("PATCH", "tasks/\(id)", body: ["opts": ["extra": ["shandianVerifyExisting": true]]])
     }
+    /// 更新 HTTP 任务下载地址与请求头（加速站失败换站续传用，保留已下载进度）
+    func patchRequest(id: String, url: String, headers: [String: String] = [:]) async throws {
+        var req: [String: Any] = ["url": url]
+        if url.lowercased().hasPrefix("http") {
+            req["proxy"] = GitHubMirror.split(url) != nil ? ["enable": false] : LocalProxy.engineRequest(for: url)
+        }
+        if !headers.isEmpty { req["extra"] = ["header": headers] }
+        let _: String? = try await call("PATCH", "tasks/\(id)", body: ["req": req])
+    }
+
     /// 边下边送的播放地址（内核补丁 /play/{id}/{key}/{文件名}）；key 由 token 和任务 id 派生，和内核里 shandian.PlayKey 一致
     func playURL(id: String, fileName: String) -> URL? {
         let digest = SHA256.hash(data: Data("shandian-play:\(token):\(id)".utf8)).map { String(format: "%02x", $0) }.joined()

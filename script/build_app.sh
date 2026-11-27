@@ -2,7 +2,7 @@
 # build_app.sh [run|package] —— 编译、打包成 dist/闪电全能下载.app（run 时顺便打开）
 # ARCH=arm64|x86_64 指定芯片（默认本机）；本机以外的芯片只打包到 dist/<芯片>/，不会打开
 set -euo pipefail
-APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.22.6"
+APP_NAME="闪电全能下载"; EXECUTABLE_NAME="Shandian"; BUNDLE_ID="io.github.chenmozhe008.shandian"; APP_VERSION="0.22.8"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 ARCH="${ARCH:-$(uname -m)}"
 case "$ARCH" in arm64) GOARCH=arm64 ;; x86_64) GOARCH=amd64 ;; *) echo "ARCH 只能是 arm64 或 x86_64"; exit 1 ;; esac
@@ -17,17 +17,38 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Apple Development}"
 security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_IDENTITY" || CODESIGN_IDENTITY="-"
 
 # 默认生成开发版；正式包必须明确指定，并从版本标签对应的干净源码构建。
+check_changelog() {
+  local file="$1" suffix="$2" heading
+  heading="$(awk '/^## / { print; exit }' "$file")"
+  case "$heading" in
+    "## $APP_VERSION · "????-??-??"$suffix") ;;
+    *) echo "$file 首节应为 ${APP_VERSION}，并使用对应的版本标记。" >&2; return 1 ;;
+  esac
+  if ! awk '/^## / { if (++sections == 2) exit } sections == 1 && /^- [^[:space:]]/ { notes++ } END { exit !notes }' "$file"; then
+    echo "$file 的 $APP_VERSION 小节缺少更新内容。" >&2
+    return 1
+  fi
+}
+
 DEV_BUILD=1
 if [[ "${SHANDIAN_RELEASE_BUILD:-0}" == "1" ]]; then
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]] || ! git rev-parse -q --verify "refs/tags/v${APP_VERSION}^{commit}" >/dev/null || [[ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/v${APP_VERSION}^{commit}")" ]]; then
     echo "正式打包需要干净的工作区，以及指向当前提交的 v${APP_VERSION} 标签。" >&2
     exit 1
   fi
-  if grep -q '^## .*（开发版）' "$ROOT/CHANGELOG.md"; then
+  if grep -q '^## .*（开发版）$' "$ROOT/CHANGELOG.md" "$ROOT/CHANGELOG.en.md"; then
     echo "CHANGELOG 还有开发版小节：发版前要把它们汇总进正式版这一节。" >&2
     exit 1
   fi
+  check_changelog CHANGELOG.md ""
+  check_changelog CHANGELOG.en.md ""
   DEV_BUILD=0
+elif [[ "${1:-}" == "--install-dev" ]]; then
+  if git rev-parse -q --verify "refs/tags/v${APP_VERSION}^{commit}" >/dev/null; then
+    echo "v${APP_VERSION} 已有正式版标签，请递增开发版版本号。" >&2
+    exit 1
+  fi
+  check_changelog CHANGELOG.md "（开发版）"
 fi
 
 TRIPLE="$ARCH-apple-macosx14.0"
@@ -48,8 +69,8 @@ if [[ ! -f "$ICNS" || "$ROOT/Resources/AppIcon-source.png" -nt "$ICNS" ]]; then
 fi
 
 # 固定官方目录版：首次打包下载并校验，安装包自带，运行时仍可后台更新。
-YTDLP_VERSION="2026.10.26"
-YTDLP_SHA256="20d98fa608998eff87d1d35a6e9fb65e4b874639a6cc89addc19da3becde3ef1"
+YTDLP_VERSION="2026.11.23"
+YTDLP_SHA256="43fc87fc581f64b48c366ce20b9cacb9c2949cc1ac4b9eca56fe25ac52dbb63b"
 YTDLP_CACHE="$ROOT/tmp/yt-dlp-$YTDLP_VERSION"
 YTDLP_ZIP="$YTDLP_CACHE/yt-dlp_macos.zip"
 mkdir -p "$YTDLP_CACHE"
@@ -66,6 +87,7 @@ cp "$ROOT/Resources/done.wav" "$APP/Contents/Resources/done.wav"  # 下载完成
 cp -R "$ROOT/browser-extension" "$APP/Contents/Resources/BrowserExtension"  # 启动时拷到 Application Support（浏览器认固定路径）
 ditto -x -k "$YTDLP_ZIP" "$APP/Contents/Resources/yt-dlp_macos"
 test -x "$APP/Contents/Resources/yt-dlp_macos/yt-dlp_macos"
+printf '%s\n' "$YTDLP_VERSION" > "$APP/Contents/Resources/yt-dlp-version.txt"
 # 打过补丁的内核（script/build_engine.sh 编出来的）；App 启动时发现和本机装的不一样就换上
 cp "$ENGINE_BIN" "$APP/Contents/Resources/gopeed"
 cp -R "$ROOT/Resources/en.lproj" "$APP/Contents/Resources/en.lproj"

@@ -3,6 +3,21 @@ import Testing
 @testable import Shandian
 
 struct UpdateFallbackTests {
+    @Test func atomFeedParsesAndSortsOfficialMacVersionsOnly() {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry><link href="https://github.com/chenmozhe008/shandian-download/releases/tag/v0.22.2"/></entry>
+          <entry><link href="https://github.com/chenmozhe008/shandian-download/releases/tag/v0.22.10"/></entry>
+          <entry><link href="https://github.com/chenmozhe008/shandian-download/releases/tag/v0.2.15-windows"/></entry>
+          <entry><link href="https://github.com/chenmozhe008/shandian-download/releases/tag/v0.23.0-rc1"/></entry>
+          <entry><link href="https://github.com/chenmozhe008/shandian-download/releases/tag/v0.22.6"/></entry>
+        </feed>
+        """
+        #expect(UpdateChecker.parseAtomVersions(Data(xml.utf8)) == ["0.22.10", "0.22.6", "0.22.2"])
+        #expect(UpdateChecker.parseAtomVersions(Data("<feed><entry></entry>".utf8)).isEmpty)
+    }
+
     @Test func onlyAcceptsOfficialVersionedReleasePage() {
         let page = URL(string: "https://github.com/chenmozhe008/shandian-download/releases/tag/v0.18.21")!
         #expect(UpdateChecker.releaseFromPage(page)?.version == "0.18.21")
