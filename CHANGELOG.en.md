@@ -4,11 +4,11 @@
 
 - Upgrade the Gopeed engine with adaptive multi-connection HTTP boost and BT cleanup stability fixes.
 - Add two-round mirror racing and automatic resume failover for public GitHub and Hugging Face file links.
-- Update the full Chrome / Edge extension to 1.12.0 with one-click download buttons on Aliyun Drive, Quark Drive and UC Drive.
+- Update the full Chrome / Edge extension to 1.12.1 with one-click download buttons on Aliyun Drive, Quark Drive and UC Drive.
 - Add ⌘ / Shift multi-select with batch actions for completed items, plus a file drawer for folder and multi-file tasks.
-- Add automatic YouTube rolling-subtitle cleanup (with `.original.bak` backup) and optional AI subtitle polishing and translation via local Ollama or OpenAI-compatible APIs.
+- Add automatic YouTube rolling-subtitle cleanup (with `.original.bak` backup) and optional AI subtitle translation via local Ollama or OpenAI-compatible APIs.
 - Update YouTube player extraction and recognize creator-provided captions. Subtitle failures now leave the video intact and show a separate status.
-- Choose original captions, AI proofreading, or Chinese translation per video job. Subtitle processing is also available from the completed item’s context menu and shows service errors.
+- Choose original captions or AI translation into Chinese per video job. Subtitle processing is also available from the completed item’s context menu and shows service errors.
 - Add GitHub API rate-limit backoff and `releases.atom` fallback for update checks.
 - Refresh the idle download page with browser-extension guidance and a list of common sources that adapts to the window width.
 - Fix published notes being duplicated as development notes when both builds have the same version number.
