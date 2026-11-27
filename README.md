@@ -19,11 +19,11 @@
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
-<img src="docs/images/demo-download.gif" alt="浏览器发起下载，选 720P 和字幕，最后打开本地双语视频" width="900">
+<img src="docs/images/workflow-browser.gif" alt="在浏览器点击扩展，打开闪电的新建视频任务" width="860">
 
-<sub>25 秒 macOS 流程演示。使用模拟操作和示例数据，等待过程已加速。</sub>
+<sub>从浏览器点「下载这个视频」，进入闪电的新建任务。动图使用模拟操作和示例数据。</sub>
 
-[高清演示视频（MP4）](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/demo-download.mp4)
+[看画质与双语字幕](#视频与字幕) · [看网页链接批量下载](#侦测网页音视频与批量链接)
 
 </div>
 
@@ -39,6 +39,16 @@ macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取�
 | AI 翻译成中文 | 按设置生成中外双语 ASS 或简体中文 SRT，供播放器加载或剪辑使用 |
 
 可使用本机 Ollama 或已配置的 API。在本机运行时，速度取决于模型和电脑性能。选在线 API 时，字幕文本才会发送给对应服务商，可能消耗额度或产生费用。字幕不可用或处理失败时，已保存的视频仍可打开。YouTube 可用画质和字幕轨由平台决定。
+
+<img src="docs/images/workflow-subtitles.gif" alt="选择 720P，启用字幕后选择只下载原文或 AI 双语翻译" width="760">
+
+<sub>选择 720P，原字幕或双语翻译按任务决定。</sub>
+
+<img src="docs/images/workflow-playback.gif" alt="从已完成打开视频，播放中英双语字幕，查看 MP4 和 ASS 文件" width="760">
+
+<sub>从「已完成」打开本地视频。双语字幕单独保存为 ASS。</sub>
+
+[下载三段视频流程的高清合辑（MP4）](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4)
 
 <details>
 <summary>查看 macOS 首页</summary>
@@ -97,6 +107,10 @@ Windows 界面图来自 [@cgeek-dev 的 Windows 0.2.23 发布源码](https://git
 - **播放一下，侦测并试听。** 在 Chrome / Edge 完整版扩展中开启音视频侦测，再播放网页中的内容。侦测到的录音可以看波形、先试听，再按需保存。
 - **勾选文档附件，保留原名。** 扫描飞书或轻雀文档后，可勾选原始音视频，多选时统一存到同一个文件夹。飞书首次需要官方 CLI 授权。
 - **一页链接，批量交给闪电。** 用扩展抓取页面里的可下载链接，勾选所需文件后一次加入任务列表。
+
+<img src="docs/images/workflow-batch.gif" alt="扩展抓取网页链接，选中两项后批量加入下载队列" width="760">
+
+<sub>扩展识别网页链接，勾选需要的文件再一次下载。</sub>
 
 ## BT 卡在 0% 时自动换路
 

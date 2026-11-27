@@ -18,11 +18,11 @@ Download, resume, and organize video, bilingual subtitles, cloud files, document
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
 ![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
 
-<img src="docs/images/demo-download-en.gif" alt="Browser download, 720p selection, optional AI translation, and bilingual local playback" width="900">
+<img src="docs/images/workflow-browser-en.gif" alt="Send a video from the browser extension and open Shandian’s new video task" width="860">
 
-<sub>25-second macOS workflow demo with simulated interactions and sample data. Waiting time is condensed.</sub>
+<sub>Click Download this video to open a new task in Shandian. The clips show simulated interactions with sample data.</sub>
 
-[HD video (MP4)](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/demo-download-en.mp4)
+[See 720p and subtitle options](#video-and-subtitles) · [See batch downloads](#capture-media-and-files-from-web-pages)
 
 </div>
 
@@ -38,6 +38,16 @@ On macOS, YouTube downloads let you choose video quality, save only the audio, a
 | AI translation into Chinese | Generates styled bilingual ASS or Simplified Chinese SRT, depending on your settings |
 
 Use local Ollama or a configured API. Local processing time depends on the model and your computer. Selecting an online API sends the subtitle text to that provider and may incur usage charges. A subtitle failure leaves the downloaded video available. Formats and subtitle tracks depend on what YouTube makes available.
+
+<img src="docs/images/workflow-subtitles-en.gif" alt="Choose 720p and select original subtitles or bilingual AI translation" width="760">
+
+<sub>Choose 720p and select subtitle handling for this task.</sub>
+
+<img src="docs/images/workflow-playback-en.gif" alt="Open the completed video with bilingual captions and see the MP4 and ASS files" width="760">
+
+<sub>Open the finished local video. Bilingual subtitles are saved as a separate ASS file.</sub>
+
+[Download the three video steps as one HD MP4](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4)
 
 <details>
 <summary>See the macOS home screen</summary>
@@ -96,6 +106,10 @@ Windows screenshots come from [@cgeek-dev’s Windows 0.2.23 release source](htt
 - **Save a playing clip or track.** In the full Chrome / Edge extension, start media detection, then play the page. Preview detected audio with the waveform player and save selected results.
 - **Save original document attachments.** Scan a Feishu or Qingque document, select the audio and video files, and save them to one folder with their original names. Feishu requires its official CLI authorization.
 - **Queue multiple files.** Scan a web page for download links, select just the files you need, and send them to Shandian in a single batch.
+
+<img src="docs/images/workflow-batch-en.gif" alt="Scan a page for links, select two files and send them to the queue" width="760">
+
+<sub>Scan web links, select the files you need, and queue them together.</sub>
 
 ## Recover a stalled torrent
 
