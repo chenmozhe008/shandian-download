@@ -439,6 +439,14 @@ pub fn open_logs_dir() -> Result<(), String> {
     open_dir(dir.display().to_string())
 }
 
+#[tauri::command]
+pub async fn export_recent_logs(app: tauri::AppHandle) -> Result<PathBuf, String> {
+    let downloads = app.path().download_dir().map_err(|_| "找不到 Windows 下载文件夹")?;
+    tauri::async_runtime::spawn_blocking(move || crate::app_log::save_recent_export(&downloads))
+        .await
+        .map_err(|_| "导出日志失败，请重试")?
+}
+
 #[tauri::command(async)]
 pub fn diagnostic_info() -> String {
     use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};

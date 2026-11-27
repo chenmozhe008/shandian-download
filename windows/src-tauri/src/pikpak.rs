@@ -324,14 +324,30 @@ pub fn hides(jobs: &[CloudJob], url: &str, status: &str) -> bool {
     status != "done" && jobs.iter().any(|j| matches!(j.state.as_str(), "running"|"pulling"|"done") && j.url == url)
 }
 
-/// 云端阶段的任务拼进任务列表。拉回后本地任务自己会显示，这里不再列
-pub fn jobs_as_tasks(state: &AppState) -> Vec<crate::api::Task> {
-    jobs_as_tasks_matching(state, None)
+pub(crate) fn annotate_pulling_tasks(jobs: &[CloudJob], tasks: &mut [crate::api::Task]) {
+    let pulling: std::collections::HashSet<&str> = jobs.iter()
+        .filter(|job| job.state != "done" && !job.id.starts_with("manual-"))
+        .flat_map(|job| job.local.iter().map(String::as_str))
+        .collect();
+    for task in tasks {
+        if task.status != "done" && pulling.contains(task.id.as_str()) {
+            let label = if task.id.starts_with("nas:") {
+                "NAS · PikPak 中转 · 取回 NAS"
+            } else {
+                "PikPak 中转 · 取回本机"
+            };
+            task.origin_label = Some(label.into());
+        }
+    }
 }
 
-pub(crate) fn jobs_as_tasks_matching(state: &AppState, key: Option<&str>) -> Vec<crate::api::Task> {
-    load_jobs(state)
-        .into_iter()
+/// 云端阶段的任务拼进任务列表。拉回后本地任务自己会显示，这里不再列
+pub fn jobs_as_tasks(state: &AppState) -> Vec<crate::api::Task> {
+    jobs_as_tasks_matching(&load_jobs(state), None)
+}
+
+pub(crate) fn jobs_as_tasks_matching(jobs: &[CloudJob], key: Option<&str>) -> Vec<crate::api::Task> {
+    jobs.iter()
           .filter(|j| key.map_or(true, |key| crate::links::canonical_url(&j.url) == key))
         .filter(|j| !matches!(j.state.as_str(),"pulling"|"done"))
         .filter_map(|j| {
@@ -347,6 +363,13 @@ pub(crate) fn jobs_as_tasks_matching(state: &AppState, key: Option<&str>) -> Vec
             }))
             .ok()?;
             t.kind = Some("云盘离线".into());
+            if !j.id.starts_with("manual-") {
+                t.origin_label = Some(if j.state == "running" {
+                    "PikPak 中转 · 云端下载"
+                } else {
+                    "PikPak 中转"
+                }.into());
+            }
             t.created = Some(j.created.max(0) as u64);
             if !failed {
                 t.stage = Some(if j.state=="submitting" {"正在提交云端…".into()}else{format!("云端下载中 {}%", j.progress)});
@@ -1269,6 +1292,51 @@ fn md5_hex(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origin_labels_distinguish_pikpak_handoffs_from_direct_downloads() {
+        let submitted = CloudJob {
+            id: "offline".into(),
+            state: "running".into(),
+            ..Default::default()
+        };
+        let cloud = jobs_as_tasks_matching(&[submitted], None);
+        assert_eq!(cloud[0].kind.as_deref(), Some("云盘离线"));
+        assert_eq!(cloud[0].origin_label.as_deref(), Some("PikPak 中转 · 云端下载"));
+
+        let jobs = [
+            CloudJob {
+                id: "offline".into(),
+                state: "pulling".into(),
+                local: vec!["local".into(), "nas:remote".into(), "finished".into()],
+                ..Default::default()
+            },
+            CloudJob {
+                id: "manual-file".into(),
+                state: "pulling".into(),
+                local: vec!["manual-pull".into()],
+                ..Default::default()
+            },
+        ];
+        let make_task = |id: &str, status: &str| {
+            let mut task: crate::api::Task =
+                serde_json::from_value(json!({"id": id, "status": status})).unwrap();
+            task.kind = Some("PikPak".into());
+            task
+        };
+        let mut tasks = [
+            make_task("local", "running"),
+            make_task("nas:remote", "pause"),
+            make_task("finished", "done"),
+            make_task("manual-pull", "running"),
+            make_task("direct", "running"),
+        ];
+        annotate_pulling_tasks(&jobs, &mut tasks);
+        assert_eq!(tasks[0].origin_label.as_deref(), Some("PikPak 中转 · 取回本机"));
+        assert_eq!(tasks[1].origin_label.as_deref(), Some("NAS · PikPak 中转 · 取回 NAS"));
+        assert!(tasks[2..].iter().all(|task| task.origin_label.is_none()));
+        assert!(tasks.iter().all(|task| task.kind.as_deref() == Some("PikPak")));
+    }
     fn task_for_pull(id:&str,status:&str,name:&str,size:u64,dir:&str)->crate::api::Task{
         serde_json::from_value(json!({"id":id,"status":status,"meta":{"opts":{"name":name,"path":dir},"res":{"name":name,"size":size,"files":[{"name":name,"size":size}]},"req":{"url":"https://download.invalid/original"}}})).unwrap()
     }

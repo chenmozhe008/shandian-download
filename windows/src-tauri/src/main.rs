@@ -506,6 +506,7 @@ fn main() {
             commands::reveal_path,
             commands::quit_app,
             commands::open_logs_dir,
+            commands::export_recent_logs,
             commands::diagnostic_info,
             app_log::log_ui_event,
             cache::cache_info,

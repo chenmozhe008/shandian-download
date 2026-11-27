@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 async function run(url, reply, formats = [], root = '.') {
-  const source = ['cloud-sites.js', 'popup.js', 'baidu-ui.js']
+  const source = ['cloud-sites.js', 'huggingface.js', 'source-labels.js', 'popup.js', 'baidu-ui.js']
     .map(file => fs.readFileSync(root + '/windows/browser-extension/' + file, 'utf8')).join('\n');
   const element = () => ({ textContent: '', value: '', children: [],
     append(child) { this.children.push(child); },
@@ -41,6 +41,16 @@ async function run(url, reply, formats = [], root = '.') {
   assert.equal(p.elements['download-tools'].contains(p.elements.batch), true);
   assert.equal((await p.click()).requireVideo, false);
   assert.match(p.elements.dl.textContent, /已交给/);
+  for (const root of ['.']) {
+    for (const url of ['https://www.facebook.com/share/v/Abc123/', 'https://www.facebook.com/reel/1122205227312474', 'https://fb.watch/Abc123/', 'https://www.instagram.com/reel/Chunk8-jurw/', 'https://www.instagram.com/example/p/Abc123/']) {
+      p = await run(url, { ok: true }, [], root);
+      assert.equal((await p.click()).requireVideo, false);
+    }
+    for (const url of ['https://www.facebook.com/example/', 'https://www.instagram.com/example/', 'https://www.instagram.com/reels/audio/123/']) {
+      p = await run(url, { ok: true }, [], root);
+      assert.equal(p.elements.dl.hidden, true);
+    }
+  }
   p = await run('https://example.com/article', { ok: false, noVideo: true });
   assert.equal(p.elements.batch.hidden, false);
   assert.equal(p.elements.more.hidden, false);

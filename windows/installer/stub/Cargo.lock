@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "shandian-stub"
-version = "0.2.15"
+version = "0.2.23"
