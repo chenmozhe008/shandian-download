@@ -5,14 +5,11 @@
 
 # 闪电全能下载 · Shandian Download Manager
 
-<strong>快速、简洁的开源下载工具，支持 macOS 与 Windows</strong>
+<strong>macOS 与 Windows 的开源下载管理器</strong>
 
-磁力、种子、ed2k、HTTP 直链、网盘分享、主流视频网站与网页音视频，统一在一个窗口管理。<br>
-多连接并行加速，冷门 BT 长期无速度时自动换路完成
+从网页视频、双语字幕、网盘和文档附件，到磁力、BT、ed2k 和大文件直链，统一下载、续传和归档。
 
-磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书与轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
-
-[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [Windows 版（x64）](#windows-版) · [视频与字幕](#视频与字幕) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 简体中文 | [English](README.en.md)
 
@@ -26,7 +23,7 @@
 
 </div>
 
-闪电全能下载（Shandian Download Manager）是一款支持 **macOS 与 Windows** 的免费开源下载工具，用于集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享以及主流视频平台下载。复制链接后粘贴即可创建任务；搭配 Chrome / Edge 浏览器扩展，可批量抓取网页下载链接、侦测并试听网页音视频，也可扫描并保存飞书与轻雀文档中的原始音视频附件（单选直接保存，多选归入同一文件夹）。
+把链接发给闪电，或者用 Chrome / Edge 扩展在网页上直接发起下载。视频按任务选画质和字幕，网盘文件可成批交给下载列表，飞书与轻雀附件可保留原名保存。大文件直链支持多连接与断点续传，GitHub 和 Hugging Face 公开文件可测速切换镜像。
 
 macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护。下载内核基于定制版 [Gopeed](https://github.com/GopeedLab/gopeed)，视频平台解析由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
 
@@ -59,35 +56,41 @@ macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cge
 | 网页文件直链（MP4、MP3、ZIP 等） | 用完整版扩展「批量抓取页面下载链接」，按需勾选并批量添加 |
 | 抖音、小红书、新片场 | 在浏览器中打开视频页，通过完整版浏览器扩展发送 |
 | 百度网盘分享 | 粘贴分享链接和提取码。安装并授权[百度官方 bdpan](https://github.com/baidu-netdisk/bdpan-storage) 后可选择「用闪电下载」，也可以打开官方分享页 |
+| 阿里云盘、夸克网盘、UC 网盘 | 在登录后的个人网盘中勾选文件，点完整版扩展提供的「闪电下载」 |
+| GitHub / Hugging Face 公开文件 | 粘贴链接，自动测速选择可用镜像；中途失败可换站并尝试续传 |
 | 飞书文档音视频 | 打开文档并点击完整版扩展，勾选可下载附件。也可将文档链接粘贴到闪电下载整篇附件。需安装并授权飞书官方 lark-cli |
 | 轻雀文档音视频 | 在完整版扩展点「扫描当前页面」，勾选可访问的原始音视频附件 |
 | 网盘直链 | 可通过 [LinkSwift](https://github.com/hmjz100/LinkSwift) 获取直链后发送 |
 
 常规视频站默认选择最高可用画质，优先 H.264 与 AAC；抖音、小红书支持下载无平台水印的视频。视频号使用元宝返回的可用视频，暂不提供画质和字幕选择，需要登录腾讯元宝；视频号分享链接只在用户点击解析后提交给腾讯。具体平台、视频和画质能否下载取决于网站及账号权限。
 
-## 网盘下载
+## 视频与字幕
 
-### macOS 正式版
+macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取字幕。勾选字幕后，每条任务可独立选择：
 
-**百度网盘分享**可粘贴链接和提取码，按提示安装并授权百度官方 bdpan，选择「用闪电下载」。已有 HTTP / HTTPS 下载直链时，也可以直接交给闪电。
+| 选项 | 结果 |
+| --- | --- |
+| 只下载原字幕 | 默认选项。优先使用可用的源语言字幕，支持本地结构修整，无需 AI |
+| AI 翻译成中文 | 按设置生成中外双语 ASS 或简体中文 SRT，供播放器加载或剪辑使用 |
 
-「用闪电下载」通过 bdpan 将分享内容转存到已授权账号的应用数据目录，再下载到本机。首次使用需按百度的说明安装命令行工具并授权。闪电显示已下载大小、速度及可用的百分比。文件完整保存后，闪电会自动清理本次云端转存目录。需要手动处理时，可在百度网盘的「我的应用数据 → bdpan → Shandian」找到转存目录。转存空间、下载权限和速度由百度网盘决定。百度禁止将自己发出的分享转存回同一账号，此时可打开官方分享页或在百度网盘中找到原文件。
-
-### macOS 0.22.7 开发版预览
-
-以下功能属于开发版。上方的正式安装包仍为 0.22.6。
-
-- **阿里云盘、夸克网盘、UC 网盘**：使用 Chrome / Edge **完整版扩展 1.12.0**。在已登录的个人网盘网页勾选文件，点击工具栏的「闪电下载」，交给 App 统一管理。阿里云盘分享先保存到自己的网盘。夸克、UC 分享是否可直接下载取决于网盘权限，页面提示需要保存时，可保存后到个人网盘下载。
-- **GitHub / Hugging Face 公开文件**：粘贴链接后测速选用镜像，传输失败时可切换镜像并尝试断点续传。
-- **YouTube 字幕**：勾选下载字幕后，默认只下载原字幕。每条任务可另选 AI 校对或翻译成中文。本地模型的处理速度取决于设备和模型。使用在线 API 会把字幕文本发送给所选服务商，并可能产生费用。翻译结果保存为外挂 SRT，字幕获取或处理失败时，已下载的视频仍可使用。
+可使用本机 Ollama 或已配置的 API。在本机运行时，速度取决于模型和电脑性能。选在线 API 时，字幕文本才会发送给对应服务商，可能消耗额度或产生费用。字幕不可用或处理失败时，已保存的视频仍可打开。YouTube 可用画质和字幕轨由平台决定。
 
 <div align="center">
-<img src="docs/images/screenshot-home-preview.png" alt="macOS 0.22.7 开发版空闲首页，集中展示常用下载来源" width="760">
+<img src="docs/images/macos-home.png" alt="闪电全能下载 macOS 0.22.8 空闲首页，展示视频与字幕、直链、网盘和文档来源" width="840">
 
-<sub>macOS 0.22.7 开发版的空闲首页</sub>
+<sub>macOS 空闲首页 · 浏览器扩展发起下载，闪电统一管理</sub>
 </div>
 
-Windows 版的网盘入口及使用条件见 [Windows 版](#windows-版)和对应版本说明。
+## 网盘下载
+
+| 来源 | macOS 使用方式 |
+| --- | --- |
+| 百度网盘分享 | 粘贴链接与提取码，首次按提示安装并授权百度官方 bdpan。下载校验完成后自动清理本次云端临时转存 |
+| 阿里云盘 | 用 Chrome / Edge **完整版扩展 1.12.1**，在个人网盘勾选文件后点「闪电下载」。分享先保存到自己的网盘 |
+| 夸克网盘、UC 网盘 | 用同一完整版扩展，在已登录的网盘中勾选下载。分享页能否直下取决于权限，页面要求保存时先转存 |
+| 已获取的网盘直链 | 可直接粘贴 HTTP / HTTPS 下载链接，也可通过支持的工具发给闪电 |
+
+下载权限、可用空间和转存条件取决于网盘服务。百度不允许把自己发出的分享转存回同一账号，可到个人网盘找到原文件。[Windows 版](#windows-版)有独立的网盘解析和账号流程，详见其使用说明。
 
 ## 下载性能
 
@@ -170,7 +173,28 @@ Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立�
 - **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
 - **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
 
-界面布局与核心功能与 macOS 版保持一致，并额外提供多网盘直链解析、GitHub / Hugging Face 镜像加速及本机 Ollama 字幕润色等功能。Windows 版的发版节奏与问题反馈由 [@cgeek-dev](https://github.com/cgeek-dev/shandian-download) 独立维护。
+Windows **0.2.23** 支持独立的下载队列、合集管理和多网盘解析。YouTube 任务可选择字幕语言和格式，以本机 Ollama 校对或翻译。双语 ASS 可预览和调整字体、字号、描边、背景及位置，合集内也能查看每集的字幕状态。
+
+<div align="center">
+<img src="docs/images/windows-queue.png" alt="Windows 版下载队列，展示 YouTube 字幕进度与网盘任务" width="840">
+
+<sub>Windows 下载队列 · 视频、合集、网盘和其他文件集中管理</sub>
+</div>
+
+| 合集与字幕状态 | 中英双语 ASS 样式预览 |
+| --- | --- |
+| <img src="docs/images/windows-collection.png" alt="Windows 合集文件列表及每集的中英字幕状态" width="520"> | <img src="docs/images/windows-subtitle-style.png" alt="Windows 版中英字幕样式预览和字体描边设置" width="340"> |
+
+<details>
+<summary>查看 Windows 波形试听和 macOS 深色首页</summary>
+
+<img src="docs/images/windows-audio-playback.png" alt="Windows 已完成音频文件的波形试听" width="760">
+
+<img src="docs/images/macos-home-dark.png" alt="macOS 深色模式下的下载来源介绍" width="760">
+
+</details>
+
+Windows 界面图来自 [@cgeek-dev 的 Windows 0.2.23 发布源码](https://github.com/cgeek-dev/shandian-download/tree/v0.2.23-windows/docs/images)。Windows 的发布和问题反馈由该项目维护。
 
 ## 浏览器扩展
 
@@ -285,7 +309,7 @@ swift build -c release                # 只编译 App
 
 ## 声明
 
-本软件仅供个人下载有权获取的内容，请遵守各网站的服务条款及当地法律法规。README 截图中的影片均为公有领域或开源作品，界面数据为演示用途。
+本软件仅供个人下载有权获取的内容，请遵守各网站的服务条款及当地法律法规。README 截图使用演示数据。
 
 ## 许可证
 
