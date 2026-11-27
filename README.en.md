@@ -4,7 +4,7 @@
 
 # Shandian Download Manager
 
-**Send a download from your browser and manage it on your desktop.**
+**Save web videos with bilingual subtitles. Give stalled torrents another route.**
 
 Save videos with bilingual subtitles, download cloud and document files in batches, and resume supported direct or torrent downloads. Free and open source.
 
@@ -20,17 +20,31 @@ macOS 14 or later · Windows 10 / 11 (x64)
 
 </div>
 
-## What can I download?
+## Highlights
 
-- **Videos with subtitles.** Choose the video quality and keep the source captions or generate bilingual subtitles. [See the finished video and subtitle files](#video-and-subtitles).
-- **Cloud files and web attachments.** Select the files you need and download them together. [Check supported cloud drives](#cloud-drive-downloads) · [See webpage batch downloads](#capture-media-and-files-from-web-pages).
-- **Large files and torrents.** Queue HTTP, magnet, BT and ed2k links. Supported tasks can resume. A configured alternative can help retrieve a stalled torrent. [See how switching works](#recover-a-stalled-torrent).
+- **Save videos with bilingual subtitles.** Send a video from Chrome or Edge, choose the quality, and keep the original track or use AI to generate bilingual ASS. [See the real before-and-after comparison](#subtitle-results-on-a-real-video).
+- **Switch routes when a torrent stalls.** With a fallback configured, Shandian can pass a stalled BT or magnet task to Thunder or PikPak, retrieve the file and clean up temporary cloud copies where supported. [Watch automatic route switching](#recover-a-stalled-torrent).
+- **Save cloud files and original document attachments in batches.** Download Baidu Netdisk shares after authorization, batch-download from Aliyun, Quark and UC, and keep the original filenames of Feishu and Qingque media attachments. [Check cloud drive support](#cloud-drive-downloads).
+- **Capture playing media and collect download links.** Listen to detected audio with a waveform preview. Pick the links you need from a page and queue them together. [See the browser extension workflow](#capture-media-and-files-from-web-pages).
+- **Download over parallel connections and switch mirrors.** Large HTTP files can use parallel connections and resume. Video downloads can use concurrent fragments. Public GitHub and Hugging Face files can switch between tested mirrors. [See performance details](#performance).
+- **Organize, schedule and play downloads.** Manage magnet, BT, ed2k, video and direct links in one queue, play supported movies while downloading, and remember save folders by file type. [See the download queue and library](#download-management-and-library).
+- **Control downloads through local MCP.** Clients such as Codex, Claude Code and Cursor can add and manage tasks. [Connect an MCP client](#for-ai-tools-mcp).
 
 Install and open the desktop app, then paste a supported link. For one-click handoff on Mac, install the [Chrome / Edge extension](#browser-extension). Windows users can follow the [Windows setup guide](windows/README.md).
 
 ## Video and subtitles
 
 Open a YouTube video in the full Chrome / Edge extension, send it to Shandian for macOS, and choose the quality in the new-task window. You can download audio only or add subtitles.
+
+### Subtitle results on a real video
+
+<img src="docs/images/subtitle-translation-comparison-en.png" alt="Same video at 3:31.70. On the left, the original English captions overlap and cut off mid-sentence. On the right, the complete English sentence appears with the Chinese translation." width="900">
+
+At **3:31.70**, the left shows two English fragments out of order, alongside a [music] cue and a speaker marker. The right side shows the bilingual ASS produced from those original captions. It joins the English sentence and places the Chinese translation above it. [Source video](https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s)
+
+> **最棒的是你还能完全自定义脚本**
+>
+> And the best part is that you can still fully customize the script
 
 <img src="docs/images/workflow-playback-en.gif" alt="Local playback with two subtitle languages, with separate MP4 and ASS files shown" width="760">
 
@@ -160,6 +174,13 @@ Regular video sites use the highest available quality, preferring H.264 and AAC.
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="Shandian: movie library" width="900">
 </div>
+
+<details>
+<summary>See the active download queue</summary>
+
+<img src="docs/images/screenshot-downloading.png" alt="Shandian download queue and speed history, shown with sample data" width="840">
+
+</details>
 
 - <strong>Library</strong>: tasks are sorted into Movies, Videos, Cloud Drive and Other Files; finished films are shown as thumbnails and open with a double-click
 - <strong>Stream while downloading</strong>: play a film before it finishes; seeking prioritizes the corresponding pieces
