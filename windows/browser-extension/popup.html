@@ -36,15 +36,27 @@
   .batch-row .batch-reason { color:var(--text); font-size:12px; line-height:1.4; white-space:normal; overflow-wrap:anywhere; }
   .batch-row span.name { display:block; flex: 1; min-width:0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .batch-row small { color: var(--sub); white-space: nowrap; }
+  .batch-file-tree { --tree-indent: 18px; }
+  .batch-file-tree .batch-row { min-height: 26px; margin: 0; gap: 8px; font-size: 12.5px; cursor: pointer; }
+  .batch-file-tree > .batch-row, .batch-folder-files > .batch-row { margin-inline-start: var(--tree-indent); }
+  .batch-folder { display: flex; align-items: center; }
+  .batch-folder .batch-row { flex: 1; min-width: 0; font-weight: 600; }
+  .batch-folder-files { padding-inline-start: var(--tree-indent); }
+  .batch-file-icon { width: 16px; height: 16px; flex: 0 0 16px; color: var(--sub); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+  .batch-fold-toggle { display: grid; place-items: center; flex: 0 0 var(--tree-indent); height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
+  .batch-fold-toggle::before { content: ""; width: 12px; height: 12px; background: currentColor; clip-path: polygon(3px 1px, 10px 6px, 3px 11px); }
+  .batch-fold-toggle[aria-expanded="true"]::before { transform: rotate(90deg); }
+  .batch-fold-toggle:hover { background: var(--raised); }
+  .batch-fold-toggle:focus-visible { outline: 1px solid var(--text); outline-offset: -1px; }
   .batch-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; gap: 8px; }
   .batch-actions[hidden] { display: none; }
+  .batch-actions label { display: flex; align-items: center; gap: 8px; }
   #media-results { max-height: 280px; margin-top: 8px; }
   #media-results:empty { display: none; }
   .media-card { padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
   .media-card + .media-card { margin-top: 7px; }
   .media-top { display: flex; align-items: center; gap: 7px; }
   .media-top .batch-row { flex: 1; min-width: 0; margin: 0; cursor: pointer; }
-  .media-top .batch-row input { flex: none; margin: 0 1px 0 0; }
   .media-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .media-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; }
   .media-meta span { flex: none; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
@@ -70,7 +82,6 @@
   #site-batch-progress::-webkit-progress-value { background:var(--tint); border:0; box-shadow:none; }
   #site-batch-controls { justify-content:flex-start; }
   #site-batch-controls button { color:var(--text); background:transparent; border:1px solid var(--line); }
-  .batch-row input, .batch-actions input { width: auto; height: auto; accent-color: var(--tint); }
   .wechat-input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); }
   .hint:empty { display: none; }
   .quality { display:flex;align-items:center;gap:10px;margin:0 0 10px; }
@@ -86,7 +97,7 @@
   .hint { color: var(--sub); font-size: 12px; margin-top: 8px; line-height: 1.5; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--line); }
   .row small { display: block; color: var(--sub); font-size: 11.5px; margin-top: 2px; line-height: 1.35; }
-  .row input[type=checkbox] { flex: 0 0 16px; width: 16px; height: 16px; margin: 0 6px 0 0; }
+  .row input[type=checkbox] { margin-inline-end: 6px; }
   #channel-background-wait { flex: none; box-sizing: border-box; min-width: 66px; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--field); color: var(--text); font: inherit; cursor: pointer; }
   @supports (appearance: base-select) {
     #channel-background-wait, #channel-background-wait::picker(select) { appearance: base-select; }
@@ -111,11 +122,16 @@
   .cloud-settings > summary::after { content: ""; width: 6px; height: 6px; border-right: 1px solid var(--sub); border-bottom: 1px solid var(--sub); transform: rotate(45deg); }
   .cloud-settings[open] > summary::after { transform: rotate(225deg); }
   .cloud-settings .row:not(summary) { border-top: 0; padding-block: 5px; }
-  input[type=checkbox] { width: 34px; height: 20px; accent-color: var(--tint); }
+  input[type=checkbox] { flex: 0 0 13px; width: 13px; height: 13px; margin: 0; accent-color: var(--tint); }
 </style>
 <link rel="stylesheet" href="segments.css">
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-doc" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M21 8V20.9932C21 21.5501 20.5552 22 20.0066 22H3.9934C3.44495 22 3 21.556 3 21.0082V2.9918C3 2.45531 3.4487 2 4.00221 2H14.9968L21 8ZM19 9H14V4H5V20H19V9Z"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M20.5 15.5l-5-5-9 9"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M4 5V19H20V7H11.5858L9.58579 5H4ZM12.4142 5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H10.4142L12.4142 5Z"/></symbol>
+  </svg>
   <div class="head"><img src="icons/icon48.png" alt=""><b>闪电全能下载</b></div>
   <div class="tabs shandian-segments"><button id="tab-dl" class="on">下载</button><button id="tab-set">设置</button></div>
   <div class="page" id="page">
@@ -190,8 +206,9 @@
   </details>
   <script src="cloud-sites.js"></script>
   <script src="popup-waveform.js"></script>
-  <script src="popup.js"></script>
+  <script src="huggingface.js"></script>
   <script src="source-labels.js"></script>
+  <script src="popup.js"></script>
   <script src="batch-ui.js"></script>
   <script src="baidu-ui.js"></script>
 </body>

@@ -763,6 +763,9 @@ button:focus, button:focus-visible { outline: none; }
 .modal-x:hover { background: var(--faint); color: var(--text); }
 .modal-x .ic { width: 16px; height: 16px; }
 #cf-url { cursor: pointer; }
+.cf-source-meta { display: flex; align-items: baseline; gap: 8px; }
+#cf-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#cf-size { flex: none; margin-inline-start: auto; }
 #new-sheet .modal { width: min(720px, calc(100vw - 48px)); }
 #nd-text { min-height: 280px; }
 /* 独立窗口：只显示对话框，铺满窗口，标题和关闭按钮交给系统标题栏 */
@@ -1097,6 +1100,82 @@ body.dialog-window #nd-text { flex: 1; min-height: 120px; }
 .empty .glyph svg { width: 100%; height: 100%; }
 .empty b { font-size: 17px; font-weight: 650; color: var(--text); }
 .empty small { font-size: 13px; }
+
+.download-empty {
+  --empty-secondary: color-mix(in srgb, var(--text) 68%, transparent);
+  position: relative;
+  flex: none;
+  width: min(100%, 760px);
+  margin: auto;
+  padding: 32px 16px;
+  border-radius: 22px;
+  background: radial-gradient(circle 420px at 50% 0, color-mix(in srgb, var(--tint) 10%, transparent), transparent);
+  text-align: center;
+}
+
+.download-empty-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.download-empty-outline rect {
+  width: calc(100% - 1.2px);
+  height: calc(100% - 1.2px);
+  fill: none;
+  stroke: color-mix(in srgb, var(--tint) 40%, transparent);
+  stroke-width: 1.2px;
+  stroke-dasharray: 7px 6px;
+}
+
+.download-empty-glyph {
+  display: block;
+  width: 38px;
+  height: 60px;
+  margin: 0 auto 14px;
+  color: var(--tint);
+  filter: drop-shadow(0 0 10px var(--glow));
+}
+
+.download-empty h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.download-empty-hint {
+  margin: 8px 0 0;
+  color: var(--empty-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.download-empty-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 84px), 1fr));
+  gap: 8px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.download-empty-sources li {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 3px 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tint) 12%, transparent);
+  color: color-mix(in srgb, color-mix(in srgb, var(--tint) 70%, var(--text)) 60%, transparent);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+}
 
 .kind { font-size: 12px; color: var(--sub); white-space: nowrap; }
 

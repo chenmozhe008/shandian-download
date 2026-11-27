@@ -58,6 +58,9 @@ pub struct Task {
     /// 内核不返回这一项，list_tasks 里补上，界面上「磁力 2.31 GB」那个标签用它。
     #[serde(default, skip_deserializing)]
     pub kind: Option<String>,
+    /// 阶段性来源标记，只用于任务卡片。
+    #[serde(default, skip_deserializing, rename = "originLabel", skip_serializing_if = "Option::is_none")]
+    pub origin_label: Option<String>,
     /// 迅雷任务行上的「已下载 a/b 项」
     #[serde(default, skip_deserializing, rename = "xlItems", skip_serializing_if = "Option::is_none")]
     pub xl_items: Option<(u32, u32)>,
@@ -336,6 +339,7 @@ pub(crate) fn material_site_label(url: &str) -> Option<&'static str> {
     if host=="pixabay.com" || host.ends_with(".pixabay.com"){Some("Pixabay")}
     else if host=="aigei.com" || host.ends_with(".aigei.com"){Some("爱给")}
     else if host=="docs.qingque.cn"{Some("轻雀文档")}
+    else if host=="huggingface.co"{Some("Hugging Face")}
     else if crate::feishu::document_url(url).is_some() || crate::feishu::attachment_url(&u){Some("飞书文档")}
     else{None}
 }

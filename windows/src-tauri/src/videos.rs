@@ -174,23 +174,12 @@ impl VideoOptions {
         Some(format!("{}字幕", label))
     }
 
-    /// 对应的 yt-dlp 参数（和 Mac 版 arguments 一字不差）
-    pub fn arguments(&self) -> Vec<String> {
+    fn format_arguments(&self) -> Vec<String> {
         if self.audio_only {
-            return vec![
-                "-f".into(),
-                "ba/b".into(),
-                "-x".into(),
-                "--audio-format".into(),
-                "m4a".into(),
-                // 标题 / 作者 / 日期 / 简介写进容器，播放器和文件属性里直接能看到
-                "--embed-metadata".into(),
-                "--parse-metadata".into(),
-                "webpage_url:%(comment)s".into(),
-            ];
+            return vec!["-f".into(), "ba/b".into()];
         }
-        // 先比分辨率，同分辨率优先 H.264/AAC：默认会挑体积最小的 AV1，剪映、老播放器兼容差
-        let mut a = vec![
+        // 先比分辨率，同分辨率优先 H.264/AAC。
+        vec![
             "-f".into(),
             "bv*+ba/b".into(),
             "-S".into(),
@@ -202,6 +191,25 @@ impl VideoOptions {
                     "res".into()
                 }
             ),
+        ]
+    }
+
+    /// 对应的 yt-dlp 参数（和 Mac 版 arguments 一字不差）
+    pub fn arguments(&self) -> Vec<String> {
+        let mut a = self.format_arguments();
+        if self.audio_only {
+            a.extend([
+                "-x".into(),
+                "--audio-format".into(),
+                "m4a".into(),
+                // 标题 / 作者 / 日期 / 简介写进容器，播放器和文件属性里直接能看到
+                "--embed-metadata".into(),
+                "--parse-metadata".into(),
+                "webpage_url:%(comment)s".into(),
+            ]);
+            return a;
+        }
+        a.extend([
             "--merge-output-format".into(),
             "mp4".into(),
             // 把标题、作者（上传者）、日期、简介写进 mp4 的元数据：
@@ -212,7 +220,7 @@ impl VideoOptions {
             // 有这条就能回溯「这文件是从哪下的」
             "--parse-metadata".into(),
             "webpage_url:%(comment)s".into(),
-        ];
+        ]);
         a
     }
 
@@ -1973,6 +1981,8 @@ fn site_for_host(host: &str) -> Option<&'static str> {
         (&["weibo.com", "weibo.cn"], "微博"),
         (&["ixigua.com"], "西瓜视频"),
         (&["vimeo.com"], "Vimeo"),
+        (&["facebook.com", "fb.watch"], "Facebook"),
+        (&["instagram.com"], "Instagram"),
         (&["x.com", "twitter.com"], "X"),
         (&["xinpianchang.com"], "新片场"),
         (&["movie.douban.com"], "豆瓣"),
@@ -2641,6 +2651,24 @@ pub struct VideoProbe {
     pub title: String,
     pub subs: bool,
     pub heights: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+}
+
+fn exact_selected_video_size(info: &serde_json::Value) -> Option<u64> {
+    let selected = match info["requested_downloads"].as_array() {
+        Some(downloads) => match downloads.as_slice() {
+            [one] => one,
+            _ => return None,
+        },
+        None => info,
+    };
+    let exact = |format: &serde_json::Value| format["filesize"].as_u64().filter(|size| *size > 0);
+    if let Some(parts) = selected["requested_formats"].as_array().filter(|parts| !parts.is_empty()) {
+        parts.iter().try_fold(0u64, |total, part| total.checked_add(exact(part)?))
+    } else {
+        exact(selected)
+    }
 }
 
 fn heights_in_info(bytes: &[u8]) -> Vec<u32> {
@@ -2707,19 +2735,21 @@ fn probe_metadata(local: &Path, bin_dir: &Path, url: &str, args: &[&str]) -> Opt
 }
 
 /// 新建下载框用：这个视频的字幕和清晰度。查不出来（超时、要登录、网络问题）返回 None，不下结论
-pub fn probe_video(local: &Path, bin_dir: &Path, url: &str) -> Option<VideoProbe> {
-    let bytes = probe_metadata(local, bin_dir, url, &[
+pub fn probe_video(local: &Path, bin_dir: &Path, url: &str, video: Option<&VideoOptions>) -> Option<VideoProbe> {
+    let mut args = vec![
         "--dump-single-json", "--skip-download", "--no-warnings", "--no-playlist", "--ignore-no-formats-error",
         "--write-subs", "--write-auto-subs", "--sub-langs", "__none__",
-    ])?;
+    ];
+    let format = video.map(VideoOptions::format_arguments).unwrap_or_default();
+    args.extend(format.iter().map(String::as_str));
+    let bytes = probe_metadata(local, bin_dir, url, &args)?;
     let langs = sub_langs_in_info(&bytes)?;
+    let info: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     Some(VideoProbe {
-        title: serde_json::from_slice::<serde_json::Value>(&bytes)
-            .ok()
-            .and_then(|v| v["title"].as_str().map(str::to_string))
-            .unwrap_or_default(),
+        title: info["title"].as_str().unwrap_or_default().to_owned(),
         subs: langs.iter().any(|l| l != "danmaku" && l != "live_chat"),
         heights: heights_in_info(&bytes),
+        size: video.and_then(|_| exact_selected_video_size(&info)),
     })
 }
 
@@ -3467,6 +3497,22 @@ mod tests {
         assert_eq!(translate_source(human, &av(&["ko", "zh-CN"]), false), None);
         // 不知道语言也没有 -orig：走原来的逻辑
         assert_eq!(translate_source(b"{}", &av(&["ru"]), false), None);
+    }
+
+    #[test]
+    fn selected_size_requires_exact_sizes_for_all_streams() {
+        use serde_json::json;
+
+        let merged = json!({"requested_downloads":[{"requested_formats":[
+            {"filesize": 1000}, {"filesize": 200}
+        ]}]});
+        assert_eq!(exact_selected_video_size(&merged), Some(1200));
+        let incomplete = json!({"filesize": 1000, "requested_formats":[
+            {"filesize": 1000}, {"filesize_approx": 200}
+        ]});
+        assert_eq!(exact_selected_video_size(&incomplete), None);
+        assert_eq!(exact_selected_video_size(&json!({"filesize_approx": 1234})), None);
+        assert_eq!(exact_selected_video_size(&json!({"filesize": 1234})), Some(1234));
     }
 
     #[test]

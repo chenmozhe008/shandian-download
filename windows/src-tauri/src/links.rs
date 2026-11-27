@@ -173,6 +173,9 @@ const VIDEO_HOSTS: &[&str] = &[
     "weibo.com",
     "ixigua.com",
     "vimeo.com",
+    "facebook.com",
+    "fb.watch",
+    "instagram.com",
     "x.com",
     "twitter.com",
     "xinpianchang.com",
@@ -219,6 +222,34 @@ fn is_video_page(host: &str, url: &Url) -> bool {
     let on = |d: &str| host == d || host.ends_with(&format!(".{d}"));
     let path = url.path();
     let digits_after = |prefix: &str| path.strip_prefix(prefix).is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()));
+    if on("instagram.com") {
+        if !matches!(url.scheme(), "http" | "https") { return false; }
+        let parts: Vec<_> = path.trim_matches('/').split('/').collect();
+        let media_id = |id: &str| !id.is_empty() && id != "audio"
+            && id.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'));
+        return match parts.as_slice() {
+            ["p" | "reel" | "reels" | "tv", id] => media_id(id),
+            [user, "p" | "reel" | "reels" | "tv", id] =>
+                !matches!(*user, "share" | "accounts" | "explore" | "stories") && media_id(id),
+            _ => false,
+        };
+    }
+    if on("facebook.com") || on("fb.watch") {
+        if !matches!(url.scheme(), "http" | "https") { return false; }
+        let parts: Vec<_> = path.trim_matches('/').split('/').collect();
+        let digits = |id: &str| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit());
+        let share_id = |id: &str| !id.is_empty() && id.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'));
+        return if on("fb.watch") {
+            matches!(parts.as_slice(), [id] if share_id(id))
+        } else {
+            match parts.as_slice() {
+                ["share", "v" | "r", id] => share_id(id),
+                ["reel" | "reels", id] => digits(id),
+                ["watch"] | ["watch", "live"] | ["video.php"] => url.query_pairs().any(|(k,v)| k == "v" && digits(&v)),
+                _ => parts.contains(&"videos") && parts.last().is_some_and(|id| digits(id)),
+            }
+        };
+    }
     if on("x.com") || on("twitter.com") {
         return path.contains("/status/");
     }
@@ -249,6 +280,25 @@ fn is_video_page(host: &str, url: &Url) -> bool {
     }
     // youtu.be、b23.tv、xhslink.com 这类短链本身就指向一个视频
     true
+}
+
+#[cfg(test)]
+#[test]
+fn facebook_video_links_use_the_video_downloader() {
+    for link in [
+        "https://www.facebook.com/share/v/Abc123/",
+        "https://www.facebook.com/share/r/Abc123/",
+        "https://www.facebook.com/reel/1122205227312474",
+        "https://m.facebook.com/watch/?v=1122205227312474",
+        "https://www.facebook.com/page/videos/title/1122205227312474/",
+        "https://fb.watch/Abc123/",
+    ] {
+        assert!(matches!(LinkKind::of(link), Some(LinkKind::VideoSite)), "{link}");
+        assert!(worth_popup(link, &[]), "{link}");
+    }
+    for link in ["https://www.facebook.com/example/", "https://www.facebook.com/watch/", "https://facebook.com/share/p/Abc123/"] {
+        assert!(LinkKind::of(link).is_none(), "{link}");
+    }
 }
 
 /// 复制后值得弹浮窗的文件扩展名
@@ -352,6 +402,7 @@ pub fn is_pan_share(link: &str) -> bool {
 }
 
 pub fn worth_popup(link: &str, pan_hosts: &[&str]) -> bool {
+    if crate::ghmirror::is_huggingface_file(link) { return true; }
     if is_pan_share(link) || crate::wechat::is_share(link) || crate::feishu::document_url(link).is_some() { return true; }
     let Some(kind) = LinkKind::of(link) else {
         return false;
@@ -376,6 +427,14 @@ pub fn worth_popup(link: &str, pan_hosts: &[&str]) -> bool {
         .and_then(|name| name.rsplit_once('.').map(|(_, e)| e.to_lowercase()))
         .unwrap_or_default();
     FILE_EXTENSIONS.contains(&ext.as_str())
+}
+
+#[cfg(test)]
+#[test]
+fn clipboard_accepts_hugging_face_files_not_model_pages() {
+    assert!(worth_popup("https://huggingface.co/org/model/resolve/main/config.json", &[]));
+    assert!(worth_popup("https://huggingface.co/org/model/resolve/main/model.gguf?download=true", &[]));
+    assert!(!worth_popup("https://huggingface.co/org/model/tree/main", &[]));
 }
 
 fn is_gitee_file_path(url: &Url) -> bool {

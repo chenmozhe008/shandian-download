@@ -23,6 +23,8 @@
     ["PikPak",["mypikpak.com"]],
     ["B 站",["bilibili.com","b23.tv"]],["YouTube",["youtube.com","youtu.be"]],
     ["Vimeo",["vimeo.com"]],["抖音",["douyin.com"]],["小红书",["xiaohongshu.com","xhslink.com"]],
+    ["Facebook",["facebook.com","fb.watch"]],
+    ["Instagram",["instagram.com"]],
     ["微博",["weibo.com","weibo.cn"]],["X",["x.com","twitter.com"]],
     ["Pixabay",["pixabay.com"]],["爱给",["aigei.com"]],
   ];
@@ -46,5 +48,18 @@
       label(file?.url || req.url || item.url || item.link, referer || item.page) ||
       (Object.entries(headers).some(([key,value])=>/^user-agent$/i.test(key)&&value==="pan.baidu.com")?"百度网盘":"");
   }
-  globalThis.ShSources={label,task};
+  function socialVideo(url) {
+    if (!url || !["http:", "https:"].includes(url.protocol)) return false;
+    const host = url.hostname;
+    const path = url.pathname.replace(/\/$/, "");
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) {
+      return /^\/(?:(?!(?:share|accounts|explore|stories)\/)[^/]+\/)?(?:p|reels?|tv)\/(?!audio$)[\w-]+$/.test(path);
+    }
+    if (host === "fb.watch" || host.endsWith(".fb.watch")) return /^\/[\w-]+$/.test(path);
+    if (host !== "facebook.com" && !host.endsWith(".facebook.com")) return false;
+    return /^\/share\/[vr]\/[\w-]+$/.test(path) || /^\/reels?\/\d+$/.test(path) ||
+      /(?:^|\/)videos\/(?:[^/]+\/)*\d+$/.test(path) ||
+      (/^\/(?:watch(?:\/live)?|video\.php)$/.test(path) && /^\d+$/.test(url.searchParams.get("v") || ""));
+  }
+  globalThis.ShSources={label,task,socialVideo};
 })();
