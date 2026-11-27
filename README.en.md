@@ -11,7 +11,7 @@ Multi-connection acceleration with automatic route switching when BitTorrent sta
 
 Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
-[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows (x64)](#windows-edition) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows (x64)](#windows-edition) · [Cloud drive downloads](#cloud-drive-downloads) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 [简体中文](README.md) | English
 
@@ -58,7 +58,29 @@ The macOS edition is maintained in this repository (Simplified Chinese & English
 
 Regular video sites use the highest available quality, preferring H.264 and AAC. Douyin and Xiaohongshu support watermark-free downloads. WeChat Channels uses the video returned by Yuanbao and does not currently offer quality or subtitle selection; it requires a signed-in Tencent Yuanbao session; the share link is submitted to Tencent only when you request parsing. Availability and quality depend on the site and account permissions.
 
+## Cloud drive downloads
+
+### Current macOS release
+
+**Baidu Netdisk shares:** paste the share link and access code, install and authorize Baidu’s official bdpan tool, and choose “Download with Shandian”. You can also paste an HTTP/HTTPS direct download link if you already have one.
+
 For Baidu Netdisk shares, bdpan saves a copy in your authorized account's app data folder before downloading it. Follow Baidu's setup and authorization instructions the first time. Shandian shows bytes transferred, speed, and percentage when a total size is available. After verifying the local files, Shandian removes the temporary cloud copy. The transfer folder is under My Application Data → bdpan → Shandian. Cloud storage, permissions and transfer speed depend on Baidu Netdisk. Baidu blocks saving your own shares back to the same account. In that case, open the official share page or find the original in Netdisk.
+
+### macOS 0.22.7 development preview
+
+These features are in the development build. The stable installers linked above are still version 0.22.6.
+
+- **Aliyun Drive, Quark Drive, and UC Drive:** use the **full Chrome / Edge extension 1.12.0**. Sign in to the drive website, select files in your own drive, and click “Download with Shandian” in the toolbar. Save Aliyun shares to your drive first. Direct downloads from Quark and UC shares depend on the drive’s permissions. If prompted, save the files to your own drive and download them from there.
+- **Public files from GitHub and Hugging Face:** paste a link to test and select a mirror. If the transfer fails, Shandian can switch mirrors and try to resume.
+- **YouTube subtitles:** when subtitle downloads are enabled, Shandian downloads the original subtitles without AI by default. Choose AI proofreading or Chinese translation for individual downloads. Local processing time depends on your device and model. An online API receives the subtitle text and may charge for processing. Translations are saved as separate SRT files. If subtitle retrieval or processing fails, the downloaded video remains available.
+
+<div align="center">
+<img src="docs/images/screenshot-home-preview.png" alt="Development preview of the macOS 0.22.7 idle page, showing common download sources" width="760">
+
+<sub>macOS 0.22.7 development preview</sub>
+</div>
+
+See the [Windows edition](#windows-edition) and its release notes for Windows-specific cloud drive workflows.
 
 ## Performance
 

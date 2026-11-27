@@ -12,7 +12,7 @@
 
 磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书与轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
-[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.6/Shandian-0.22.6-Intel.zip) · [Windows 版（x64）](#windows-版) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
 
 简体中文 | [English](README.en.md)
 
@@ -65,7 +65,29 @@ macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cge
 
 常规视频站默认选择最高可用画质，优先 H.264 与 AAC；抖音、小红书支持下载无平台水印的视频。视频号使用元宝返回的可用视频，暂不提供画质和字幕选择，需要登录腾讯元宝；视频号分享链接只在用户点击解析后提交给腾讯。具体平台、视频和画质能否下载取决于网站及账号权限。
 
+## 网盘下载
+
+### macOS 正式版
+
+**百度网盘分享**可粘贴链接和提取码，按提示安装并授权百度官方 bdpan，选择「用闪电下载」。已有 HTTP / HTTPS 下载直链时，也可以直接交给闪电。
+
 「用闪电下载」通过 bdpan 将分享内容转存到已授权账号的应用数据目录，再下载到本机。首次使用需按百度的说明安装命令行工具并授权。闪电显示已下载大小、速度及可用的百分比。文件完整保存后，闪电会自动清理本次云端转存目录。需要手动处理时，可在百度网盘的「我的应用数据 → bdpan → Shandian」找到转存目录。转存空间、下载权限和速度由百度网盘决定。百度禁止将自己发出的分享转存回同一账号，此时可打开官方分享页或在百度网盘中找到原文件。
+
+### macOS 0.22.7 开发版预览
+
+以下功能属于开发版。上方的正式安装包仍为 0.22.6。
+
+- **阿里云盘、夸克网盘、UC 网盘**：使用 Chrome / Edge **完整版扩展 1.12.0**。在已登录的个人网盘网页勾选文件，点击工具栏的「闪电下载」，交给 App 统一管理。阿里云盘分享先保存到自己的网盘。夸克、UC 分享是否可直接下载取决于网盘权限，页面提示需要保存时，可保存后到个人网盘下载。
+- **GitHub / Hugging Face 公开文件**：粘贴链接后测速选用镜像，传输失败时可切换镜像并尝试断点续传。
+- **YouTube 字幕**：勾选下载字幕后，默认只下载原字幕。每条任务可另选 AI 校对或翻译成中文。本地模型的处理速度取决于设备和模型。使用在线 API 会把字幕文本发送给所选服务商，并可能产生费用。翻译结果保存为外挂 SRT，字幕获取或处理失败时，已下载的视频仍可使用。
+
+<div align="center">
+<img src="docs/images/screenshot-home-preview.png" alt="macOS 0.22.7 开发版空闲首页，集中展示常用下载来源" width="760">
+
+<sub>macOS 0.22.7 开发版的空闲首页</sub>
+</div>
+
+Windows 版的网盘入口及使用条件见 [Windows 版](#windows-版)和对应版本说明。
 
 ## 下载性能
 
