@@ -1,53 +1,56 @@
 <div align="center">
 
-<img src="docs/images/icon.png" width="128" alt="Shandian icon">
+<img src="docs/images/icon.png" width="76" alt="Shandian icon">
 
 # Shandian Download Manager
 
-<strong>Open-source download manager for macOS and Windows</strong>
+**Send a download from your browser and manage it on your desktop.**
 
-Download, resume, and organize video, bilingual subtitles, cloud files, document attachments, torrents, ed2k links, and large files.
+Save videos with bilingual subtitles, download cloud and document files in batches, and resume supported direct or torrent downloads. Free and open source.
 
-[macOS Apple Silicon](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [Windows download (x64)](https://github.com/cgeek-dev/shandian-download/releases/latest) · [Video & subtitles](#video-and-subtitles) · [Cloud drive downloads](#cloud-drive-downloads) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[**Download for Apple Silicon**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**Download for Intel Mac**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**Download for Windows**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe)
 
-[简体中文](README.md) | English
+macOS 14 or later · Windows 10 / 11 (x64)
 
-[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
-![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
-![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
-![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
+[Installation guide](#installation-macos) · [Chrome / Edge extension](#browser-extension) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest) · [简体中文](README.md)
 
-<img src="docs/images/workflow-browser-en.gif" alt="Send a video from the browser extension and open Shandian’s new video task" width="860">
+<img src="docs/images/workflow-browser-en.gif" alt="Click Download this video in Chrome or Edge and open the new video task in Shandian for macOS" width="800">
 
-<sub>Click Download this video to open a new task in Shandian. The clips show simulated interactions with sample data.</sub>
-
-[See 720p and subtitle options](#video-and-subtitles) · [See batch downloads](#capture-media-and-files-from-web-pages)
+<sub>Browser to desktop in 3.5 seconds · Simulated interaction with sample data</sub>
 
 </div>
 
-The macOS edition is maintained in this repository (Simplified Chinese & English), while the Windows edition is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev). Downloads are powered by a customized [Gopeed](https://github.com/GopeedLab/gopeed) engine, with video platform support from [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+## What can I download?
+
+- **Videos with subtitles.** Choose the video quality and keep the source captions or generate bilingual subtitles. [See the finished video and subtitle files](#video-and-subtitles).
+- **Cloud files and web attachments.** Select the files you need and download them together. [Check supported cloud drives](#cloud-drive-downloads) · [See webpage batch downloads](#capture-media-and-files-from-web-pages).
+- **Large files and torrents.** Queue HTTP, magnet, BT and ed2k links. Supported tasks can resume. A configured alternative can help retrieve a stalled torrent. [See how switching works](#recover-a-stalled-torrent).
+
+Install and open the desktop app, then paste a supported link. For one-click handoff on Mac, install the [Chrome / Edge extension](#browser-extension). Windows users can follow the [Windows setup guide](windows/README.md).
 
 ## Video and subtitles
 
-On macOS, YouTube downloads let you choose video quality, save only the audio, and decide whether to download subtitles. The full Chrome / Edge extension can send a YouTube video to Shandian. Keep the new-task confirmation enabled to choose 720p and subtitle handling for that download.
+Open a YouTube video in the full Chrome / Edge extension, send it to Shandian for macOS, and choose the quality in the new-task window. You can download audio only or add subtitles.
+
+<img src="docs/images/workflow-playback-en.gif" alt="Local playback with two subtitle languages, with separate MP4 and ASS files shown" width="760">
+
+<sub>Use a player that supports ASS to show both languages. The MP4 and ASS are saved as separate files.</sub>
+
+[14-second workflow video (MP4)](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4)
 
 | Option | Result |
 | --- | --- |
 | Original subtitles | Downloads an available source-language track. Optional local cleanup uses no AI |
 | AI translation into Chinese | Generates styled bilingual ASS or Simplified Chinese SRT, depending on your settings |
 
-Use local Ollama or a configured API. Local processing time depends on the model and your computer. Selecting an online API sends the subtitle text to that provider and may incur usage charges. A subtitle failure leaves the downloaded video available. Formats and subtitle tracks depend on what YouTube makes available.
+You can use local Ollama or a configured API. Local processing time depends on your model and computer. Online translation sends subtitle text to your chosen provider and may incur usage charges. The saved video remains available if subtitle processing fails. Available qualities and subtitle tracks depend on YouTube.
 
-<img src="docs/images/workflow-subtitles-en.gif" alt="Choose 720p and select original subtitles or bilingual AI translation" width="760">
+<details>
+<summary>See how to choose 720p and subtitle translation</summary>
 
-<sub>Choose 720p and select subtitle handling for this task.</sub>
+<img src="docs/images/workflow-subtitles-en.gif" alt="Choosing 720p, switching from original subtitles to bilingual AI translation, and seeing translation progress" width="760">
 
-<img src="docs/images/workflow-playback-en.gif" alt="Open the completed video with bilingual captions and see the MP4 and ASS files" width="760">
-
-<sub>Open the finished local video. Bilingual subtitles are saved as a separate ASS file.</sub>
-
-[Download the three video steps as one HD MP4](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4)
+</details>
 
 <details>
 <summary>See the macOS home screen</summary>
@@ -77,7 +80,7 @@ Download permissions, available space, and transfer requirements depend on the p
 
 The Windows edition (Windows 10 / 11, x64, Simplified Chinese UI) is independently developed and maintained by [@cgeek-dev](https://github.com/cgeek-dev), with its source code hosted in [`windows/`](windows/).
 
-- **Download**: [Latest Windows Release](https://github.com/cgeek-dev/shandian-download/releases/latest) (installer & portable builds, with built-in auto-update)
+- **Download**: [Windows installer](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [Portable ZIP](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip) · [Release notes](https://github.com/cgeek-dev/shandian-download/releases/latest)
 - **Docs & Changelog**: [windows/README.md](windows/README.md) · [windows/CHANGELOG.md](windows/CHANGELOG.md)
 
 Windows **0.2.23** has its own download queue, collection management, and cloud drive integrations. Choose subtitle languages and formats for YouTube tasks, and use local Ollama for proofreading or translation. Preview bilingual ASS subtitles and adjust typeface, size, outline, background, or position.
@@ -268,5 +271,7 @@ The app includes an MCP server, so AI tools can add downloads, check progress, p
 | Other MCP tools | Use the generic `mcpServers` config |
 
 ## License
+
+The macOS engine is based on [Gopeed](https://github.com/GopeedLab/gopeed), with video extraction powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 [GPL-3.0](LICENSE). Download only content you have the right to obtain, and follow each site's terms of service and applicable law. Screenshots use demonstration data.

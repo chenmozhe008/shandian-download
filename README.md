@@ -1,54 +1,57 @@
 <!-- 搜索关键词：下载工具, 全能下载器, Mac 下载工具, macOS 下载器, Windows 下载器, 磁力下载, 种子下载, BT 下载, ed2k, 迅雷替代, Mac 迅雷, IDM 替代, 下载没速度, 磁力 0 速度, 云盘离线, PikPak, 视频下载, 网页音频下载, 网页音视频嗅探, B 站下载, 抖音下载, 小红书下载, 网盘直链, yt-dlp 图形界面, MCP 下载, download manager, macos download manager, windows download manager, magnet downloader, torrent client, ed2k client, audio sniffer, yt-dlp gui -->
 <div align="center">
 
-<img src="docs/images/icon.png" width="128" alt="闪电全能下载图标">
+<img src="docs/images/icon.png" width="76" alt="闪电全能下载图标">
 
-# 闪电全能下载 · Shandian Download Manager
+# 闪电全能下载
 
-<strong>macOS 与 Windows 的开源下载管理器</strong>
+**在浏览器点下载，交给闪电统一管理。**
 
-从网页视频、双语字幕、网盘和文档附件，到磁力、BT、ed2k 和大文件直链，统一下载、续传和归档。
+视频和双语字幕、网盘和文档附件、磁力和大文件直链，都可以交给一个下载队列。免费开源。
 
-[macOS Apple 芯片](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [macOS Intel](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [下载 Windows 版（x64）](https://github.com/cgeek-dev/shandian-download/releases/latest) · [视频与字幕](#视频与字幕) · [网盘下载](#网盘下载) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest)
+[**下载 Mac 版（Apple 芯片）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**下载 Mac 版（Intel）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**下载 Windows 版**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe)
 
-简体中文 | [English](README.en.md)
+macOS 14 或更新版本 · Windows 10 / 11（x64）
 
-[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest)
-![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
-![macOS](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows)
-![Extension](https://img.shields.io/badge/Extension-Chrome%20%7C%20Edge-4285F4)
+[安装说明](#安装macos) · [Chrome / Edge 扩展](#浏览器扩展) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest) · [English](README.en.md)
 
-<img src="docs/images/workflow-browser.gif" alt="在浏览器点击扩展，打开闪电的新建视频任务" width="860">
+<img src="docs/images/workflow-browser.gif" alt="点击浏览器扩展里的「下载这个视频」，打开闪电的新建视频任务" width="800">
 
-<sub>从浏览器点「下载这个视频」，进入闪电的新建任务。动图使用模拟操作和示例数据。</sub>
-
-[看画质与双语字幕](#视频与字幕) · [看网页链接批量下载](#侦测网页音视频与批量链接)
+<sub>3.5 秒看浏览器如何把任务交给闪电。所有动图使用模拟操作和示例数据。</sub>
 
 </div>
 
-macOS 版由本仓库维护，Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护。下载内核基于定制版 [Gopeed](https://github.com/GopeedLab/gopeed)，视频平台解析由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
+## 你可以用闪电做什么
+
+- **把视频和字幕一起存下来。** 选画质，按需保留原字幕或生成中外双语字幕。 [看双语成品](#视频与字幕)
+- **把网盘文件和网页附件一次下齐。** 勾选需要的文件，统一加入下载队列。 [查支持的网盘](#网盘下载) · [看网页链接怎么批量下](#侦测网页音视频与批量链接)
+- **集中下载大文件、种子和磁力链接。** 支持的任务可以断点续传，冷门 BT 长期没速度时可用已配置的备用通道。 [看自动换路](#bt-卡在-0-时自动换路)
+
+装好并打开闪电，就可以粘贴支持的链接。Mac 用户想从网页一键发起下载，可以装 [Chrome / Edge 扩展](#浏览器扩展)。Windows 用户可参考 [Windows 安装与设置](windows/README.md)。
 
 ## 视频与字幕
 
-macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取字幕。用 Chrome / Edge 完整版扩展可把 YouTube 视频交给闪电。保留新建任务确认窗口，就能逐条选择 720P 和字幕处理方式。
+把 YouTube 视频通过 Chrome / Edge 完整版扩展交给 macOS 版闪电，在新建任务窗口选画质。可以只保存音频，也可以同时下载字幕。
+
+<img src="docs/images/workflow-playback.gif" alt="从已完成打开本地视频，中英字幕同屏，显示单独保存的 MP4 和 ASS 文件" width="760">
+
+<sub>用支持 ASS 的播放器打开本地视频，就能同时看两种语言。MP4 和 ASS 分开保存，字幕也可单独导入剪辑软件。</sub>
+
+[看 14 秒完整操作（MP4）](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4)
 
 | 选项 | 结果 |
 | --- | --- |
 | 只下载原字幕 | 默认选项。优先使用可用的源语言字幕，支持本地结构修整，无需 AI |
 | AI 翻译成中文 | 按设置生成中外双语 ASS 或简体中文 SRT，供播放器加载或剪辑使用 |
 
-可使用本机 Ollama 或已配置的 API。在本机运行时，速度取决于模型和电脑性能。选在线 API 时，字幕文本才会发送给对应服务商，可能消耗额度或产生费用。字幕不可用或处理失败时，已保存的视频仍可打开。YouTube 可用画质和字幕轨由平台决定。
+翻译可用本机 Ollama 或配置好的在线 API。本机耗时取决于电脑和模型。在线翻译会把字幕文本发给你选择的服务商，可能产生费用。字幕处理失败时，已下载的视频仍可打开。画质和字幕轨取决于 YouTube 提供的内容。
 
-<img src="docs/images/workflow-subtitles.gif" alt="选择 720P，启用字幕后选择只下载原文或 AI 双语翻译" width="760">
+<details>
+<summary>查看怎么选 720P 和双语翻译</summary>
 
-<sub>选择 720P，原字幕或双语翻译按任务决定。</sub>
+<img src="docs/images/workflow-subtitles.gif" alt="选择 720P、切换原字幕与 AI 双语翻译，并显示翻译进度" width="760">
 
-<img src="docs/images/workflow-playback.gif" alt="从已完成打开视频，播放中英双语字幕，查看 MP4 和 ASS 文件" width="760">
-
-<sub>从「已完成」打开本地视频。双语字幕单独保存为 ASS。</sub>
-
-[下载三段视频流程的高清合辑（MP4）](https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4)
+</details>
 
 <details>
 <summary>查看 macOS 首页</summary>
@@ -78,7 +81,7 @@ macOS 版的 YouTube 任务可选画质、仅下载音频，以及是否获取�
 
 Windows 版由 [@cgeek-dev](https://github.com/cgeek-dev) 基于本项目独立开发与维护，支持 Windows 10 / 11（64 位，简体中文界面），源码位于本仓库 [`windows/`](windows/) 目录。
 
-- **下载安装包**：[Windows 最新版下载](https://github.com/cgeek-dev/shandian-download/releases/latest)（提供完整安装器与免安装便携版，支持应用内自动更新）
+- **下载安装包**：[Windows 安装器](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [免安装便携版](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip) · [Windows 发布页](https://github.com/cgeek-dev/shandian-download/releases/latest)
 - **使用与构建说明**：[windows/README.md](windows/README.md) · [更新记录](windows/CHANGELOG.md)
 
 Windows **0.2.23** 支持独立的下载队列、合集管理和多网盘解析。YouTube 任务可选择字幕语言和格式，以本机 Ollama 校对或翻译。双语 ASS 可预览和调整字体、字号、描边、背景及位置，合集内也能查看每集的字幕状态。
