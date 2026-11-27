@@ -6,7 +6,7 @@
 
 **Free, ad-free, open-source download manager for macOS & Windows**
 
-Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-rescue) and **versatile** (torrents, 4K video with bilingual subtitles, 4 cloud drives, Feishu Docs, and web media — all in one window).
+Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-rescue) and **versatile** (torrents, 4K video with bilingual subtitles, 4 cloud drives, Feishu Docs, and web media — all in one app).
 
 [**Download Mac (Apple Silicon)**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**Download Mac (Intel)**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**Download Windows (x64)**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) · [Quick Install](#quick-install) · [简体中文](README.md)
 
@@ -24,23 +24,29 @@ Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-resc
 
 ---
 
-## Highlights
+## Features
 
-- **Downloads almost everything — including the hard ones**: Alongside magnet links, `.torrent` files, ed2k, and HTTP direct links, Shandian handles **YouTube, Bilibili, Douyin, Xiaohongshu (watermark-free), WeChat Channels**, **Baidu / Aliyun / Quark / UC Drives**, **Feishu & Qingque Docs original media**, and **hidden web audio/video sniffing** — all in one window.
+- **Downloads almost everything — including the hard ones**: Alongside magnet links, `.torrent` files, ed2k, and HTTP direct links, Shandian handles **YouTube, Bilibili, Douyin, Xiaohongshu (watermark-free), WeChat Channels**, **Baidu / Aliyun / Quark / UC Drives**, **Feishu & Qingque Docs original media**, and **hidden web audio/video sniffing** — all managed in one app.
 - **Fast by default, even on stalled torrents**: Multi-connection HTTP chunking, 4-way concurrent video fragments, automatic mirror racing for **GitHub & Hugging Face** with failover resume, fresh BitTorrent trackers with a fixed port, and automatic route switching to local Thunder or PikPak cloud offline when a torrent stalls at 0%.
 - **4K video with clean bilingual ASS subtitles**: Automatically saves video and subtitles into a dedicated folder. AI mode re-segments fragmented YouTube captions, keeps terminology consistent across the video, and writes a single styled bilingual `.ass` file ready to play without track conflicts.
-- **Seamless browser extension**: Click once in Chrome or Edge to send videos, cloud drive files, Feishu/Qingque attachments, sniffed web audio (with waveform preview), or bulk page links straight to Shandian.
-- **Native on macOS & Windows + local MCP**: Native **SwiftUI on macOS** and **Tauri on Windows** (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Both platforms support multi-connection acceleration, cloud drives, GitHub / Hugging Face mirrors, bilingual ASS subtitles, scheduled downloads, one-click updates, and auto-sorted libraries; also supports stream-while-downloading and a built-in local MCP server for Claude Code, Codex, Cursor, and ChatGPT Desktop.
+- **One-click browser extension**: Click once in Chrome or Edge to send videos, cloud drive files, Feishu/Qingque attachments, sniffed web audio (with waveform preview), or bulk page links straight to Shandian.
+- **Native on macOS & Windows**: Built with **SwiftUI on macOS** and **Tauri on Windows** (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Includes auto-sorted libraries, stream-while-downloading, scheduled downloads, collection drawers, and one-click updates — completely free and ad-free.
 
 ---
 
 ## Quick Install
 
-### Option 1: Install via an AI Coding Assistant (Recommended)
+### Option 1: Install via an AI Assistant (Recommended)
 
-Send this prompt to Claude Code, Codex, Cursor, or any terminal-capable AI assistant:
+Send the prompt for your OS to Claude Code, Codex, Cursor, or any terminal-capable AI assistant:
 
-> Please install Shandian Download Manager (https://github.com/chenmozhe008/shandian-download): on macOS run `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash` in Terminal; on Windows download the latest installer from https://github.com/cgeek-dev/shandian-download/releases/latest. Then guide me step-by-step to install its Chrome/Edge browser extension.
+**For macOS:**
+
+> Please install Shandian Download Manager (https://github.com/chenmozhe008/shandian-download) by running `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash` in Terminal, then guide me step-by-step to install its Chrome/Edge browser extension.
+
+**For Windows:**
+
+> Please install Shandian Download Manager for Windows (https://github.com/cgeek-dev/shandian-download/releases/latest): download and run the latest `Shandian-*-Windows-x64-setup.exe` installer, then guide me step-by-step to install its Chrome/Edge browser extension.
 
 ### Option 2: Command Line (macOS)
 
@@ -57,7 +63,7 @@ Without Homebrew (auto-detects chip, verifies SHA-256, installs, and avoids the 
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
-### Option 3: Manual Download (macOS & Windows)
+### Option 3: Manual Download
 
 - **macOS (14 or later)**: Download [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) for M-series chips or [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) for Intel Macs, then drag the app into Applications. On first launch, click **Done**, open **System Settings → Privacy & Security**, and click **Open Anyway**. Install `ffmpeg` (`brew install ffmpeg`) for video sites.
 - **Windows (10 / 11 x64)**: Download the [Windows Installer (v0.2.23)](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe) or [Portable ZIP](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-Portable.zip). See [windows/README.md](windows/README.md) and [windows/CHANGELOG.md](windows/CHANGELOG.md) for details.
@@ -80,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 
 ---
 
-## Feature Walkthrough
+## Screenshots & Demos
 
 ### 1. Video Downloads & Bilingual Subtitles
 
@@ -115,7 +121,7 @@ When a magnet or BitTorrent task has no active peers and stalls at 0%, Shandian 
 
 ### 4. Auto-Sorted Library, Stream While Downloading & Windows UI
 
-Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files, with **stream-while-downloading**, ⌘/Ctrl + Shift multi-select, folder drawers, and menu-bar / tray speed monitoring.
+Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files, with **stream-while-downloading**, multi-select batch actions, folder drawers, and menu-bar / tray speed monitoring.
 
 <div align="center">
 <img src="docs/images/screenshot-library.png" alt="Shandian: auto-sorted movie library" width="880">
@@ -133,19 +139,36 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 
 ## Supported Sources
 
-| Category | Sources | How to Add |
-| --- | --- | --- |
-| **Video & Subtitles** | YouTube, Bilibili, X, Weibo, Douban trailers, Xigua, Kuaishou, Vimeo | Copy & paste or send via the browser extension; highest quality by default (H.264 / AAC preferred) |
-| | Douyin, Xiaohongshu, Xinpianchang | Open the video page and click **Download this video** in the full extension (watermark-free where available) |
-| | WeChat Channels | Paste the share link and follow the prompt to parse via the full extension on a signed-in Tencent Yuanbao page |
-| **Cloud Drives** | Baidu Netdisk shares | Paste share link + access code; authorize official [bdpan](https://github.com/baidu-netdisk/bdpan-storage) once, then save locally with auto cloud cleanup |
-| | Aliyun Drive, Quark Drive, UC Drive | Select files in the web drive and click the **Download with Shandian** toolbar button injected by the full extension |
-| | Other direct cloud links | Paste direct links directly or send via [LinkSwift](https://github.com/hmjz100/LinkSwift) |
-| **Protocols & Open Source** | Magnet links, `.torrent` files, ed2k, HTTP / HTTPS direct links | Paste, drag in `.torrent` files, or let the extension take over browser downloads |
-| | GitHub & Hugging Face public files | Paste the URL to automatically race public mirrors and resume seamlessly on failover |
-| **Docs & Web Media** | Feishu Docs & Wiki media | Open the full extension on the doc or paste the doc URL (requires authorized official [lark-cli](https://github.com/larksuite/cli)) |
-| | Qingque Docs media | Click **Scan Current Page** in the full extension to batch-save original audio/video attachments |
-| | Web audio/video & page links | Use **Detect Media on This Page** or **Scan Page for Download Links** in the full extension |
+### Video & Subtitles
+
+| Source | How to Add |
+| --- | --- |
+| YouTube, Bilibili, X, Weibo, Douban trailers, Xigua, Kuaishou, Vimeo | Copy & paste or send via the browser extension; highest quality by default (H.264 / AAC preferred) |
+| Douyin, Xiaohongshu, Xinpianchang | Open the video page and click **Download this video** in the full extension (watermark-free where available) |
+| WeChat Channels | Paste the share link and follow the prompt to parse via the full extension on a signed-in Tencent Yuanbao page |
+
+### Cloud Drives (No Desktop Client Needed)
+
+| Source | How to Add |
+| --- | --- |
+| Baidu Netdisk shares | Paste share link + access code; authorize official [bdpan](https://github.com/baidu-netdisk/bdpan-storage) once, then save locally with auto cloud cleanup |
+| Aliyun Drive, Quark Drive, UC Drive | Select files in the web drive and click the **Download with Shandian** toolbar button injected by the full extension |
+| Other direct cloud links | Paste direct links directly or send via [LinkSwift](https://github.com/hmjz100/LinkSwift) |
+
+### Protocols & Open Source
+
+| Source | How to Add |
+| --- | --- |
+| Magnet links, `.torrent` files, ed2k, HTTP / HTTPS direct links | Paste, drag in `.torrent` files, or let the extension take over browser downloads |
+| GitHub & Hugging Face public files | Paste the URL to automatically race public mirrors and resume seamlessly on failover |
+
+### Docs & Web Media
+
+| Source | How to Add |
+| --- | --- |
+| Feishu Docs & Wiki media | Open the full extension on the doc or paste the doc URL (requires authorized official [lark-cli](https://github.com/larksuite/cli)) |
+| Qingque Docs media | Click **Scan Current Page** in the full extension to batch-save original audio/video attachments |
+| Web audio/video & page links | Use **Detect Media on This Page** or **Scan Page for Download Links** in the full extension |
 
 ---
 
@@ -159,18 +182,6 @@ Completed tasks are organized into Movies, Videos, Cloud Drive, and Other Files,
 
 ---
 
-## Built-in Local MCP (for AI Tools)
-
-Shandian ships a local-only MCP server so AI tools can add downloads, inspect progress, pause, and resume — **without ever deleting tasks or local files**. Copy the ready-made config from **Settings → AI Tools**:
-
-| AI Tool | Setup |
-| --- | --- |
-| **Claude Code / Codex / Gemini CLI** | Run the copied command in Terminal |
-| **ChatGPT Desktop** | Settings → MCP servers → Add server (STDIO), paste the copied command path |
-| **Claude Desktop / Cursor / VS Code / Trae / Windsurf** | Paste the generated `mcpServers` JSON into your MCP config |
-
----
-
 ## FAQ
 
 - **macOS "Unidentified developer" warning**: Use the one-line installer above, or allow it once in **System Settings → Privacy & Security → Open Anyway**.
@@ -181,7 +192,19 @@ Shandian ships a local-only MCP server so AI tools can add downloads, inspect pr
 
 ---
 
-## Building from Source
+## Advanced: Local MCP & Building from Source
+
+### Built-in Local MCP (Optional)
+
+Shandian ships a local-only MCP server so AI tools can add downloads, inspect progress, pause, and resume — **without ever deleting tasks or local files**. Copy the ready-made config from **Settings → AI Tools**:
+
+| AI Tool | Setup |
+| --- | --- |
+| **Claude Code / Codex / Gemini CLI** | Run the copied command in Terminal |
+| **ChatGPT Desktop** | Settings → MCP servers → Add server (STDIO), paste the copied command path |
+| **Claude Desktop / Cursor / VS Code / Trae / Windsurf** | Paste the generated `mcpServers` JSON into your MCP config |
+
+### Building from Source
 
 - **macOS**:
   ```bash
