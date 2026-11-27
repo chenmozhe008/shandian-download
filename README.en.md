@@ -24,13 +24,13 @@ Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-resc
 
 ---
 
-## Why Shandian (Fast + All-in-One)
+## Highlights
 
-- **Fast ("Shandian" / Lightning)**: Parallel multi-connection HTTP chunks, 4-way concurrent video fragments, automatic mirror racing for GitHub / Hugging Face with failover resume, fresh BitTorrent trackers with a fixed port, and automatic route switching to local Thunder or PikPak cloud offline when a torrent stalls at 0%.
-- **All-in-One**: Handles magnet links, `.torrent` files, ed2k, HTTP direct links, major video platforms, Baidu / Aliyun / Quark / UC Drives, Feishu & Qingque Docs media, and web media sniffing — without installing separate downloaders and cloud drive desktop clients.
-- **Video with Bilingual Subtitles**: Supports up to 4K or audio-only; creates a dedicated folder when subtitles are enabled. AI mode re-segments fragmented YouTube captions, keeps terminology consistent across the video, and writes a single styled bilingual `.ass` file ready to play without conflicting with raw English tracks.
-- **Web Sniffing & Document Media**: With the Chrome / Edge full extension, capture playing web audio/video with waveform preview, extract page links in bulk, or save original audio/video attachments from Feishu and Qingque Docs.
-- **Native UI & Local MCP**: Native SwiftUI on macOS and Tauri on Windows (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Includes stream-while-downloading, auto-sorted library, scheduled downloads, one-click updates, and a built-in local MCP server for Claude Code, Codex, Cursor, and ChatGPT Desktop.
+- **Downloads almost everything — including the hard ones**: Alongside magnet links, `.torrent` files, ed2k, and HTTP direct links, Shandian handles **YouTube, Bilibili, Douyin, Xiaohongshu (watermark-free), WeChat Channels**, **Baidu / Aliyun / Quark / UC Drives**, **Feishu & Qingque Docs original media**, and **hidden web audio/video sniffing** — all in one window.
+- **Fast by default, even on stalled torrents**: Multi-connection HTTP chunking, 4-way concurrent video fragments, automatic mirror racing for **GitHub & Hugging Face** with failover resume, fresh BitTorrent trackers with a fixed port, and automatic route switching to local Thunder or PikPak cloud offline when a torrent stalls at 0%.
+- **4K video with clean bilingual ASS subtitles**: Automatically saves video and subtitles into a dedicated folder. AI mode re-segments fragmented YouTube captions, keeps terminology consistent across the video, and writes a single styled bilingual `.ass` file ready to play without track conflicts.
+- **Seamless browser extension**: Click once in Chrome or Edge to send videos, cloud drive files, Feishu/Qingque attachments, sniffed web audio (with waveform preview), or bulk page links straight to Shandian.
+- **Native on macOS & Windows + local MCP**: Native SwiftUI on macOS and Tauri on Windows (independently maintained by [@cgeek-dev](https://github.com/cgeek-dev)). Both platforms support multi-connection acceleration, cloud drives, GitHub / Hugging Face mirrors, bilingual ASS subtitles, and auto-sorted libraries; macOS also includes stream-while-downloading and a built-in local MCP server for Claude Code, Codex, Cursor, and ChatGPT Desktop.
 
 ---
 
@@ -38,21 +38,29 @@ Built to be **fast** (multi-connection HTTP, mirror racing, stalled-BT auto-resc
 
 ### macOS (14 or later)
 
-**Homebrew (recommended)**
+**Option 1: Command line (recommended)**
+
+With Homebrew:
 
 ```bash
 brew install --cask chenmozhe008/shandian/shandian
 brew install ffmpeg   # required for merging video & audio streams
 ```
 
-**One-line installer** (auto-detects chip, verifies SHA-256, installs, and avoids the first-launch Gatekeeper prompt)
+Without Homebrew (auto-detects chip, verifies SHA-256, installs, and avoids the first-launch Gatekeeper prompt):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
+**Option 2: Install via an AI coding assistant**
+
+Send this prompt to Claude Code, Codex, Cursor, or any terminal-capable AI assistant:
+
+> Please install Shandian Download Manager (https://github.com/chenmozhe008/shandian-download) by running `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash` in Terminal, then guide me step-by-step to install its Chrome/Edge browser extension.
+
 <details>
-<summary>Manual installation</summary>
+<summary>Option 3: Manual download</summary>
 
 1. Download the build for your Mac: [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) for M-series chips or [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) for Intel Macs, then drag the app into Applications.
 2. On first launch (open-source build is not notarized), click **Done**, open **System Settings → Privacy & Security**, and click **Open Anyway**.

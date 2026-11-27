@@ -26,13 +26,13 @@
 
 ---
 
-## 为什么叫「闪电全能下载」
+## 下载亮点
 
-- **下载快（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、GitHub / Hugging Face 自动测速选镜像并在中断时换站续传；磁力每次启动合并最新公开 tracker 并固定端口，冷门 BT 卡在 0% 时自动换路本机迅雷或 PikPak 云盘离线。
-- **来源全（全能）**：磁力、BT 种子、ed2k、HTTP 直链、主流视频站、百度 / 阿里 / 夸克 / UC 网盘、飞书与轻雀文档音视频、网页媒体嗅探与批量抓链，不用再在电脑里装一堆下载器和网盘客户端。
-- **视频带双语字幕**：支持最高 4K 与仅音频，勾选字幕自动建独立文件夹；AI 模式先重排 YouTube 碎片断句并统一全片术语，输出带合理字号比例的 `.ass` 双语字幕，打开直接看，不和原英文轨冲突。
-- **网页嗅探与文档附件**：搭配 Chrome / Edge 完整版扩展，可实时捕获网页音视频并看波形试听、批量抓取页面直链，也能扫描保存飞书与轻雀文档的原始音视频附件。
-- **双端原生 + 本机 MCP**：macOS 使用 SwiftUI 原生开发，Windows 由 [@cgeek-dev](https://github.com/cgeek-dev) 基于 Tauri 独立维护；支持边下边播、自动分类资料库、定时下载与一键更新，内置本机 MCP 可直接接入 Claude Code、Codex、Cursor、ChatGPT 桌面版。
+- **常用资源全覆盖，连难下的都能下（全能）**：除了磁力、BT 种子、ed2k、HTTP 直链，还直接支持 **YouTube、B 站、抖音、小红书（无水印）、微信视频号**，以及 **百度 / 阿里 / 夸克 / UC 四大网盘**、**飞书与轻雀文档里的原始音视频**、**网页播放中隐藏的音视频嗅探**——平时最麻烦的下载场景，一个窗口全解决。
+- **多连接提速，冷门资源不死等（闪电）**：HTTP 大文件自动分段并行、YouTube 4 路分片并发、**GitHub / Hugging Face** 公开文件自动测速选镜像并在中断时换站续传；磁力每次启动更新公开 tracker，冷门 BT 卡在 0% 时可自动换路本机迅雷或 PikPak 云盘离线，下完取回并清理云端副本。
+- **外语视频自动配中英双语字幕**：支持最高 4K 与仅音频，勾选字幕自动建独立文件夹；AI 模式先重排 YouTube 碎片断句并统一全片术语，输出带合理字号比例的 `.ass` 双语字幕，打开直接看，不和原英文轨冲突。
+- **浏览器扩展无缝联动**：搭配 Chrome / Edge 完整版扩展，在网页上点一下就能发给闪电；支持网页音视频实时侦测与波形试听、页面直链批量抓取，以及网盘和飞书 / 轻雀文档的一键批量保存。
+- **macOS 与 Windows 双端原生，内置 MCP**：macOS 使用 SwiftUI 原生开发，Windows 由 [@cgeek-dev](https://github.com/cgeek-dev) 基于 Tauri 独立维护，双端均支持多连接加速、多网盘直下、GitHub / Hugging Face 镜像加速、YouTube 双语 ASS 字幕与自动分类资料库；macOS 另支持边下边播与内置本机 MCP（直接接入 Claude Code、Codex、Cursor、ChatGPT 桌面版）。
 
 ---
 
@@ -40,31 +40,33 @@
 
 ### macOS（14 及以上）
 
-**Homebrew 安装（推荐）**
+**方式一：命令行安装（推荐）**
+
+已安装 Homebrew 时：
 
 ```bash
 brew install --cask chenmozhe008/shandian/shandian
 brew install ffmpeg   # 下载视频网站合并音视频所需
 ```
 
-**无 Homebrew 一键脚本**（自动按芯片下载、校验 SHA-256、安装并跳过首次拦截）
+没有 Homebrew 时，在终端运行一键脚本（自动按芯片下载、校验 SHA-256、安装并跳过首次拦截）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash
 ```
 
-<details>
-<summary>手动下载安装 / 通过 AI 助手安装</summary>
+**方式二：让 AI 助手帮你装**
 
-#### 手动安装
-1. 按芯片下载安装包：Apple 芯片（M 系列）选 [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip)，Intel 处理器选 [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip)，解压后拖入「应用程序」。
-2. 首次打开若提示「无法验证开发者」（开源软件未公证），点「完成」后前往「系统设置 → 隐私与安全性」底部点「仍要打开」。
-3. 下载视频网站内容需要 `ffmpeg`（`brew install ffmpeg`）。
-
-#### 让 Claude Code / Codex / WorkBuddy 帮你装
-复制下面这段发给你的 AI 助手：
+使用 Claude Code、Codex、Cursor、WorkBuddy 等 AI 工具时，直接复制下面这段发给它：
 
 > 请帮我安装「闪电全能下载」（https://github.com/chenmozhe008/shandian-download）：在终端运行 `curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/script/install.sh | bash`。装好后，一步步告诉我怎么在浏览器里装它的扩展。
+
+<details>
+<summary>方式三：手动下载安装包</summary>
+
+1. 按芯片下载：Apple 芯片（M 系列）选 [AppleSilicon.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip)，Intel 处理器选 [Intel.zip](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip)，解压后拖入「应用程序」。
+2. 首次打开若提示「无法验证开发者」（开源软件未公证），点「完成」后前往「系统设置 → 隐私与安全性」底部点「仍要打开」。
+3. 下载视频网站内容需要 `ffmpeg`（`brew install ffmpeg`）。
 
 </details>
 
