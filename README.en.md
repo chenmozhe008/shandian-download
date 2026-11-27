@@ -4,9 +4,12 @@
 
 # Shandian Download Manager
 
-**Save web videos with bilingual subtitles. Give stalled torrents another route.**
+<strong>Fast, clean, ad-free and open source for macOS &amp; Windows.</strong>
 
-Save videos with bilingual subtitles, download cloud and document files in batches, and resume supported direct or torrent downloads. Free and open source.
+Manage magnet links, torrents, ed2k, HTTP direct links, cloud drive shares, video platforms, and web media in one window.<br>
+Parallel connections speed up large downloads. On Mac, save web videos with bilingual subtitles or use a configured fallback when a torrent stalls.
+
+Magnet · Torrent · ed2k · Direct links · Baidu Netdisk shares · Feishu and Qingque document media · Bulk web downloads · YouTube, Bilibili, Douyin, Xiaohongshu, WeChat Channels
 
 [**Download for Apple Silicon**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**Download for Intel Mac**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**Download for Windows**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe)
 
@@ -14,23 +17,37 @@ macOS 14 or later · Windows 10 / 11 (x64)
 
 [Installation guide](#installation-macos) · [Chrome / Edge extension](#browser-extension) · [Release notes](https://github.com/chenmozhe008/shandian-download/releases/latest) · [简体中文](README.md)
 
+[Overview](#overview) · [Video and subtitles](#video-and-subtitles) · [Windows features](#windows-edition)
+
+[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 <img src="docs/images/workflow-browser-en.gif" alt="Click Download this video in Chrome or Edge and open the new video task in Shandian for macOS" width="800">
 
 <sub>Browser to desktop in 3.5 seconds · Simulated interaction with sample data</sub>
 
 </div>
 
+## Overview
+
+Shandian Download Manager is a free, open-source download manager for **macOS and Windows** that handles magnet links, torrents, ed2k, HTTP/HTTPS files, Baidu Netdisk shares, and video platforms in a single window. Copy a link and paste it to start; on macOS, the full Chrome / Edge extension can also batch-extract downloadable links, capture and preview web audio and video, and save original media attachments from Feishu and Qingque Docs (single files save directly; multiple files are grouped into one folder).
+
+The native SwiftUI edition for macOS is maintained in this repository (Simplified Chinese & English). The Windows edition uses Tauri and WebView2 and is independently maintained by [@cgeek-dev](https://github.com/cgeek-dev). Downloads are powered by a customized [Gopeed](https://github.com/GopeedLab/gopeed) engine, with video platform support from [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+
+On macOS, automatic subtitle cleanup can remove rolling duplicates and speaker markers before translation. Keep the original track, or export Chinese SRT or bilingual ASS. The source video, subtitle settings and actual output are shown in [Video and subtitles](#video-and-subtitles).
+
 ## Highlights
 
-- **Save videos with bilingual subtitles.** Send a video from Chrome or Edge, choose the quality, and keep the original track or use AI to generate bilingual ASS. [See the real before-and-after comparison](#subtitle-results-on-a-real-video).
-- **Switch routes when a torrent stalls.** With a fallback configured, Shandian can pass a stalled BT or magnet task to Thunder or PikPak, retrieve the file and clean up temporary cloud copies where supported. [Watch automatic route switching](#recover-a-stalled-torrent).
-- **Save cloud files and original document attachments in batches.** Download Baidu Netdisk shares after authorization, batch-download from Aliyun, Quark and UC, and keep the original filenames of Feishu and Qingque media attachments. [Check cloud drive support](#cloud-drive-downloads).
-- **Capture playing media and collect download links.** Listen to detected audio with a waveform preview. Pick the links you need from a page and queue them together. [See the browser extension workflow](#capture-media-and-files-from-web-pages).
-- **Download over parallel connections and switch mirrors.** Large HTTP files can use parallel connections and resume. Video downloads can use concurrent fragments. Public GitHub and Hugging Face files can switch between tested mirrors. [See performance details](#performance).
-- **Organize, schedule and play downloads.** Manage magnet, BT, ed2k, video and direct links in one queue, play supported movies while downloading, and remember save folders by file type. [See the download queue and library](#download-management-and-library).
-- **Control downloads through local MCP.** Clients such as Codex, Claude Code and Cursor can add and manage tasks. [Connect an MCP client](#for-ai-tools-mcp).
+- **Unified download management.** Magnet links, torrents, ed2k, direct links, cloud drive shares and video sites in one window. The macOS app recognizes clipboard links, and the Chrome / Edge extension can take over browser downloads. [See supported sources](#supported-sources).
+- **Multi-connection acceleration.** Parallel HTTP chunks, four concurrent video fragments, fresh public trackers with a fixed BitTorrent port, and per-domain proxy routing on macOS. Public GitHub and Hugging Face files can switch mirrors and resume where supported. [Performance details](#performance).
+- **Automatic route switching for stalled torrents.** On macOS, a BT or magnet task stuck at 0% can pass to a configured local Thunder client or PikPak. After completion, the file returns to the intended save location, with temporary cloud copies cleaned up where supported. [Watch the workflow](#recover-a-stalled-torrent).
+- **Video downloads with original or bilingual subtitles.** Choose a video quality, download audio only, keep the source subtitles or generate bilingual ASS with AI. [Compare actual subtitles before and after processing](#subtitle-results-on-a-real-video).
+- **Original media from Feishu and Qingque Docs.** Select the original audio and video attachments and keep their filenames. One file saves directly, and multiple files go into one folder. [See attachment and batch downloads](#capture-media-and-files-from-web-pages).
+- **Web link and media capture.** Extract links in batches or capture playing media. Listen with waveform preview and save selected results. [See the browser extension at work](#capture-media-and-files-from-web-pages).
+- **Baidu Netdisk shares without the desktop client.** Paste the share link and access code. Once authorized, save directly to your computer and clear temporary cloud transfers after verification. Aliyun, Quark and UC also support selecting multiple files through the full extension. [Check cloud drive support](#cloud-drive-downloads).
+- **Playback, scheduling and automatic library organization.** Stream supported movies while they download, set download hours, remember save folders by type and open finished items from the library. [See the download queue and library](#download-management-and-library).
+- **Built-in local MCP.** Compatible clients such as Claude Code, Codex and Cursor can add downloads and check their progress. [Connect an MCP client](#for-ai-tools-mcp).
 
-Install and open the desktop app, then paste a supported link. For one-click handoff on Mac, install the [Chrome / Edge extension](#browser-extension). Windows users can follow the [Windows setup guide](windows/README.md).
+Install and open the app, then paste a supported link. For one-click handoff on Mac, install the [Chrome / Edge extension](#browser-extension). Follow the [Windows setup guide](windows/README.md) for the Windows edition.
 
 ## Video and subtitles
 
@@ -293,6 +310,5 @@ The app includes an MCP server, so AI tools can add downloads, check progress, p
 
 ## License
 
-The macOS engine is based on [Gopeed](https://github.com/GopeedLab/gopeed), with video extraction powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 [GPL-3.0](LICENSE). Download only content you have the right to obtain, and follow each site's terms of service and applicable law. Screenshots use demonstration data.

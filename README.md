@@ -3,11 +3,16 @@
 
 <img src="docs/images/icon.png" width="76" alt="闪电全能下载图标">
 
-# 闪电全能下载
+# 闪电全能下载 · Shandian Download Manager
 
-**网页视频可以连双语字幕一起存，冷门 BT 卡住可以自动换路。**
+<strong>快速、简洁的开源下载工具，支持 macOS 与 Windows</strong>
 
-视频和双语字幕、网盘和文档附件、磁力和大文件直链，都可以交给一个下载队列。免费开源。
+免费开源、无广告。macOS 用 SwiftUI 原生开发，Windows 基于 Tauri 与 WebView2。
+
+磁力、种子、ed2k、HTTP 直链、网盘分享、主流视频网站与网页音视频，统一在一个窗口管理。<br>
+多连接并行加速。macOS 可把视频和双语字幕一起存下来，冷门 BT 长期无速度时可自动换路。
+
+磁力 · 种子 · ed2k · 直链 · 百度网盘分享 · 飞书与轻雀文档音视频 · 网页批量下载 · YouTube、哔哩哔哩、抖音、小红书、微信视频号
 
 [**下载 Mac 版（Apple 芯片）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-AppleSilicon.zip) · [**下载 Mac 版（Intel）**](https://github.com/chenmozhe008/shandian-download/releases/download/v0.22.8/Shandian-0.22.8-Intel.zip) · [**下载 Windows 版**](https://github.com/cgeek-dev/shandian-download/releases/download/v0.2.23-windows/Shandian-0.2.23-Windows-x64-setup.exe)
 
@@ -15,23 +20,37 @@ macOS 14 或更新版本 · Windows 10 / 11（x64）
 
 [安装说明](#安装macos) · [Chrome / Edge 扩展](#浏览器扩展) · [更新记录](https://github.com/chenmozhe008/shandian-download/releases/latest) · [English](README.en.md)
 
+[项目总览](#项目总览) · [视频和字幕实测](#真实视频字幕处理前后) · [Windows 功能与界面](#windows-版)
+
+[![Release](https://img.shields.io/github/v/release/chenmozhe008/shandian-download?color=E0992F&label=Release)](https://github.com/chenmozhe008/shandian-download/releases/latest) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 <img src="docs/images/workflow-browser.gif" alt="点击浏览器扩展里的「下载这个视频」，打开闪电的新建视频任务" width="800">
 
 <sub>3.5 秒看浏览器如何把任务交给闪电。所有动图使用模拟操作和示例数据。</sub>
 
 </div>
 
+## 项目总览
+
+闪电全能下载（Shandian Download Manager）是一款支持 **macOS 与 Windows** 的免费开源下载工具，用于集中管理磁力、种子、ed2k、HTTP 直链、百度网盘分享以及主流视频平台下载。复制链接后粘贴即可创建任务；在 macOS 上搭配 Chrome / Edge 完整版扩展，还可批量抓取网页下载链接、侦测并试听网页音视频，也可扫描并保存飞书与轻雀文档中的原始音视频附件（单选直接保存，多选归入同一文件夹）。
+
+macOS 版用 SwiftUI 原生开发，由本仓库维护。Windows 版基于 Tauri 与 WebView2，由 [@cgeek-dev](https://github.com/cgeek-dev) 独立开发与维护。下载内核基于定制版 [Gopeed](https://github.com/GopeedLab/gopeed)，视频平台解析由 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 提供支持。
+
+macOS 可修整 YouTube 自动字幕里的滚动重复和说话人标记。原字幕可单独下载，也可以按任务选择 AI 翻译，导出中文字幕 SRT 或中外双语 ASS。 [查看实际字幕效果](#真实视频字幕处理前后)
+
 ## 主要功能
 
-- **下载视频，也能带走中英双语字幕。** 从 Chrome / Edge 发送视频，按任务选画质。可保留原字幕，也可用 AI 生成双语 ASS。 [看真实字幕处理前后](#真实视频字幕处理前后)
-- **冷门 BT 卡住后自动换路。** 配置备用通道后，长期没速度的磁力或种子可交给本机迅雷或 PikPak 离线下载，完成后取回本机，并按条件清理临时云端副本。 [看自动换路动图](#bt-卡在-0-时自动换路)
-- **多网盘和文档附件批量保存。** 百度网盘分享首次授权后可直接保存到本地，阿里、夸克和 UC 网盘支持多选。飞书与轻雀的原始音视频附件可保留文件名，批量保存到同一个文件夹。 [查支持的网盘](#网盘下载)
-- **网页音视频侦测和链接批量抓取。** 播放网页内容时可侦测可用音视频、看波形和试听，也能抓取页面链接，勾选需要的文件一次加入队列。 [看扩展怎么用](#侦测网页音视频与批量链接)
-- **多连接加速，公开文件可换镜像。** HTTP 大文件分段并行，视频可并发下载分片。GitHub / Hugging Face 公开文件可测速选镜像，下载中断时尝试换站续传。 [看下载性能](#下载性能)
-- **统一下载、边下边播与归档。** 在同一队列管理磁力、种子、ed2k、直链、网盘和视频，支持边下边播、定时下载和按文件类型记住保存目录。 [看下载队列和资料库](#下载管理与资料库)
-- **内置本机 MCP。** 支持 Codex、Claude Code、Cursor 等兼容工具添加和管理下载任务。 [查看连接方式](#给-ai-工具用mcp)
+- **统一管理多种下载来源。** 磁力、种子、ed2k、HTTP 直链、网盘分享与主流视频网站集中在一个窗口。macOS 支持剪贴板识别链接，配合 Chrome / Edge 扩展可自动接管网页下载。 [查看支持的来源](#支持的下载类型)
+- **多连接并行加速，公开文件可换镜像。** HTTP 大文件分段并行，视频支持 4 路分片并发。macOS 会合并公开 tracker、使用固定 BT 监听端口，并按域名分流系统代理。GitHub / Hugging Face 公开文件可测速选镜像，断开时尝试换站续传。 [看下载性能](#下载性能)
+- **冷门 BT 卡住自动换路。** macOS 配置备用通道后，卡在 0% 的种子和磁力可交给本机迅雷或 PikPak 云盘离线。下载完成后取回原保存位置，并在满足条件时自动清理临时云端副本。 [看自动换路动图](#bt-卡在-0-时自动换路)
+- **网页视频连双语字幕一起保存。** 按任务选画质、仅下载音频、保存原字幕或用 AI 生成双语 ASS。 [对比真实视频的字幕处理前后](#真实视频字幕处理前后)
+- **飞书、轻雀文档原始音视频批量保存。** 扫描原始附件，按需勾选并保留文件名。单选直接保存，多选放进同一个文件夹。 [看文档附件和批量下载](#侦测网页音视频与批量链接)
+- **网页链接抓取与媒体侦测。** 批量提取当前页面的可下载链接，或在播放网页音视频时捕获可用媒体，支持波形试听与按需保存。 [看扩展操作](#侦测网页音视频与批量链接)
+- **百度网盘分享免装桌面客户端。** 粘贴分享链接和提取码，首次授权后即可保存到本机，校验完成后自动清理本次云端临时转存。阿里、夸克、UC 也可通过完整版扩展勾选多项。 [查看各网盘下载方式](#网盘下载)
+- **边下边播、定时下载和自动归类。** 支持的影片下载中可播放，按文件类型记住保存目录，完成后可从资料库打开。 [看下载队列和资料库](#下载管理与资料库)
+- **内置本机 MCP。** 兼容的 Claude Code、Codex 和 Cursor 等工具可提交下载任务、查看进度。 [查看连接方式](#给-ai-工具用mcp)
 
-装好并打开闪电，就可以粘贴支持的链接。Mac 用户想从网页一键发起下载，可以装 [Chrome / Edge 扩展](#浏览器扩展)。Windows 用户可参考 [Windows 安装与设置](windows/README.md)。
+装好并打开闪电，就可以粘贴支持的链接。Mac 用户要从网页直接发起下载，可以安装 [Chrome / Edge 扩展](#浏览器扩展)。Windows 用户可以查看 [安装与设置](windows/README.md)。
 
 ## 视频与字幕
 
