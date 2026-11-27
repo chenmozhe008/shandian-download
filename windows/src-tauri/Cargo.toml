@@ -1,6 +1,6 @@
 [package]
 name = "shandian-windows"
-version = "0.2.15"
+version = "0.2.21"
 description = "闪电全能下载 Windows 版"
 edition = "2021"
 rust-version = "1.77"

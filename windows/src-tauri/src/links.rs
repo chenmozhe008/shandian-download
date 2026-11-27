@@ -352,6 +352,7 @@ pub fn is_pan_share(link: &str) -> bool {
 }
 
 pub fn worth_popup(link: &str, pan_hosts: &[&str]) -> bool {
+    if crate::ghmirror::is_huggingface_file(link) { return true; }
     if is_pan_share(link) || crate::wechat::is_share(link) || crate::feishu::document_url(link).is_some() { return true; }
     let Some(kind) = LinkKind::of(link) else {
         return false;
@@ -376,6 +377,14 @@ pub fn worth_popup(link: &str, pan_hosts: &[&str]) -> bool {
         .and_then(|name| name.rsplit_once('.').map(|(_, e)| e.to_lowercase()))
         .unwrap_or_default();
     FILE_EXTENSIONS.contains(&ext.as_str())
+}
+
+#[cfg(test)]
+#[test]
+fn clipboard_accepts_hugging_face_files_not_model_pages() {
+    assert!(worth_popup("https://huggingface.co/org/model/resolve/main/config.json", &[]));
+    assert!(worth_popup("https://huggingface.co/org/model/resolve/main/model.gguf?download=true", &[]));
+    assert!(!worth_popup("https://huggingface.co/org/model/tree/main", &[]));
 }
 
 fn is_gitee_file_path(url: &Url) -> bool {

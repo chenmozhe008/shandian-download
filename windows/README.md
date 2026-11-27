@@ -1,6 +1,6 @@
 # 闪电全能下载 · Windows 版
 
-本目录包含 Windows 普通版的主程序、安装器和专用浏览器扩展。Windows 的扩展源码位于 `windows/browser-extension/`，内核补丁位于 `windows/engine/`。 更新摘要见 [CHANGELOG](CHANGELOG.md)。
+本目录包含 Windows 版的主程序、安装器和专用浏览器扩展。Windows 的扩展源码位于 `windows/browser-extension/`，内核补丁位于 `windows/engine/`。更新摘要见 [CHANGELOG](CHANGELOG.md)。
 
 在仓库根目录运行 Windows 回归测试。
 
@@ -10,7 +10,7 @@ node --test @tests
 ```
 
 
-Windows 普通版使用 Tauri 和 WebView2。直链与磁力等任务由 Gopeed 处理，视频站下载使用 yt-dlp。
+Windows 版使用 Tauri 和 WebView2。直链与磁力等任务由 Gopeed 处理，视频站下载使用 yt-dlp。
 
 ## 已验证环境
 
@@ -24,11 +24,11 @@ Windows 客户端已在 Windows 10 和 Windows 11 测试，构建目标为 x64�
 
 ## 在线更新
 
-启动约 8 秒后检查，常驻时每小时判断是否需要联网，距上次成功检查满 24 小时再请求发布列表。「设置 → 关于」也可手动检查。发现新版后，可从版本行或右下角通知点「立即更新」。
+启动约 8 秒后检查。安装不同版本后，第一次启动会重新联网。版本相同时，常驻每小时判断是否需要联网，距上次成功检查满 24 小时再请求发布列表。「设置 → 关于」也可手动检查。发现新版后，可从版本行或右下角通知点「立即更新」。
 
 查到可安装的新版后，先下载并核对安装包名称、大小和 SHA-256，再启动现有 NSIS 安装器，按原路径和范围升级。系统目录需要 Windows 管理员确认。新版启动后清理安装缓存，便携版仍可手动升级。
 
-普通版读取 `cgeek-dev/shandian-download` 的 `v<版本>-windows` Release。若 API 受限，改查同一仓库的 Atom 发布列表，使用随正式版发布的校验记录。发布完整安装包后，从已校验的产物目录运行 `python windows/installer/make-update-record.py <发布目录>`，并把生成的 JSON 附到同版正式 Release。
+Windows 版读取 `cgeek-dev/shandian-download` 的 `v<版本>-windows` Release。若 API 受限，改查同一仓库的 Atom 发布列表，使用随正式版发布的校验记录。发布完整安装包后，从已校验的产物目录运行 `python windows/installer/make-update-record.py <发布目录>`，并把生成的 JSON 附到同版正式 Release。
 
 ## 结构
 

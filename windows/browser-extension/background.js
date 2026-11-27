@@ -1,4 +1,4 @@
-importScripts("network-capture.js", "site-download.js", "audio-preview.js", "qingque.js");
+importScripts("network-capture.js", "site-download.js", "audio-preview.js", "qingque.js", "huggingface.js");
 
 // 闪电全能下载浏览器扩展：把浏览器里的下载交给本机的闪电全能下载（127.0.0.1:6800）。
 // App 没开时什么都不拦，浏览器照常下载；App 只认本扩展的来源（manifest 里的 key 固定了扩展 ID），不需要填密钥。
@@ -288,6 +288,17 @@ async function extensionBatchRequest(path, data) {
   return response.json();
 }
 
+async function submitHuggingFaceTree(page, selected) {
+  if (!(await appReady())) return { ok: false, error: "请先打开闪电全能下载" };
+  const { items, folderName } = await readHuggingFaceFiles(page, selected);
+  if (!items.length) return { ok: false, error: "此目录没有可下载的文件" };
+  return extensionBatchRequest("batch", {
+    links: items.map(file => ({ url: file.url, name: file.title, size: file.size, sizeBytes: file.sizeBytes })),
+    referrer: page,
+    folderName,
+  });
+}
+
 async function submitCapturedMedia(tabId, urls) {
   const tab = await chrome.tabs.get(tabId);
   const captured = await capturedForTab(tabId);
@@ -306,7 +317,7 @@ async function submitCapturedMedia(tabId, urls) {
     let name = stem + "." + item.ext;
     for (let number = 2; names.has(name.toLowerCase()); number++) name = stem + " (" + number + ")." + item.ext;
     names.add(name.toLowerCase());
-    return { url: item.url, name, headers: await headersFor(item.url, item.referrer) };
+    return { url: item.url, name, headers: await headersFor(item.url, item.referrer), sizeBytes: knownFileBytes(item.size) };
   }));
   return extensionBatchRequest("batch", { links, referrer: chosen[0].referrer });
 }
@@ -523,8 +534,21 @@ async function launchApp(tabId) {
   return false;
 }
 
+function knownFileBytes(size) {
+  return Number.isSafeInteger(size) && size > 0 ? size : undefined;
+}
+
+async function capturedFileSizes(tabId) {
+  const capture = await capturedForTab(tabId).catch(() => null);
+  return new Map((capture?.items || []).filter(item => !item.stream && knownFileBytes(item.size))
+    .map(item => [item.url, item.size]));
+}
+
 // tabId：传了就表示是用户主动点的，App 没开时自动打开它；浏览器自动接管的下载不传，App 没开就让浏览器自己下
-async function sendToApp(url, referrer, name, tabId, mediaType, collection) {
+async function sendToApp(url, referrer, name, tabId, mediaType, collection, fileSize) {
+  if (tabId != null && fileSize?.sizeBytes == null && !fileSize?.sizeLabel && isSiteDownloadURL(url)) {
+    fileSize = { sizeBytes: (await capturedFileSizes(tabId)).get(url) };
+  }
   const baiduShare = mediaType === "baiduShare" || mediaType === "baiduShareLocked";
   const headers = !baiduShare && url.startsWith("http") ? await headersFor(url, referrer) : {};
   // 先看链接自己的站点：在别的网页上右键 Vimeo 链接时，来源页不是 Vimeo，也要带上它的登录信息
@@ -536,7 +560,7 @@ async function sendToApp(url, referrer, name, tabId, mediaType, collection) {
   const post = () => fetch(APP, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, headers, cookies, name, page: referrer, mediaType, collection }),
+    body: JSON.stringify({ url, headers, cookies, name, page: referrer, mediaType, collection, ...fileSize }),
   }).then(async (r) => r.ok && (await r.json().catch(() => null))?.ok !== false);
   try {
     return await post();
@@ -628,9 +652,10 @@ function submitSiteBatchSelection(tabId,batchId,keys,automatic=false){
       if(!keys.length)return {ok:true,keys};
     }
     if(keys.some(key=>!available.has(key) || sent.has(key)))return {ok:false,error:'部分项目尚未解析或已经交给闪电'};
+    const sizes = await capturedFileSizes(tabId);
     const links=await Promise.all(keys.map(async key=>{
       const link=available.get(key);
-      return {...link,headers:await headersFor(link.url,tab.url)};
+      return {...link,sizeBytes:sizes.get(link.url),headers:await headersFor(link.url,tab.url)};
     }));
     if(run && (siteBatchRuns.get(tabId)!==run || run.browserDownload))return {ok:false,error:'这批已停止，请重新解析'};
     if(!(await extensionBatchRequest('batch',{links,referrer:tab.url}))?.ok)return {ok:false,error:'未能交给闪电，请确认应用已打开'};
@@ -909,7 +934,7 @@ chrome.downloads.onCreated.addListener(async (item) => {
         if (current && current.state !== "in_progress") return;
       }
     }
-    ok=await sendToApp(url, item.referrer || intent?.page, resolvedName, intent?.tabId);
+    ok=await sendToApp(url, item.referrer || intent?.page, resolvedName, intent?.tabId, undefined, undefined, { sizeBytes: knownFileBytes(item.totalBytes) });
   } catch (_) {} finally {
     if(paused && !ok)try{await chrome.downloads.resume(item.id);}catch(_){}
   }
@@ -975,9 +1000,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       const file = resolved.links[0];
       return { ok: await sendToApp(file.url, sender.tab.url, file.name, sender.tab.id) };
     }
+    const sizeLabel = typeof msg.sizeLabel === "string" && /^\d+(?:\.\d+)? [KMGT]?B$/.test(msg.sizeLabel) ? msg.sizeLabel : undefined;
+    const sizeBytes = Number.isSafeInteger(msg.sizeBytes) && msg.sizeBytes >= 0 ? msg.sizeBytes : undefined;
     const result = msg.video
       ? await downloadVideoInTab(sender.tab)
-      : await sendToApp(msg.url, sender.url, undefined, sender.tab.id);
+      : await sendToApp(msg.url, sender.url, undefined, sender.tab.id, undefined, undefined, { sizeLabel, sizeBytes });
     // null = 没找到真实视频。以前一律回 ok，按钮显示「已交给闪电全能下载」但其实什么都没下
     return { ok: result === true, noVideo: result === null };
   })().then(reply, (error) => reply({ ok: false, error: /[\u4e00-\u9fff]/.test(error?.message || "") ? error.message : "未能添加下载，请稍后重试。" }));
@@ -1127,6 +1154,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     submitCapturedMedia(msg.tabId, msg.urls).then(reply).catch(() => reply({ ok: false }));
     return true;
   }
+  if (msg.type === "downloadHuggingFaceTree") {
+    if (_sender.frameId !== 0 || !huggingFaceTree(_sender.url) || _sender.tab?.url !== _sender.url) return;
+    submitHuggingFaceTree(_sender.url).then(reply, error => reply({ ok: false, error: error.message }));
+    return true;
+  }
   if (msg.type === "scanLinks") {
     chrome.tabs.get(msg.tabId).then(async tab=>{
       const host=new URL(tab.url).hostname;
@@ -1136,9 +1168,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         return;
       }
       let items,batch=null;
+      if (huggingFaceTree(tab.url)) {
+        try { ({ items } = await readHuggingFaceFiles(tab.url)); }
+        catch (error) { reply({ error: error.message }); return; }
+      }
       if(/^(www\.)?(aigei|pixabay)\.com$/.test(host)) {
         const result=await chrome.tabs.sendMessage(tab.id,{type:"collectSiteCatalog"},{frameId:0});items=result?.items || [];batch=result?.batch || null;
-      } else items=await scanDownloadLinks(msg.tabId);
+      } else if (!items) items=await scanDownloadLinks(msg.tabId);
       let known=[],checked=false;
       const files=items.filter(item=>!item.resolve);
       if(files.length)try{const result=await extensionBatchRequest("known",{urls:files.map(x=>x.url)});known=result.known||[];checked=true;}catch(_){}
@@ -1167,8 +1203,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.type === "downloadLinks") {
     chrome.tabs.get(msg.tabId).then(async tab=>{
       if(/^(www\.)?aigei\.com$/.test(new URL(tab.url).hostname))return {ok:false,error:'爱给暂不支持批量下载，请逐项下载'};
-      if(!(await appReady()))return {ok:false};
       const items=msg.items || (msg.urls||[]).map(url=>({url}));
+      if (huggingFaceTree(tab.url)) {
+        if (_sender.tab || _sender.url !== chrome.runtime.getURL("popup.html")) return { ok: false };
+        if (!Array.isArray(items) || items.length > 1000 || items.some(item => typeof item?.url !== "string")) return { ok: false };
+        try { return await submitHuggingFaceTree(tab.url, items.map(item => item.url)); }
+        catch (error) { return { ok: false, error: error.message }; }
+      }
+      if(!(await appReady()))return {ok:false};
       if (new URL(tab.url).hostname === "docs.qingque.cn") {
         if (_sender.tab || _sender.url !== chrome.runtime.getURL("popup.html")) return { ok: false };
         const result = await readQingqueFiles(tab, items.map(item => item.url));
@@ -1225,7 +1267,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     const suffix = " - " + label + " - " + (hash >>> 0).toString(16).padStart(8, "0");
     const stream = item.stream === true || ["m3u8", "mpd"].includes(item.ext);
     const name = stream || !item.ext ? undefined : stem + suffix + "." + item.ext;
-    sendToApp(item.url, item.referrer, name, msg.tabId, stream ? "stream" : undefined).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
+    const sizeBytes = stream ? undefined : knownFileBytes(item.size);
+    sendToApp(item.url, item.referrer, name, msg.tabId, stream ? "stream" : undefined, undefined, { sizeBytes }).then(ok => reply({ ok })).catch(() => reply({ ok: false }));
     return true;
   }
   if (msg.type === "refreshBadge") refreshBadge();

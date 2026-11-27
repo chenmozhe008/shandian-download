@@ -21,12 +21,21 @@
   formatRow.hidden=true;
 
   const isPixabay=host==='pixabay.com';
-  const batchLabel=isPixabay?'查找本页素材':host==='docs.qingque.cn'?'查找文档附件':'查找本页下载链接';
+  const isHuggingFace=!!huggingFaceTree(tab.url);
+  const batchLabel=isHuggingFace?'查找模型文件':isPixabay?'查找本页素材':host==='docs.qingque.cn'?'查找文档附件':'查找本页下载链接';
   batch.textContent=batchLabel;
   let ownerTabId=tab.id, batchState=null, checkedRows=[], unchecked=new Set();
+  let folderRows=[];
   let pending=false, scanning=false, sending=false;
   const selectedRows=()=>checkedRows.filter(row=>!row.check.disabled && row.check.checked);
   function updateButtons(){
+    for(const {check,files} of folderRows){
+      const eligible=files.filter(file=>!file.disabled);
+      const count=eligible.filter(file=>file.checked).length;
+      check.disabled=!eligible.length || pending || sending;
+      check.checked=eligible.length>0 && count===eligible.length;
+      check.indeterminate=count>0 && count<eligible.length;
+    }
     const eligible=checkedRows.filter(row=>!row.check.disabled).length;
     const selected=selectedRows().length;
     selectAll.disabled=!eligible || pending || sending;
@@ -40,25 +49,79 @@
   }
   function drawRows(items,known=new Set()){
     results.replaceChildren();
+    folderRows=[];
     checkedRows=items.map(item=>{
       const row=document.createElement('label');row.className='batch-row';
       const check=document.createElement('input');check.type='checkbox';check.value=item.url;
       const name=document.createElement('span');name.className='batch-name';
       const title=document.createElement('span');title.className='name';title.textContent=item.title;title.title=item.title;
       const reason=document.createElement('small');reason.className='batch-reason';
-      const kind=document.createElement('small');kind.textContent=ShSources.label(item.url,tab.url) || item.kind || '';
+      const kind=document.createElement('small');kind.textContent=isHuggingFace ? item.size || '' : ShSources.label(item.url,tab.url) || item.kind || '';
       const detail=item.formats?.[formatSelect.value] || item;
       const state=detail.blocked ? detail.blockedReason || '需原站授权' : known.has(item.url)?'已添加':'';
       reason.textContent=state;reason.hidden=!state;
       check.disabled=!!state;check.checked=!check.disabled;
-      name.append(title,reason);row.append(check,name,kind);results.append(row);
+      name.append(title,reason);row.append(check,name,kind);
+      if(!isHuggingFace)results.append(row);
       check.onchange=()=>{
         if(batchState){if(check.checked)unchecked.delete(item.url);else unchecked.add(item.url);saveSelection();}
         updateButtons();
       };
-      return {check,item,reason,kind,known:known.has(item.url)};
+      return {check,item,reason,kind,row,title,known:known.has(item.url)};
     });
+    if(isHuggingFace)drawModelTree();
     actions.hidden=!checkedRows.length;
+  }
+  function drawModelTree(){
+    results.classList.add('batch-file-tree');
+    const svgNamespace='http://www.w3.org/2000/svg';
+    function icon(type){
+      const svg=document.createElementNS(svgNamespace,'svg');
+      svg.setAttribute('class','batch-file-icon');
+      svg.setAttribute('aria-hidden','true');
+      const use=document.createElementNS(svgNamespace,'use');
+      use.setAttribute('href','#i-'+type);
+      svg.append(use);
+      return svg;
+    }
+    const root={folders:new Map(),body:results};
+    for(const {item,row,title,check} of checkedRows){
+      const parts=item.title.split('/');
+      title.textContent=parts.pop();
+      const image=/\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(title.textContent);
+      check.after(icon(image?'image':'doc'));
+      let parent=root;
+      for(const part of parts){
+        if(!parent.folders.has(part)){
+          const group=document.createElement('div');
+          const header=document.createElement('div');header.className='batch-folder';
+          const label=document.createElement('label');label.className='batch-row';
+          const folderCheck=document.createElement('input');folderCheck.type='checkbox';
+          const toggle=document.createElement('button');toggle.type='button';toggle.className='batch-fold-toggle';
+          const body=document.createElement('div');body.className='batch-folder-files';
+          const files=[];
+          function setExpanded(expanded){
+            body.hidden=!expanded;
+            toggle.setAttribute('aria-expanded',String(expanded));
+            toggle.setAttribute('aria-label',(expanded?'折叠 ':'展开 ')+part);
+          }
+          toggle.onclick=()=>setExpanded(body.hidden);
+          folderCheck.onchange=()=>{
+            for(const file of files)if(!file.disabled)file.checked=folderCheck.checked;
+            updateButtons();
+          };
+          setExpanded(true);
+          const name=document.createElement('span');name.className='name';name.textContent=part;name.title=part;
+          label.append(folderCheck,icon('folder'),name);header.append(toggle,label);group.append(header,body);
+          parent.body.append(group);
+          parent.folders.set(part,{folders:new Map(),body,files});
+          folderRows.push({check:folderCheck,files});
+        }
+        parent=parent.folders.get(part);
+        parent.files.push(check);
+      }
+      parent.body.append(row);
+    }
   }
   formatSelect.onchange=()=>{
     if(batchState)return;
@@ -141,7 +204,7 @@
     if(scanning || pending || sending || batchState?.running)return;
     scanning=true;batchState=null;
     document.body.classList.add('batch-mode');
-    batch.textContent='正在抓取…';results.replaceChildren();actions.hidden=true;
+    batch.textContent='正在抓取…';results.replaceChildren();checkedRows=[];folderRows=[];actions.hidden=true;
     updateButtons();
     try{
       const response=await chrome.runtime.sendMessage({type:'scanLinks',tabId:ownerTabId});

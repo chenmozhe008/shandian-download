@@ -565,9 +565,10 @@
         r = { ok, error: "飞书未打开这条音频的原件下载按钮" };
       } else {
         const source = audio ? audioSource(audio) : url;
+        const size = source && typeof huggingFaceHoverSize === "function" ? huggingFaceHoverSize(source) : null;
         r = audio && !source
           ? { ok: false, error: "音频地址已变化，请先播放后重试" }
-          : await chrome.runtime.sendMessage({ type: "hoverDownload", url: source, video: !!video, qingqueName });
+          : await chrome.runtime.sendMessage({ type: "hoverDownload", url: source, video: !!video, qingqueName, ...size });
       }
       if(request!==hoverRequest) return;
       clicked.className = r?.ok ? "ok" : "fail";

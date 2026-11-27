@@ -412,6 +412,7 @@ fn grab_batch(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
                 "kind": kind,
                 "name": l["name"].as_str().unwrap_or(""),
                 "size": l["size"].as_str().unwrap_or(""),
+                "sizeBytes": l["sizeBytes"].as_u64(),
             }))
         })
         .take(1000)
@@ -424,7 +425,7 @@ fn grab_batch(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
         let _ = w.show();
         let _ = w.set_focus();
         let page = v["referrer"].as_str().unwrap_or("");
-        let folder = v["folderName"].as_str().filter(|_| crate::api::material_site_label(page) == Some("轻雀文档"));
+        let folder = v["folderName"].as_str().filter(|_| matches!(crate::api::material_site_label(page), Some("轻雀文档" | "Hugging Face")));
         let source = if folder.is_some() { Some(page) } else { None };
         let _ = w.emit("ext-grab", json!({ "links": links, "folderName": folder, "sourceUrl": source }));
     }
@@ -688,7 +689,7 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
-            let _ = w.emit("ext-add", json!({ "url": url, "headers": headers, "name": name, "group": group, "collection": collection, "baiduCodeRequired": baidu_code_required }));
+            let _ = w.emit("ext-add", json!({ "url": url, "headers": headers, "name": name, "group": group, "collection": collection, "baiduCodeRequired": baidu_code_required, "sizeLabel": v["sizeLabel"].as_str(), "sizeBytes": v["sizeBytes"].as_u64() }));
         }
         return ok_json(json!({ "ok": true }));
     }

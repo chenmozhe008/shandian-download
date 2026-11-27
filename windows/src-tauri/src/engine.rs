@@ -560,7 +560,8 @@ async fn collect_matching_tasks(state: &AppState, key: Option<&str>) -> Result<V
     // 视频网站的任务在 yt-dlp 侧，拼进同一个列表，界面上不用区分来源
     let cloud = crate::pikpak::load_jobs(state);
     list.retain(|t| !crate::pikpak::hides(&cloud, &t.url(), &t.status));
-    list.extend(crate::pikpak::jobs_as_tasks_matching(state, key));
+    crate::pikpak::annotate_pulling_tasks(&cloud, &mut list);
+    list.extend(crate::pikpak::jobs_as_tasks_matching(&cloud, key));
     list.retain(|t|!crate::cloud::hides(state,&t.id));
     list.extend(crate::cloud::views(state,key));
     // 交给迅雷的任务：迅雷那条接替显示，原来的内核任务（已暂停）先藏起来
@@ -2262,9 +2263,9 @@ pub fn polish_restore(id: String, state: State<'_, AppState>) -> Result<(), Stri
 
 /// 这个视频的字幕和清晰度（新建下载框在后台查）
 #[tauri::command]
-pub async fn probe_video(url: String, state: State<'_, AppState>) -> Result<Option<crate::videos::VideoProbe>, String> {
+pub async fn probe_video(url: String, video: Option<crate::videos::VideoOptions>, state: State<'_, AppState>) -> Result<Option<crate::videos::VideoProbe>, String> {
     let (local, bin) = (state.local.clone(), state.tools.dir.clone());
-    tauri::async_runtime::spawn_blocking(move || crate::videos::probe_video(&local, &bin, &url))
+    tauri::async_runtime::spawn_blocking(move || crate::videos::probe_video(&local, &bin, &url, video.as_ref()))
         .await
         .map_err(|e| e.to_string())
 }
@@ -3677,6 +3678,7 @@ fn video_to_task(j: &crate::videos::VideoJob) -> crate::api::Task {
         shandian_error: if j.error.is_empty() { None } else { Some(j.error.clone()) },
         shandian_verification: None,
         kind: Some(if j.site.is_empty() { "视频网站".to_string() } else { j.site.clone() }),
+        origin_label: None,
         resolution: j.resolution.clone(),
         created: Some(j.created),
         polish: Some(j.polish.clone()).filter(|p| !p.is_empty()),

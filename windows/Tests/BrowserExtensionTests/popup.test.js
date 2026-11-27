@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 async function run(url, reply, formats = [], root = '.') {
-  const source = ['cloud-sites.js', 'popup.js', 'baidu-ui.js']
+  const source = ['cloud-sites.js', 'huggingface.js', 'popup.js', 'baidu-ui.js']
     .map(file => fs.readFileSync(root + '/windows/browser-extension/' + file, 'utf8')).join('\n');
   const element = () => ({ textContent: '', value: '', children: [],
     append(child) { this.children.push(child); },
