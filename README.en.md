@@ -93,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 When subtitles are enabled, Shandian creates a dedicated folder for each video. With **AI translation (Bilingual)** selected, it re-segments fragmented YouTube captions into full sentences, extracts a consistent terminology glossary, and writes a single cleanly styled bilingual **`.ass`** file (Chinese primary line on top, smaller original text below) so players like IINA, VLC, and Infuse display it cleanly out of the box without track conflicts.
 
 <div align="center">
-<img src="docs/images/subtitle-translation-comparison-en.png" alt="Before and after subtitle processing at 00:09.50: fragmented auto-captions vs clean bilingual ASS" width="880">
+<img src="docs/images/subtitle-translation-comparison-nasa-en.png" alt="Before and after subtitle processing at 00:09.50: fragmented auto-captions vs clean bilingual ASS" width="880">
 
 <sub>Real comparison at 00:09.50 (NASA public-domain trailer <em>The Europa Concept</em>): fragmented raw captions on the left vs. re-segmented bilingual ASS on the right (<a href="https://www.youtube.com/watch?v=224QFgY9PTM&t=9s">sample video</a>)</sub>
 </div>
