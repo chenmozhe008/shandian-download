@@ -95,9 +95,9 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 下载外语视频时自动建独立文件夹。选择 **AI 翻译（中外双语）** 后，程序先重排 YouTube 碎片断句、提取全片术语表，再按中文字幕规范输出中文在上、原文在下的 **`.ass` 双语字幕**（中文 52px 纯白细边、英文 34px 浅灰紧贴下方）。目录内只保留最终这一份双语字幕，打开直接看，不和原英文轨冲突；原字幕藏在隐藏备份里，右键随时可恢复。
 
 <div align="center">
-<img src="docs/images/subtitle-translation-comparison.png" alt="同一帧 03:31.70 字幕处理前后对比：左侧重叠混乱的原始自动字幕，右侧干净规范的中英双语 ASS" width="880">
+<img src="docs/images/subtitle-translation-comparison.png" alt="同一帧 00:09.50 字幕处理前后对比：左侧碎片残句的原始自动字幕，右侧干净规范的中英双语 ASS" width="880">
 
-<sub>同一帧 03:31.70 实测对比：左侧原始自动字幕重叠且混杂标记，右侧为重排断句后的中英双语 ASS（<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">示例视频</a> · <a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video.mp4">观看 14 秒完整操作视频</a>）</sub>
+<sub>同一帧 00:09.50 实测对比（NASA 官方公版短片 <em>The Europa Concept</em>）：左侧原始自动字幕跨段截断，右侧为重排断句后的中英双语 ASS（<a href="https://www.youtube.com/watch?v=224QFgY9PTM&t=9s">示例视频</a>）</sub>
 </div>
 
 - 支持 **本机 Ollama（免费离线）** 及 DeepSeek、Kimi、通义千问、豆包、智谱 GLM、OpenAI、Gemini、Claude 等接口，点「测试连接」可免费拉取最新模型列表。

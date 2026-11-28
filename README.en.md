@@ -93,9 +93,9 @@ curl -fsSL https://raw.githubusercontent.com/chenmozhe008/shandian-download/mast
 When subtitles are enabled, Shandian creates a dedicated folder for each video. With **AI translation (Bilingual)** selected, it re-segments fragmented YouTube captions into full sentences, extracts a consistent terminology glossary, and writes a single cleanly styled bilingual **`.ass`** file (Chinese primary line on top, smaller original text below) so players like IINA, VLC, and Infuse display it cleanly out of the box without track conflicts.
 
 <div align="center">
-<img src="docs/images/subtitle-translation-comparison-en.png" alt="Before and after subtitle processing at 03:31.70: broken auto-captions vs clean bilingual ASS" width="880">
+<img src="docs/images/subtitle-translation-comparison-en.png" alt="Before and after subtitle processing at 00:09.50: fragmented auto-captions vs clean bilingual ASS" width="880">
 
-<sub>Real comparison at 03:31.70: overlapping raw captions on the left vs. re-segmented bilingual ASS on the right (<a href="https://www.youtube.com/watch?v=X0yezvS3zR4&t=211s">sample video</a> · <a href="https://raw.githubusercontent.com/chenmozhe008/shandian-download/master/docs/images/workflow-video-en.mp4">watch 14s demo</a>)</sub>
+<sub>Real comparison at 00:09.50 (NASA public-domain trailer <em>The Europa Concept</em>): fragmented raw captions on the left vs. re-segmented bilingual ASS on the right (<a href="https://www.youtube.com/watch?v=224QFgY9PTM&t=9s">sample video</a>)</sub>
 </div>
 
 - Works with **local Ollama (free & offline)** as well as DeepSeek, Kimi, Qwen, Doubao, GLM, OpenAI, Gemini, and Claude; **Test Connection** fetches the latest model list at zero cost.
