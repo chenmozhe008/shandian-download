@@ -1,6 +1,6 @@
 [package]
 name = "shandian-stub"
-version = "0.2.23"
+version = "0.2.40"
 edition = "2021"
 description = "闪电全能下载 安装包"
 

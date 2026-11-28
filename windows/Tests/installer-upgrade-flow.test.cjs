@@ -110,12 +110,14 @@ async function extensionGuide(html){
   const f=installer(html,(command)=>{
     if(command==='setup_info')return Promise.resolve(defaults);
     if(command==='fit_window' || command==='launch' || command==='close_app')return Promise.resolve();
+    if(command==='install')return Promise.resolve({exe:'fixture.exe',extensionChanged:true,extensionFrom:'1.15.55',extensionTo:'1.15.56'});
     if(command==='ext_info')return Promise.resolve({dir:defaults.machineDir,browsers:[]});
     throw Error(command);
   });
   await flush();
-  f.get('r-open').checked=true;f.get('r-ext').checked=true;f.get('r-ext-row').hidden=false;
-  await f.context.completeInstall(defaults.machineDir,{extensionFrom:'1.15.55'},defaults.machineDir+'\\闪电全能下载.exe');
+  await f.context.runInstall({dir:defaults.machineDir,desktop:false,machine:false});
+  f.get('r-open').checked=true;
+  await f.get('r-foot').lastElementChild.click();
   assert.equal(f.get('p-ext').hidden,false);
   assert.equal(f.get('e-foot').children[0].textContent,'复制 Chrome 地址');
   assert.equal(f.get('e-foot').children[1].textContent,'复制 Edge 地址');
@@ -131,6 +133,7 @@ async function completionResponsiveness(html){
     const f=installer(html,command=>{
       if(command==='setup_info')return Promise.resolve(defaults);
       if(command==='fit_window' || command==='close_app')return Promise.resolve();
+      if(command==='install')return Promise.resolve({exe:'unused',extensionChanged:false});
       if(command===kind)return new Promise(resolve=>{release=resolve;});
       throw Error(command);
     });
@@ -142,10 +145,10 @@ async function completionResponsiveness(html){
   a.get('r-open').checked=true;
   a.get('r-ext-row').hidden=true;
   a.get('r-foot').appendChild(new Element('button'));
-  const pending=a.context.completeInstall(defaults.userDir,{},defaults.userDir+'\\闪电全能下载.exe');
+  const pending=a.context.completeInstall({},defaults.userDir+'\\闪电全能下载.exe');
   assert.equal(a.get('close').disabled,false,'安装结束后等待主程序启动时仍可关闭');
   assert.equal(a.get('r-foot').lastElementChild.textContent,'正在打开…');
-  await a.context.completeInstall(defaults.userDir,{},defaults.userDir+'\\闪电全能下载.exe');
+  await a.context.completeInstall({},defaults.userDir+'\\闪电全能下载.exe');
   assert.equal(a.calls.filter(call=>call.command==='launch').length,1,'等待中重复点击不会再次启动');
   await a.get('close').click();
   assert.equal(a.calls.filter(call=>call.command==='close_app').length,1);
@@ -153,21 +156,39 @@ async function completionResponsiveness(html){
   await pending;
   assert.equal(a.calls.filter(call=>call.command==='close_app').length,1);
 
-  const discover=start('ext_info');
-  await flush();
-  const b=discover.f;
-  b.get('r-ext').checked=true;
-  b.get('r-ext-row').hidden=false;
-  const guide=b.context.completeInstall(defaults.userDir,{},'unused');
-  assert.equal(b.get('p-ext').hidden,false,'扩展指引不等待浏览器检查完成');
-  assert.equal(b.get('e-note').textContent,'正在检查浏览器扩展…');
-  assert.equal(b.get('e-foot').lastElementChild.textContent,'完成');
-  assert.equal(b.get('close').disabled,false);
-  b.documentEvents.keydown({key:'Escape',target:b.get('e-dir')});
-  assert.equal(b.calls.filter(call=>call.command==='close_app').length,1);
-  discover.release({dir:defaults.userDir,browsers:[['edge','Edge',true]]});
-  await guide;
-  assert.equal(b.get('e-foot').children.length,1,'关闭后不再渲染迟到的浏览器结果');
+  for (const closeWhileLoading of [false,true]) {
+    const discover=start('ext_info');
+    await flush();
+    const b=discover.f;
+    b.get('p-ext').height=305;
+    await b.context.runInstall({dir:defaults.userDir,desktop:false,machine:false});
+    const fits=()=>b.calls.filter(call=>call.command==='fit_window');
+    const priorFitCount=fits().length;
+    const button=b.get('r-foot').lastElementChild;
+    assert.equal(b.calls.filter(call=>call.command==='ext_info').length,1,'完成页提前检查浏览器');
+    const guide=button.click();
+    assert.equal(b.get('p-result').hidden,false,'资料未齐时停留在完成页');
+    assert.equal(button.textContent,'正在准备…');
+    assert.equal(button.disabled,true);
+    assert.equal(fits().length,priorFitCount);
+    assert.equal(b.get('close').disabled,false);
+    await button.click();
+    assert.equal(b.calls.filter(call=>call.command==='ext_info').length,1,'重复点击复用同一次检查');
+    if(closeWhileLoading) {
+      b.documentEvents.keydown({key:'Escape',target:button});
+      assert.equal(b.calls.filter(call=>call.command==='close_app').length,1);
+    }
+    discover.release({dir:defaults.userDir,browsers:[['edge','Edge',true]]});
+    await guide;
+    if(closeWhileLoading) {
+      assert.equal(b.get('p-ext').hidden,true,'关闭后不再渲染迟到的浏览器结果');
+      assert.equal(fits().length,priorFitCount);
+    } else {
+      assert.equal(b.get('p-ext').hidden,false);
+      assert.equal(b.get('e-foot').children[0].textContent,'打开 Edge 扩展页');
+      assert.deepEqual(fits().slice(priorFitCount).map(call=>[call.args.height,call.args.center]),[[305,false]],'扩展引导整体只调整一次高度');
+    }
+  }
 }
 async function positionOnlyOnFirstReadyPage(html){
   let resolveSetup;
@@ -177,15 +198,15 @@ async function positionOnlyOnFirstReadyPage(html){
     throw Error(command);
   });
   const requests=()=>f.calls.filter(call=>call.command==='fit_window').map(call=>[call.args.height,call.args.center]);
-  assert.deepEqual(requests(),[[320,false]]);
+  assert.deepEqual(requests(),[],'准备状态不提前显示窗口');
   resolveSetup(defaults);
   await flush();
-  assert.deepEqual(requests(),[[320,false],[320,true]],'同高度的正式首屏也需要居中一次');
+  assert.deepEqual(requests(),[[320,true]],'正式首屏量好尺寸再居中显示');
   for(const [page,height] of [['p-progress',200],['p-result',280],['p-ext',360],['p-install',320]]){
     f.get(page).height=height;
     f.context.show(page);
   }
-  assert.deepEqual(requests().slice(2),[[200,false],[280,false],[360,false],[320,false]],'安装操作后的步骤只改变高度');
+  assert.deepEqual(requests().slice(1),[[200,false],[280,false],[360,false],[320,false]],'安装操作后的步骤只改变高度');
 }
 async function extensionManager(html){
   let complete;
@@ -197,7 +218,7 @@ async function extensionManager(html){
     throw Error(command);
   });
   await flush();
-  await f.context.showExtGuide(defaults.machineDir,true,()=>{});
+  f.context.showExtGuide(true,()=>{},await f.context.readExtInfo(defaults.machineDir));
   assert.equal(f.get('e-foot').children[0].textContent,'复制 Chrome 地址');
   const edge=f.get('e-foot').children[1];
   assert.equal(edge.textContent,'打开 Edge 扩展页');
@@ -218,7 +239,7 @@ async function extensionManager(html){
     throw Error(command);
   });
   await flush();
-  await initial.context.showExtGuide(defaults.machineDir,false,()=>{});
+  initial.context.showExtGuide(false,()=>{},await initial.context.readExtInfo(defaults.machineDir));
   const chrome=initial.get('e-foot').children[0];
   assert.equal(chrome.textContent,'打开 Chrome 扩展页');
   await chrome.click();
@@ -231,10 +252,10 @@ async function extensionManager(html){
 }
 (async()=>{
   for(const root of ['.']){
-    const html=fs.readFileSync(root+'/windows/installer/app/ui/index.html','utf8');
+    const html=fs.readFileSync(root+'/installer/app/ui/index.html','utf8');
     assert.match(html,/<section class="page" id="p-check">/);assert.match(html,/<section class="page" id="p-install" hidden>/);
     await fresh(html);await automaticFresh(html);await extensionGuide(html);await completionResponsiveness(html);await positionOnlyOnFirstReadyPage(html);await extensionManager(html);for(const automatic of [false,true])for(const needsAdmin of [false,true])await upgrade(html,automatic,needsAdmin);
-    backendOrdering(fs.readFileSync(root+'/windows/installer/app/src/main.rs','utf8'));
+    backendOrdering(fs.readFileSync(root+'/installer/app/src/main.rs','utf8'));
   }
   console.log('安装升级通过：检查loading、新装范围/目录联动、手动与auto升级锁目录范围、auto先提权、UAC取消不install、backend预检先于kill、唯一写入探测');
 })().catch(error=>{console.error(error);process.exitCode=1;});

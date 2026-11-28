@@ -469,6 +469,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (msg.type === "baiduShareDownload" || !tab || !tab.url?.startsWith("https://pan.baidu.com/")) {
         return { ok: false, error: "请先打开百度网盘分享页。" };
       }
+      if (sender.tab && typeof baiduResumeInTab === "function") {
+        const result = await baiduResumeInTab(tab);
+        if (result) return result;
+      }
       if (!(await baiduToken())) {
         await baiduStartAuth();
         return { ok: false, needAuth: true };

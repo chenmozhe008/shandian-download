@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 (async()=>{
-  const code=fs.readFileSync('windows/browser-extension/background.js','utf8');
+  const code=fs.readFileSync('browser-extension/background.js','utf8');
   const start=code.indexOf('const siteBatchStorageKey');
   const end=code.indexOf('let siteFlowObserverAttached',start);
   const sizeStart=code.indexOf('function knownFileBytes(');

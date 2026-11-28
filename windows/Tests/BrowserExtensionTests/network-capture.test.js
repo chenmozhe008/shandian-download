@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const code = fs.readFileSync('windows/browser-extension/network-capture.js', 'utf8');
+const code = fs.readFileSync('browser-extension/network-capture.js', 'utf8');
 const listeners = () => ({ cb: null, addListener(fn) { this.cb = fn; }, removeListener() { this.cb = null; } });
 const memory = {};
 let granted = false;

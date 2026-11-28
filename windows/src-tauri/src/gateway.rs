@@ -156,7 +156,7 @@ fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// 返回用户该加载的扩展文件夹。
 /// 安装版就用安装目录里那份：位置固定，更新时原位替换。
-/// 便携版同步到数据目录再用：解压出来的文件夹可能被删掉或挪走，浏览器里的扩展就失效了。
+/// 绿色版同步到数据目录再用：解压出来的文件夹可能被删掉或挪走，浏览器里的扩展就失效了。
 /// 数据目录里已有的（以前从那儿加载过）照样同步，不然那份扩展会一直停在旧版本。
 pub fn install(base: &Path) -> Option<std::path::PathBuf> {
     let src = bundled()?;
@@ -534,7 +534,7 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
         let v:Value=serde_json::from_slice(&req.body).unwrap_or(Value::Null);let token=v["token"].as_str().unwrap_or("");
         if path.ends_with("/status"){crate::engine::cloud_refresh_notice(token,v["message"].as_str().unwrap_or(""));return ok_json(json!({"ok":true}))}
         if path.ends_with("/info"){return ok_json(json!({"ok":true,"info":crate::engine::cloud_refresh_info(token)}))}
-        let files:Vec<crate::api::MultiFile>=match serde_json::from_value(v["files"].clone()){Ok(f)=>f,Err(_)=>return bad(400,"文件信息无效")};
+        let files:Vec<crate::engine::CloudRefreshFile>=match serde_json::from_value(v["files"].clone()){Ok(f)=>f,Err(_)=>return bad(400,"文件信息无效")};
         return match tauri::async_runtime::block_on(crate::engine::cloud_refresh_apply(token.into(),files,app.state::<AppState>())) {
             Ok(())=>ok_json(json!({"ok":true})),Err(e)=>ok_json(json!({"ok":false,"error":e}))
         };
@@ -605,7 +605,7 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
         };
         // version 留空：Windows 版不接管扩展的安装和更新，返回版本号会让扩展
         // 每隔 10 分钟把自己 reload 一次（它拿它跟自己的 manifest 比）
-        return ok_json(json!({ "ok": true, "version": "", "ready": ready }));
+        return ok_json(json!({ "ok": true, "version": "", "ready": ready, "browserHandoff": true }));
     }
 
     if path.starts_with("/extension/pikpak") {
@@ -630,6 +630,20 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
     let Ok(v) = serde_json::from_slice::<Value>(&req.body) else {
         return bad(400, "请求体不是 JSON");
     };
+    if path == "/extension/browser-handoff" {
+        let Some(id) = v["id"].as_str().filter(|id| crate::download_handoff::valid_id(id)) else {
+            return bad(400, "无效的接管编号");
+        };
+        if v["showRetryHint"].as_bool() == Some(true) {
+            let _ = app.emit_to("main", "browser-handoff-retry", v["browserNext"].as_bool().unwrap_or(false));
+            return ok_json(json!({ "ok": true }));
+        }
+        let state = app.state::<AppState>();
+        let status = tauri::async_runtime::block_on(crate::download_handoff::status(
+            &state, id, v["release"].as_bool().unwrap_or(false),
+        ));
+        return ok_json(json!({ "ok": true, "state": status }));
+    }
     let Some(url) = v["url"].as_str() else {
         return bad(400, "缺少 url");
     };
@@ -642,6 +656,17 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
     if path.starts_with("/extension/status") {
         let state = task_state(&st, url);
         return ok_json(json!({ "ok": true, "state": state }));
+    }
+
+    let handoff_id = v["browserHandoffId"].as_str();
+    if let Some(id) = handoff_id {
+        if path != "/extension/add" || !crate::download_handoff::valid_id(id)
+            || !matches!(crate::links::LinkKind::of(url), Some(crate::links::LinkKind::Http))
+            || crate::baidu::share_url(url).is_some() || crate::feishu::document_url(url).is_some()
+            || !crate::download_handoff::register(id, url)
+        {
+            return bad(400, "请使用浏览器继续这次下载");
+        }
     }
 
     // 抖音 / 小红书 / 新片场的登录信息：浏览器里已经登录了，直接拿来给 yt-dlp 用
@@ -689,14 +714,18 @@ fn from_extension(app: &AppHandle, req: &Req) -> (u16, Vec<u8>) {
             let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
-            let _ = w.emit("ext-add", json!({ "url": url, "headers": headers, "name": name, "group": group, "collection": collection, "baiduCodeRequired": baidu_code_required, "sizeLabel": v["sizeLabel"].as_str(), "sizeBytes": v["sizeBytes"].as_u64() }));
+            let _ = w.emit("ext-add", json!({ "url": url, "headers": headers, "name": name, "group": group, "collection": collection, "baiduCodeRequired": baidu_code_required, "sizeLabel": v["sizeLabel"].as_str(), "sizeBytes": v["sizeBytes"].as_u64(), "browserHandoffId": handoff_id }));
         }
         return ok_json(json!({ "ok": true }));
     }
 
+    if let Err(error) = crate::download_handoff::begin(handoff_id, url) {
+        return bad(409, &error);
+    }
     let r = tauri::async_runtime::block_on(crate::engine::add_link_full(
         url, &st, name, "", &headers, None,
     ));
+    crate::download_handoff::finish(handoff_id, &r);
     match r {
         Ok(_) => ok_json(json!({ "ok": true })),
         Err(e) => {

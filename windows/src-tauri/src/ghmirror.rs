@@ -555,7 +555,7 @@ mod tests {
             "https://huggingface.co/org/model/resolve/main/config.json?token=secret",
             "https://huggingface.co/org/model/resolve/main/config.json?access_token=secret",
             "https://huggingface.co/org/model/resolve/main/config.json?X-Amz-Signature=secret",
-            "http://fixture-user:fixture-password@proxy.example.invalid:8080",
+            "https://user:secret@huggingface.co/org/model/resolve/main/config.json",
             "https://huggingface.co.evil.test/org/model/resolve/main/config.json",
             "https://cdn-lfs.huggingface.co/org/model/resolve/main/config.json",
             "ftp://huggingface.co/org/model/resolve/main/config.json",

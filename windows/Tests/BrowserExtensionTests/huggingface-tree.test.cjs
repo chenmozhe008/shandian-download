@@ -8,7 +8,7 @@ const sha = "a".repeat(40);
 const model = "https://huggingface.co/api/models/lab/example";
 
 test("Hugging Face hover reads only the matching file size from the current page", () => {
-  const source = fs.readFileSync("windows/browser-extension/huggingface.js", "utf8");
+  const source = fs.readFileSync("browser-extension/huggingface.js", "utf8");
   const read = vm.runInNewContext(source + "\nhuggingFaceHoverSize", { URL });
   const root = props => ({ querySelectorAll: () => [{ getAttribute: () => JSON.stringify(props) }] });
   const href = "https://huggingface.co/lab/example/resolve/main/images/example%20image.png?download=true";
@@ -27,7 +27,7 @@ test("Hugging Face hover reads only the matching file size from the current page
 });
 
 test("Hugging Face batch uses filenames and preserves the selected directory tree", async () => {
-  const source = fs.readFileSync("windows/browser-extension/huggingface.js", "utf8");
+  const source = fs.readFileSync("browser-extension/huggingface.js", "utf8");
   const calls = [];
   const context = vm.createContext({
     URL, AbortSignal,
@@ -91,7 +91,7 @@ test("Hugging Face popup submits only the checked folder's files", async () => {
     } },
   };
   const source = ["source-labels.js", "huggingface.js", "batch-ui.js"]
-    .map(name => fs.readFileSync("windows/browser-extension/" + name, "utf8")).join("\n");
+    .map(name => fs.readFileSync("browser-extension/" + name, "utf8")).join("\n");
   await vm.runInNewContext(source, { chrome, URL, document: {
     getElementById: get, createElement: element, createElementNS: element, body: { classList: { add() {} } },
   } });
@@ -119,7 +119,7 @@ test("Hugging Face popup submits only the checked folder's files", async () => {
 
 for (const root of ["."]) {
   test(root + " keeps the subfolder when only one Hugging Face file is selected", async () => {
-    const source = fs.readFileSync(root + "/windows/ui/app.js", "utf8");
+    const source = fs.readFileSync(root + "/ui/app.js", "utf8");
     const start = source.indexOf("function isHuggingFaceFilePage(");
     const end = source.indexOf("/// 投一条链接", start);
     const url = "https://huggingface.co/lab/example/resolve/" + sha + "/images/example.png";
@@ -130,7 +130,7 @@ for (const root of ["."]) {
       settleMulti: async () => {}, switchView: () => {}, refreshTasks: () => {}, toast: () => {},
     });
     vm.runInContext(source.slice(start, end), context);
-    await context.runBatch([{ url }], "C:/Downloads", null, null, "example", { sourceUrl: page });
+    await context.runBatch([{ url }], root === "." ? "C:/Downloads" : "/video", null, null, "example", { sourceUrl: page });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].name, "add_multi");
     assert.equal(calls[0].args.name, "example");

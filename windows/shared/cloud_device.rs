@@ -436,9 +436,9 @@ mod tests {
                     c.fetch_add(1, Ordering::SeqCst);
                     json!({"device_code":"private-device-code","verification_uri_complete":"https://account.guangyapan.com/consent?user_code=public","interval":1,"expires_in":expires})
                 } else if body["grant_type"] == "refresh_token" {
-                    assert_eq!(body["refresh_token"], "fixture_refresh_token_04");
+                    assert_eq!(body["refresh_token"], "initial-refresh");
                     if refresh {
-                        json!({"access_token":"fixture_access_token_01","refresh_token":"fixture_refresh_token_02"})
+                        json!({"access_token":"renewed-access","refresh_token":"renewed-refresh"})
                     } else {
                         json!({"error":"invalid_client","error_description":"private-never-relay"})
                     }
@@ -447,7 +447,7 @@ mod tests {
                     tm.lock().unwrap().push(std::time::Instant::now());
                     match steps.get(n).copied().unwrap_or("authorization_pending") {
                         "success" => {
-                            json!({"access_token":"fixture_access_token_03","refresh_token":"fixture_refresh_token_04"})
+                            json!({"access_token":"initial-access","refresh_token":"initial-refresh"})
                         }
                         error => json!({"error":error}),
                     }
@@ -496,8 +496,8 @@ mod tests {
             let public = mock
                 .service
                 .begin("guangya", move |fields| async move {
-                    assert_eq!(fields["access_token"], "fixture_access_token_01");
-                    assert_eq!(fields["refresh_token"], "fixture_refresh_token_02");
+                    assert_eq!(fields["access_token"], "renewed-access");
+                    assert_eq!(fields["refresh_token"], "renewed-refresh");
                     assert_eq!(fields["client_id"], CLIENT_ID);
                     commit_count.fetch_add(1, Ordering::SeqCst);
                     Ok(())

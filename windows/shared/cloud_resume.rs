@@ -41,6 +41,76 @@ fn counts(task: &Task, stats: &Value) -> Result<Vec<u64>, String> {
     Ok(counts)
 }
 
+fn baidu_file_url(raw: &str) -> Option<url::Url> {
+    let u = url::Url::parse(raw).ok()?;
+    let host = u.host_str()?;
+    (u.scheme() == "https" && u.username().is_empty() && u.password().is_none()
+        && u.port().is_none() && u.fragment().is_none() && (host == "pcs.baidu.com"
+            || host.ends_with(".pcs.baidu.com") || host == "baidupcs.com" || host.ends_with(".baidupcs.com")))
+        .then_some(u)
+}
+
+async fn baidu_query(client: &reqwest::Client, endpoint: &str, params: &[(&str, &str)]) -> Result<Value, String> {
+    let res = client.get(endpoint).query(params).send().await
+        .map_err(|_| "连接百度网盘失败，请检查网络后重试")?;
+    let value: Value = res.error_for_status().map_err(|_| "百度网盘暂时拒绝取址")?
+        .json().await.map_err(|_| "百度网盘返回了无法识别的结果")?;
+    match value["errno"].as_i64() {
+        Some(0) => Ok(value),
+        Some(-6 | 111) => Err("百度网盘授权已过期".into()),
+        Some(code) => Err(format!("百度网盘取址失败（{code}）")),
+        None => Err("未获得百度网盘授权或接口暂不可用".into()),
+    }
+}
+
+async fn baidu_replacement(task: &Task) -> Result<MultiFile, String> {
+    let old = baidu_file_url(&task.url()).ok_or("这条链接需要通过网盘网页更新")?;
+    let token = old.query_pairs().find(|(key, _)| key == "access_token")
+        .map(|(_, value)| value.into_owned()).filter(|v| !v.is_empty()).ok_or("需要重新授权百度网盘")?;
+    let name = single_name(task)?;
+    let leaf = name.rsplit(['/', '\\']).next().filter(|s| !s.is_empty()).ok_or("无法识别原文件名")?;
+    let size = task.total();
+    let client = reqwest::Client::builder().user_agent("pan.baidu.com")
+        .timeout(std::time::Duration::from_secs(15)).redirect(reqwest::redirect::Policy::none())
+        .build().map_err(|_| "无法连接百度网盘")?;
+    let list = baidu_query(&client, "https://pan.baidu.com/rest/2.0/xpan/file", &[
+        ("method","search"),("dir","/"),("recursion","1"),("num","100"),("key",leaf),("access_token",&token),
+    ]).await?;
+    let entries = list["list"].as_array().ok_or("百度网盘没有返回文件清单")?;
+    if entries.len() >= 100 || list["has_more"].as_i64().unwrap_or(0) > 0 || list["has_more"] == true {
+        return Err("网盘搜索结果过多，无法唯一确认原文件".into());
+    }
+    let mut matching = entries.iter().filter(|f| f["size"].as_u64()==Some(size) && f["server_filename"].as_str()==Some(leaf)
+        && (f["isdir"] == 0 || f["isdir"] == false));
+    let found = matching.next().ok_or("当前百度账号中未找到原文件")?;
+    if matching.next().is_some() { return Err("百度网盘里有多份同名同大小的文件".into()); }
+    let file_id = |v:&Value| v.as_u64().or_else(||v.as_str()?.parse::<u64>().ok()).filter(|id| *id > 0);
+    let id = file_id(&found["fs_id"]).ok_or("百度网盘没有返回有效文件编号")?;
+    let ids = format!("[{id}]");
+    let data = baidu_query(&client, "https://pan.baidu.com/rest/2.0/xpan/multimedia", &[
+        ("method","filemetas"),("fsids",&ids),("dlink","1"),("access_token",&token),
+    ]).await?;
+    let file = data["list"].as_array().and_then(|files| files.iter().find(|f| file_id(&f["fs_id"])==Some(id)
+        && f["size"].as_u64()==Some(size))).ok_or("百度网盘未授权读取原文件")?;
+    let mut fresh = file["dlink"].as_str().and_then(baidu_file_url).filter(|u|
+        u.path()==old.path() && !u.query_pairs().any(|(k,_)| k=="access_token"))
+        .ok_or("百度网盘未返回匹配原文件的下载地址")?;
+    fresh.query_pairs_mut().append_pair("access_token",&token);
+    Ok(MultiFile { name, url:fresh.to_string(), headers:vec![("User-Agent".into(),"pan.baidu.com".into())] })
+}
+
+// Return a user-facing lookup reason when the browser can help. Transfer errors must
+// propagate separately because the original task may already have received its new URL.
+pub async fn refresh_baidu_http(api:&Api, id:&str) -> Result<Option<String>,String> {
+    let tasks=api.list_tasks().await.map_err(|e|e.to_string())?;
+    let task=tasks.iter().find(|t| t.id==id).ok_or("原任务不存在")?;
+    check_task(task)?;
+    if kind(task).as_deref()!=Some("百度网盘") {return Err("请选择本机的百度网盘 HTTP 下载任务".into());}
+    let file=match baidu_replacement(task).await {Ok(file)=>file,Err(reason)=>return Ok(Some(reason))};
+    refresh(api,id,&[file]).await?;
+    Ok(None)
+}
+
 pub async fn prepare(api: &Api, id: &str) -> Result<(String, Vec<Value>), String> {
     let list = api.list_tasks().await.map_err(|e|e.to_string())?;
     let task = list.iter().find(|t|t.id==id).ok_or("原任务不存在")?;

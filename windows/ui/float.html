@@ -7,14 +7,12 @@
      这里用同一套配色复刻：卡片浮在透明窗口上，圆角由 CSS 画。
      窗口本身不抢焦点（Rust 侧 set_focusable(false)），所以按钮样式要自己保证够醒目。 -->
 <script src="theme.js"></script>
+<link rel="stylesheet" href="accent.css">
 <style>
   :root {
     --card: #fcfbf9;
     --title: rgb(29, 29, 31);
     --sub: rgb(138, 138, 142);
-    --tint: rgb(232, 154, 0);
-    --tint-press: rgb(210, 138, 0);
-    --on-tint: #fff;
     --line: rgba(0, 0, 0, 0.08);
     --ghost: rgba(0, 0, 0, 0.05);
     --ghost-press: rgba(0, 0, 0, 0.1);
@@ -28,9 +26,6 @@
     --card: #26262a;
     --title: rgb(245, 245, 247);
     --sub: rgb(152, 152, 157);
-    --tint: rgb(255, 181, 38);
-    --tint-press: rgb(232, 160, 20);
-    --on-tint: rgb(28, 20, 2);
     --line: rgba(255, 255, 255, 0.09);
     --ghost: rgba(255, 255, 255, 0.07);
     --ghost-press: rgba(255, 255, 255, 0.13);

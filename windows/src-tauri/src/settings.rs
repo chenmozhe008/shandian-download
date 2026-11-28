@@ -98,6 +98,7 @@ pub struct Settings {
     pub notify_on_finish: bool,
     pub prevent_sleep: bool,
     pub watch_clipboard: bool,
+    pub button_hover_hints: bool,
     pub confirm_new: bool,
     /// 外观：system / light / dark。Mac 版只跟系统，Windows 版给个手动选项，
     /// 同事装来测试时不用去改系统主题（也不影响深浅两套配色本身的正确性）。
@@ -141,6 +142,7 @@ impl Default for Settings {
             notify_on_finish: true,
             prevent_sleep: true,
             watch_clipboard: true,
+            button_hover_hints: true,
             confirm_new: true,
             theme: "system".into(),
             recent_dirs: Vec::new(),
@@ -346,4 +348,57 @@ mod tests {
         assert_eq!(f.display(&movie), "下载 › 电影");
         assert_eq!(f.display(Path::new(r"D:\movies")), r"D:\movies");
     }
+}
+
+// Bind encrypted local secrets to the current Windows user.
+pub(crate) fn protect_local_secret(mut input: Vec<u8>, encrypt: bool) -> Option<Vec<u8>> {
+    use std::ptr::{null, null_mut};
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::Cryptography::{
+            CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        },
+    };
+
+    let data = CRYPT_INTEGER_BLOB {
+        cbData: u32::try_from(input.len()).ok()?,
+        pbData: input.as_mut_ptr(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB {
+        cbData: 0,
+        pbData: null_mut(),
+    };
+    let result = unsafe {
+        if encrypt {
+            CryptProtectData(
+                &data,
+                null(),
+                null(),
+                null(),
+                null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        } else {
+            CryptUnprotectData(
+                &data,
+                null_mut(),
+                null(),
+                null(),
+                null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        }
+    };
+    if output.pbData.is_null() {
+        return None;
+    }
+    let value = (result != 0).then(|| unsafe {
+        std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec()
+    });
+    unsafe {
+        LocalFree(output.pbData.cast());
+    }
+    value
 }

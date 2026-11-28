@@ -110,7 +110,7 @@ pub fn canonical_url(link: &str) -> String {
 mod channel_identity_tests {
     #[test]
     fn clipboard_share_links_are_not_ignored() {
-        for link in ["https://weixin.qq.com/sph/AqinEEb4Kf","https://pan.quark.cn/s/779e5f0a9427#/list/share","https://drive.uc.cn/s/bfc2f9849c8e4?public=1#/list/share","https://pan.baidu.com/s/1ExampleShare?pwd=demo#list/path=%2F","https://www.alipan.com/s/CSm75WGT8ED/folder/abc","https://www.123pan.cn/s/test","https://share.123865.com/123pan/test","https://cloud.189.cn/web/share?code=test","https://yun.139.com/link/w/test","https://pan.xunlei.com/s/test","https://www.guangyapan.com/s/test"] {
+        for link in ["https://weixin.qq.com/sph/AqinEEb4Kf","https://pan.quark.cn/s/779e5f0a9427#/list/share","https://drive.uc.cn/s/bfc2f9849c8e4?public=1#/list/share","https://pan.baidu.com/s/10OjsqRUjsvZtJltpHvLuqw#list/path=%2F","https://www.alipan.com/s/CSm75WGT8ED/folder/abc","https://www.123pan.cn/s/test","https://share.123865.com/123pan/test","https://cloud.189.cn/web/share?code=test","https://yun.139.com/link/w/test","https://pan.xunlei.com/s/test","https://www.guangyapan.com/s/test"] {
             assert!(super::worth_popup(link,&[]),"{link}");
         }
         assert!(!super::worth_popup("https://pan.quark.cn.evil.example/s/123",&[]));
@@ -328,6 +328,13 @@ impl LinkKind {
             return None;
         }
         let host = url.host_str()?.to_lowercase();
+        if matches!(host.as_str(), "github.com" | "www.github.com")
+            && ["/settings/", "/two-factor/"].iter().any(|prefix| url.path().starts_with(prefix))
+            && url.path().trim_end_matches('/').rsplit('/').next()
+                .is_some_and(|name| matches!(name.to_ascii_lowercase().as_str(), "recovery_download" | "recovery-download"))
+        {
+            return None;
+        }
         if VIDEO_HOSTS
             .iter()
             .any(|h| host == *h || host.ends_with(&format!(".{h}")))

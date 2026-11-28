@@ -1,7 +1,7 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict'), path = require('node:path');
-const base = path.resolve(__dirname, '../..');
-for (const root of [base, path.join(base)].filter(r => fs.existsSync(path.join(r, 'windows/installer/app/ui/index.html')))) {
-  const source = fs.readFileSync(path.join(root, 'windows/installer/app/ui/index.html'), 'utf8').replace(/\r\n/g, '\n');
+const base = path.resolve(__dirname, '..');
+for (const root of [base].filter(r => fs.existsSync(path.join(r, 'installer/app/ui/index.html')))) {
+  const source = fs.readFileSync(path.join(root, 'installer/app/ui/index.html'), 'utf8').replace(/\r\n/g, '\n');
   const a = source.indexOf('function result('), b = source.indexOf('\n}\n', a) + 3;
   for (const [installedVersion, extensionChanged, openRow, visible] of [['0.1.23', false, true, false], ['0.1.23', true, true, true], [null, false, true, true], ['0.1.23', true, false, false]]) {
     const elements = new Map(), get = id => { if (!elements.has(id)) elements.set(id, { classList: { toggle() {} }, appendChild() {} }); return elements.get(id); };

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::links::LinkKind;
 use crate::settings::{Folders, Settings};
@@ -63,26 +63,30 @@ pub fn get_settings(state: State<'_, AppState>) -> SettingsPayload {
 /// 保存设置并写进内核。返回一句提示（内核没在跑时设置会在下次启动时生效）。
 #[tauri::command]
 pub async fn save_settings(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<String, String> {
     // 用户在设置页改了某类目录，就以新设置为准，别让上次的选择盖住它
     let mut settings = settings;
     settings.max_videos = settings.max_videos.clamp(1, 10);
-    let refill_video_queue = {
+    let (refill_video_queue, button_hints_changed) = {
         let cur = state.settings.lock().unwrap();
         // This internal routing hint may have changed since the settings form was loaded.
         settings.wechat_browser = cur.wechat_browser.clone();
         if cur.dir_movie != settings.dir_movie || cur.dir_video != settings.dir_video || cur.dir_other != settings.dir_other {
             settings.last_dirs.clear();
         }
-        settings.max_videos > cur.max_videos
+        (settings.max_videos > cur.max_videos, settings.button_hover_hints != cur.button_hover_hints)
     };
     settings.save(&state.base)?;
     // 锁用完立刻放：后面要 await，MutexGuard 不能跨 await
     {
         let mut cur = state.settings.lock().unwrap();
         *cur = settings.clone();
+    }
+    if button_hints_changed {
+        let _ = app.emit("button-hover-hints-changed", settings.button_hover_hints);
     }
     if refill_video_queue {
         let videos = state.videos.clone();

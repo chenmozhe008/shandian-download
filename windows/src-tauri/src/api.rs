@@ -338,6 +338,7 @@ pub(crate) fn material_site_label(url: &str) -> Option<&'static str> {
     let u=url::Url::parse(url).ok()?;let host=u.host_str()?;
     if host=="pixabay.com" || host.ends_with(".pixabay.com"){Some("Pixabay")}
     else if host=="aigei.com" || host.ends_with(".aigei.com"){Some("爱给")}
+    else if host=="vjshi.com" || host.ends_with(".vjshi.com"){Some("光厂")}
     else if host=="docs.qingque.cn"{Some("轻雀文档")}
     else if host=="huggingface.co"{Some("Hugging Face")}
     else if crate::feishu::document_url(url).is_some() || crate::feishu::attachment_url(&u){Some("飞书文档")}
@@ -702,7 +703,7 @@ mod label_tests {
             ("https://dl.drive.quark.cn/example.mp4", "夸克网盘"),
             ("https://pan.quark.cn/s/779e5f0a9427#/list/share", "夸克网盘"),
             ("https://drive.uc.cn/s/bfc2f9849c8e4?public=1#/list/share", "UC 网盘"),
-            ("https://pan.baidu.com/s/1ExampleShare?pwd=demo", "百度网盘"),
+            ("https://pan.baidu.com/s/10OjsqRUjsvZtJltpHvLuqw", "百度网盘"),
             ("https://www.alipan.com/s/CSm75WGT8ED/folder/example", "阿里云盘"),
             ("https://cn-beijing-data.aliyundrive.net/example.mp4", "阿里云盘"),
             ("https://example.org/example.mp4", "直链"),
@@ -727,6 +728,9 @@ mod label_tests {
             ("https://mp.weixin.qq.com/s/article", "微信公众号"),
             ("https://cdn.pixabay.com/download/audio/a.mp3?filename=ambient.mp3", "Pixabay"),
             ("https://s1.aigei.com/src/aud/wav/a.wav?download/test.wav", "爱给"),
+            ("https://www.vjshi.com/watch/46062590.html", "光厂"),
+            ("https://mp4.vjshi.com/2026-10-22/clip.mp4", "光厂"),
+            ("https://vjshi.com.evil.example/clip.mp4", "直链"),
             ("https://pixabay.com.evil.example/a.mp3", "直链"),
             ("https://vimeo.com.evil.example/file.mp4", "直链"),
             ("https://www.dropbox.com/file.zip", "Dropbox"),

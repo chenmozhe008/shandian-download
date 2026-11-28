@@ -1,10 +1,11 @@
-// 字幕润色：先修结构（去掉自动字幕的滚动重复、拼成整句），再可选地让本机 Ollama 改通顺。
+// 字幕润色：先修结构（去掉自动字幕的滚动重复、拼成整句），再用所选的 AI 服务校对或翻译。
 //
 // YouTube 自动字幕是滚动的：每条都重复上一条的后半句，机翻又是按碎片翻的，
 // 所以才有行首标点和「我们只是把」「它隐藏在」这种半句。只改文字救不了，结构要先修。
 // 模型只碰文字，时间轴和条数由这里决定，模型漏条、串行时这几句保留原文，不会错位。
-// 只连本机 127.0.0.1，字幕不出这台电脑。
+// 本机模式只连 Ollama，API 模式由字幕服务配置决定。
 
+use crate::subtitle_ai::Model;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -242,6 +243,22 @@ fn chars(s: &str) -> Vec<String> {
 const LEADING: &[char] = &['，', '。', '、', '；', '：', '！', '？', ',', '.', ';', ':', '!', '?', '）', ')', '」', '』', '】', '》'];
 const SENTENCE_END: &[char] = &['.', '?', '!', '。', '？', '！', '…'];
 
+fn strip_speaker_marker(text: &str) -> &str {
+    let text = text.trim_start();
+    for marker in [">", "＞", "&gt;"] {
+        let mut rest = text;
+        let mut count = 0;
+        while let Some(next) = rest.strip_prefix(marker) {
+            count += 1;
+            rest = next;
+        }
+        if count >= 2 && (rest.is_empty() || rest.starts_with(char::is_whitespace)) {
+            return rest.trim_start();
+        }
+    }
+    text
+}
+
 /// 整理：去滚动重复 → 拼成整句 → 行首标点归位 → 时间不重叠
 pub fn restructure(src: &[Line]) -> Vec<Line> {
     let mut out: Vec<Line> = Vec::new();
@@ -253,11 +270,12 @@ pub fn restructure(src: &[Line]) -> Vec<Line> {
         if l.end <= l.start {
             continue;
         }
-        let en_tokens = collapse_repeats(if by_word { words(&l.en) } else { chars(&l.en) });
+        let en = strip_speaker_marker(&l.en);
+        let en_tokens = collapse_repeats(if by_word { words(en) } else { chars(en) });
         let n = new_tail(&seen_en, &en_tokens);
         let en_new = en_tokens[n..].join(if by_word { " " } else { "" });
         seen_en.extend_from_slice(&en_tokens[n..]);
-        let zh_tokens = collapse_repeats(chars(&l.zh));
+        let zh_tokens = collapse_repeats(chars(strip_speaker_marker(&l.zh)));
         let n = new_tail(&seen_zh, &zh_tokens);
         let zh_new: String = zh_tokens[n..].concat();
         seen_zh.extend_from_slice(&zh_tokens[n..]);
@@ -371,7 +389,7 @@ pub fn accept(reply: &str, want: usize) -> Option<Vec<(String, Option<String>)>>
     Some(out)
 }
 
-fn ask(c: &reqwest::blocking::Client, model: &str, title: &str, lines: &[Line], before: &[Line]) -> Option<Vec<(String, Option<String>)>> {
+fn ask(c: &reqwest::blocking::Client, model: &Model, title: &str, lines: &[Line], before: &[Line]) -> Result<Option<Vec<(String, Option<String>)>>, String> {
     let has_en = lines.iter().any(|l| !l.en.is_empty());
     let items: Vec<serde_json::Value> = lines
         .iter()
@@ -402,43 +420,47 @@ fn ask(c: &reqwest::blocking::Client, model: &str, title: &str, lines: &[Line], 
         ""
     };
     let shape = if latin { r#"{"i":序号,"en":"纠错后的英文","zh":"校对后的中文"}"# } else { r#"{"i":序号,"zh":"校对后的中文"}"# };
+    let title = if matches!(model, Model::Api(_)) { "" } else { title };
     let prompt = format!(
         "你是字幕校对。视频标题：{title}\n{task}{fix}每条保持简短，不要解释。条目数和序号必须不变，不要合并或拆分。\n前文（只作参考，不要输出）：{}\n输出 {{\"lines\":[{shape}]}}，必须包含全部 {} 条。\n{}",
         context.join(" "),
         lines.len(),
         serde_json::Value::Array(items)
     );
+    if let Model::Api(api) = model { return Ok(accept(&api.generate(c, &prompt)?, lines.len())); }
+    let Model::Ollama(model) = model else { unreachable!() };
     let schema = serde_json::json!({"type": "object", "properties": {"lines": {"type": "array", "items": {"type": "object", "properties": {"i": {"type": "integer"}, "en": {"type": "string"}, "zh": {"type": "string"}}, "required": ["i", "zh"]}}}, "required": ["lines"]});
     let body = serde_json::json!({"model": model, "prompt": prompt, "stream": false, "think": false, "format": schema, "options": {"temperature": 0.2}});
-    let v: serde_json::Value = c.post(format!("{OLLAMA}/api/generate")).json(&body).send().ok()?.json().ok()?;
-    accept(v["response"].as_str()?, lines.len())
+    let value = c.post(format!("{OLLAMA}/api/generate")).json(&body).send().and_then(|r| r.json::<serde_json::Value>()).ok();
+    Ok(value.as_ref().and_then(|v| v["response"].as_str()).and_then(|text| accept(text, lines.len())))
 }
 
 /// 改一批，返回没改成、保留原文的条数。整批不行就对半拆开再试，只有单条也不行才放弃
-fn refine(c: &reqwest::blocking::Client, model: &str, title: &str, lines: &mut [Line], before: &[Line]) -> usize {
+fn refine(c: &reqwest::blocking::Client, model: &Model, title: &str, lines: &mut [Line], before: &[Line]) -> Result<usize, String> {
     // 只有 [音乐] 这种的不用问模型
     if !lines.iter().any(|l| (l.zh.is_empty() && !l.en.is_empty()) || l.zh.chars().filter(|c| is_cjk(*c)).count() > 2) {
-        return 0;
+        return Ok(0);
     }
-    for _ in 0..2 {
-        if let Some(got) = ask(c, model, title, lines, before) {
+    let remote = matches!(model, Model::Api(_));
+    for _ in 0..if remote { 1 } else { 2 } {
+        if let Some(got) = ask(c, model, title, lines, before)? {
             for (l, (z, e)) in lines.iter_mut().zip(got) {
                 l.en = fix_en(&l.en, e.as_deref());
                 l.zh = z;
             }
-            return 0;
+            return Ok(0);
         }
     }
-    if lines.len() == 1 {
-        return 1;
+    if remote || lines.len() == 1 {
+        return Ok(lines.len());
     }
     let mid = lines.len() / 2;
     let (a, b) = lines.split_at_mut(mid);
-    refine(c, model, title, a, before) + refine(c, model, title, b, before)
+    Ok(refine(c, model, title, a, before)? + refine(c, model, title, b, before)?)
 }
 
 pub struct Options<'a> {
-    pub model: Option<&'a str>,
+    pub model: Option<&'a Model>,
     /// 用户只要中文：英文只作参考，结果里不留
     pub drop_en: bool,
     /// 视频标题：判断术语靠它
@@ -463,7 +485,7 @@ pub fn run(sub: &Path, opts: &Options, progress: &dyn Fn(usize, usize)) -> Resul
     let source = if backup.is_file() { backup.clone() } else { sub.to_path_buf() };
     let text = std::fs::read_to_string(&source).map_err(|e| format!("读不了字幕：{e}"))?;
     if source_only && model.is_none() {
-        return Err("这个视频没有中文字幕，翻译需要本机 Ollama".into());
+        return Err("这个视频没有中文字幕，翻译需要可用的 AI 字幕服务".into());
     }
     // 原文文件自己就是底稿，不用另存。parse_subs 按扩展名认格式，留底要读原文件名那份的内容
     if !source_only && !backup.is_file() {
@@ -497,18 +519,23 @@ pub fn run(sub: &Path, opts: &Options, progress: &dyn Fn(usize, usize)) -> Resul
     let mut lines = restructure(&src);
     let mut kept = 0;
     if let Some(m) = model {
-        let c = client(300).ok_or("连不上 Ollama")?;
+        let c = match m {
+            Model::Ollama(_) => client(300).ok_or("连不上 Ollama")?,
+            Model::Api(api) => api.client(120)?,
+        };
         let total = lines.len().div_ceil(BATCH);
         for n in 0..total {
             progress(n, total);
             let at = n * BATCH;
             let end = (at + BATCH).min(lines.len());
             let before = lines[at.saturating_sub(2)..at].to_vec();
-            kept += refine(&c, m, &opts.title, &mut lines[at..end], &before);
+            kept += refine(&c, m, &opts.title, &mut lines[at..end], &before)?;
         }
         progress(total, total);
         // 用完就卸载，别一直占着显存
-        let _ = c.post(format!("{OLLAMA}/api/generate")).json(&serde_json::json!({"model": m, "keep_alive": 0})).send();
+        if let Model::Ollama(name) = m {
+            let _ = c.post(format!("{OLLAMA}/api/generate")).json(&serde_json::json!({"model": name, "keep_alive": 0})).send();
+        }
     }
     if source_only && !lines.iter().any(|line| line.zh.chars().any(is_cjk)) {
         return Err("模型没有生成中文字幕，已保留原字幕".into());
@@ -651,8 +678,28 @@ mod tests {
         let t0 = std::time::Instant::now();
         let style = crate::engine::subtitle_style(1.0, true, "#00FFAC", "#516EFE");
         let title = std::env::var("SD_POLISH_TITLE").unwrap_or_default();
-        let opts = Options { model: model.as_deref(), drop_en: false, title, style };
+        let model = model.map(Model::Ollama);
+        let opts = Options { model: model.as_ref(), drop_en: false, title, style };
         let r = run(&sub, &opts, &|a, b| eprintln!("批次 {a}/{b} {:.0}s", t0.elapsed().as_secs_f32())).unwrap();
         eprintln!("原 {} 行 → {} 句，保留原文 {} 句，耗时 {:.0}s，输出 {}", r.before, r.after, r.kept, t0.elapsed().as_secs_f32(), sub.display());
+    }
+}
+
+#[cfg(test)]
+mod speaker_marker_tests {
+    use super::strip_speaker_marker;
+    use crate::engine::strip_tags;
+
+    #[test]
+    fn strips_only_the_leading_speaker_marker() {
+        assert_eq!(strip_speaker_marker(">> Shift with x >> 1"), "Shift with x >> 1");
+        assert_eq!(strip_speaker_marker("&gt;&gt; Welcome"), "Welcome");
+        assert_eq!(strip_speaker_marker("＞＞ 这是另一位说话人"), "这是另一位说话人");
+        assert_eq!(strip_speaker_marker(">>out.log"), ">>out.log");
+        assert_eq!(strip_speaker_marker("比较 x > 1"), "比较 x > 1");
+        assert_eq!(
+            strip_speaker_marker(&strip_tags("<c>&gt;&gt; Shift with x &gt;&gt; 1.</c>")),
+            "Shift with x >> 1."
+        );
     }
 }

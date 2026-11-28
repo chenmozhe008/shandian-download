@@ -5,12 +5,6 @@
 :root {
   /* 强调色只存「色相 + 饱和度」，亮度按主题算——这样换一个色相，按钮/图标/
      占位封面/速度卡光晕会一起跟着变，不用逐条改。预设见文件末尾。 */
-  --accent-h: 36;
-  --accent-s: 100%;
-  --on-dark: #201703; /* 深色主题里强调色很亮，文字用近黑才看得清 */
-
-  --tint: hsl(var(--accent-h) var(--accent-s) 52%);
-  --tint-press: hsl(var(--accent-h) var(--accent-s) 46%);
   /* 强调色自身的渐变两端：上亮一点、下暗一点，和参考图那种「同色系渐变」一致 */
   /* 参考图实测：上沿 hsl(37 82% 58%)、中段 52%，所以浅色也带一层很轻的渐变 */
   --tint-hi: hsl(var(--accent-h) var(--accent-s) 58%);
@@ -19,7 +13,6 @@
      只留一点点亮度差，不再看着像一段阴影 */
   --bar-lo: hsl(var(--accent-h) var(--accent-s) 58%);
   --bar-hi: hsl(var(--accent-h) var(--accent-s) 66%);
-  --on-tint: #fff;
   --window: rgb(251, 250, 248);
   --sidebar: rgb(243, 242, 238);
   --raised: #fff;
@@ -53,13 +46,10 @@
 }
 
 :root[data-theme="dark"] {
-  --tint: hsl(var(--accent-h) var(--accent-s) 52%);
-  --tint-press: hsl(var(--accent-h) var(--accent-s) 45%);
   --tint-hi: hsl(var(--accent-h) var(--accent-s) 57%);
   --tint-lo: hsl(var(--accent-h) var(--accent-s) 45%);
   --bar-lo: hsl(var(--accent-h) var(--accent-s) 43%); /* 比浅色 58% 低 15 个点，和默认封面一致 */
   --bar-hi: hsl(var(--accent-h) var(--accent-s) 51%); /* 比浅色 66% 低 15 个点 */
-  --on-tint: var(--on-dark);
   --window: rgb(27, 27, 29);
   --sidebar: rgb(32, 32, 35);
   --raised: rgb(44, 44, 47);
@@ -88,21 +78,6 @@
   --sb-hover: rgba(255, 255, 255, 0.42);
   --sb-active: rgba(255, 255, 255, 0.60);
 }
-
-/* ---------- 强调色预设 ---------- */
-/* 默认的琥珀色显示 Logo 本来的橙色，换了强调色才跟着变 */
-:root[data-accent]:not([data-accent="amber"]) {
-  --logo-top: hsl(var(--accent-h) var(--accent-s) 58%);
-  --logo-bottom: hsl(var(--accent-h) var(--accent-s) 42%);
-}
-:root[data-accent="amber"] { --accent-h: 37; --accent-s: 82%; --on-dark: #201703; }
-:root[data-accent="blue"] { --accent-h: 212; --accent-s: 92%; --on-dark: #fff; }
-:root[data-accent="teal"] { --accent-h: 178; --accent-s: 62%; --on-dark: #04201d; }
-:root[data-accent="green"] { --accent-h: 148; --accent-s: 60%; --on-dark: #06210f; }
-:root[data-accent="purple"] { --accent-h: 266; --accent-s: 70%; --on-dark: #fff; }
-:root[data-accent="rose"] { --accent-h: 342; --accent-s: 76%; --on-dark: #fff; }
-:root[data-accent="indigo"] { --accent-h: 232; --accent-s: 62%; --on-dark: #fff; }
-:root[data-accent="graphite"] { --accent-h: 220; --accent-s: 8%; --on-dark: #fff; }
 
 * { box-sizing: border-box; }
 
@@ -842,11 +817,11 @@ body.dialog-window #nd-text { flex: 1; min-height: 120px; }
 
 /* 选中：仅用底色区分 */
 .task.sel, .fd-row.fd-selected {
-  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  background: color-mix(in srgb, var(--tint) 12%, transparent);
   box-shadow: none;
 }
 .task.sel:hover, .fd-row.fd-selected:hover {
-  background: color-mix(in srgb, var(--tint) 21%, transparent);
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
 }
 
 .thumb {
@@ -1125,7 +1100,7 @@ body.dialog-window #nd-text { flex: 1; min-height: 120px; }
   width: calc(100% - 1.2px);
   height: calc(100% - 1.2px);
   fill: none;
-  stroke: color-mix(in srgb, var(--tint) 40%, transparent);
+  stroke: color-mix(in srgb, var(--tint) 20%, transparent);
   stroke-width: 1.2px;
   stroke-dasharray: 7px 6px;
 }
@@ -1175,6 +1150,10 @@ body.dialog-window #nd-text { flex: 1; min-height: 120px; }
   font-weight: 400;
   line-height: 1.35;
   white-space: nowrap;
+}
+
+.download-empty-sources li:lang(zh-CN) {
+  padding-block: 4px 2px;
 }
 
 .kind { font-size: 12px; color: var(--sub); white-space: nowrap; }
@@ -1363,6 +1342,12 @@ input[type="password"]::-ms-clear {
 }
 
 .link:hover { color: var(--text); text-decoration: underline; }
+
+#subtitle-ai-api > .set-row { border-top: 0; }
+.select-wrap.subtitle-ai-model-select { flex: 1; min-width: 0; }
+.subtitle-ai-model-select .select-btn { width: 100%; }
+#subtitle-ai-local-actions:empty { display: none; }
+#subtitle-ai-remote-note { white-space: normal; }
 
 /* 原生 select 藏起来（弹出列表是系统矩形，做不了圆角），由 .select-btn / .select-menu 接管 */
 .select { display: none; }
@@ -1968,6 +1953,9 @@ mark.hl {
   box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
 }
 
+#ctx-menu:not([data-owner="sort"], .audio-mode-menu) { min-width: 148px; }
+#ctx-menu:not([data-owner="sort"], .audio-mode-menu) > .ctx-item { padding-inline: 9px; }
+
 .ctx-item {
   display: block;
   width: 100%;
@@ -1991,7 +1979,7 @@ mark.hl {
 .ctx-sep { height: 1px; background: var(--line); margin: 4px 8px; }
 
 /* ---------- 强调色色点（设置页） ---------- */
-.accents { display: flex; align-items: center; gap: 8px; position: relative; }
+.accents { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; position: relative; }
 .acc {
   flex: none;
   width: 22px;
@@ -2005,10 +1993,12 @@ mark.hl {
 }
 .acc[data-accent="amber"] { background: hsl(36 100% 55%); }
 .acc[data-accent="blue"] { background: hsl(212 92% 58%); }
-.acc[data-accent="teal"] { background: hsl(178 62% 46%); }
-.acc[data-accent="green"] { background: hsl(148 60% 44%); }
-.acc[data-accent="purple"] { background: hsl(266 70% 63%); }
-.acc[data-accent="rose"] { background: hsl(342 76% 60%); }
+.acc[data-accent="qinglian"] { background: #72539A; }
+.acc[data-accent="shilv"] { background: #4F8A60; }
+.acc[data-accent="songlv"] { background: #3D725D; }
+.acc[data-accent="tongqing"] { background: #347F83; }
+.acc[data-accent="baolan"] { background: #3256A0; }
+.acc[data-accent="cobalt"] { background: #2042E9; }
 .acc[data-accent="indigo"] { background: hsl(232 62% 60%); }
 .acc[data-accent="graphite"] { background: hsl(220 8% 55%); }
 .acc.on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 0 0 2px var(--window), 0 0 0 3.5px var(--tint); }
@@ -2044,8 +2034,8 @@ body.sb-collapsed .engine { display: none !important; }
 }
 .acc-custom::after { transform: translate(-50%, -50%) rotate(90deg); }
 /* 选中自定义时，圆点直接显示挑的颜色，加号让位 */
-.acc-custom.on::before,
-.acc-custom.on::after { display: none; }
+.acc-custom.has-color::before,
+.acc-custom.has-color::after { display: none; }
 
 /* ---------- 自定义取色面板 ---------- */
 /* 取色面板是通用控件：设置页的强调色和确认框里的字幕颜色都用它，
@@ -2244,6 +2234,8 @@ body.sb-collapsed .engine { display: none !important; }
 .fd-episode-cover .ic { width: 15px; height: 15px; }
 .fd-row .p.file-missing { color: var(--failed); }
 .ctx-menu[data-owner="drawer-files"] { z-index: 61; }
+.ctx-menu.audio-mode-menu { min-width: 0; width: max-content; }
+.audio-mode-menu .sort-mark { margin-left: 4px; }
 .fd-cols { position: sticky; top: 0; z-index: 1; background: var(--raised, #2a2a2c); font-size: 12px; color: var(--sub); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .files-drawer:is(.collection-files, .media-files) .fd-cols span:nth-child(2) { grid-column: 3; }
 .fd-cols span + span, .fd-row .p, .fd-row .s { text-align: right; }
@@ -2355,7 +2347,11 @@ body.substyle-window > *:not(#sub-style):not(.tip):not(.toast):not(#acc-pop):not
 .cf-fields { flex: none; min-width: 0; }
 .cf-subtitles { margin: 8px 0 2px; }
 .cf-subtitle-heading { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.cf-subtitle-heading .set-section-title { display: flex; align-items: center; margin: 0; }
+.cf-subtitle-heading .set-section-title { display: flex; align-items: center; margin: 0; flex: none; }
+.cf-sub-language-note { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--sub); }
+.cf-sub-language-note .link { margin-inline-start: 4px; white-space: nowrap; }
+#subtitle-ai-api .field { flex: 1; min-width: 0; }
+#subtitle-ai-note { white-space: normal; }
 .cf-subtitles .set-row > .set-label { padding-left: 32px; }
 .cf-fold-toggle { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0; border: 0; border-radius: 4px; background: none; box-shadow: none; color: inherit; font: inherit; cursor: pointer; }
 .cf-fold-toggle::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--sub); clip-path: polygon(2px 0, 6px 4px, 2px 8px); transform-origin: center; }

@@ -6,28 +6,8 @@
 <title>闪电全能下载</title>
 <script>document.documentElement.dataset.windowFrame = window.__sdWindowFrame || "rounded";</script>
 <script src="theme.js"></script>
+<link rel="stylesheet" href="accent.css">
 <link rel="stylesheet" href="style.css">
-<script>
-  try {
-    // 强调色先读缓存，避免打开瞬间是琥珀再跳成别的色
-    var acc = localStorage.getItem("sd.accent") || "amber";
-    var vars = localStorage.getItem("sd.accentVars");
-    if (acc === "custom" && vars) {
-      var v = JSON.parse(vars);
-      var el = document.documentElement;
-      el.dataset.accent = "custom";
-      el.style.setProperty("--accent-h", v.h);
-      el.style.setProperty("--accent-s", v.s);
-      el.style.setProperty("--on-dark", v.onDark);
-    } else {
-      document.documentElement.dataset.accent = acc;
-    }
-    // 注意：这里不能给 <html> 兜底色。窗口是透明的，四个圆角是靠 #app 的
-    // border-radius 裁出来的，html 一旦有实色，圆角外面就成了一块不透明色块，
-    // 圆角等于白做（之前"圆角改了看不出变化"就是这么来的）。
-    // 底色统一交给 #app 自己的 background，CSS 是本地文件，第一帧之前就加载完了。
-  } catch (e) {}
-</script>
 </head>
 <body>
 
@@ -276,12 +256,14 @@
             <span class="set-path"></span>
             <div class="accents" id="accent-row">
               <button class="acc" data-accent="amber" title="琥珀"></button>
+              <button class="acc" data-accent="shilv" data-tip="石绿 #4F8A60" aria-label="石绿 #4F8A60"></button>
+              <button class="acc" data-accent="songlv" data-tip="松绿 #3D725D" aria-label="松绿 #3D725D"></button>
+              <button class="acc" data-accent="tongqing" data-tip="铜青 #347F83" aria-label="铜青 #347F83"></button>
               <button class="acc" data-accent="blue" title="蓝"></button>
-              <button class="acc" data-accent="teal" title="青"></button>
-              <button class="acc" data-accent="green" title="绿"></button>
-              <button class="acc" data-accent="purple" title="紫"></button>
-              <button class="acc" data-accent="rose" title="玫红"></button>
+              <button class="acc" data-accent="baolan" data-tip="宝蓝 #3256A0" aria-label="宝蓝 #3256A0"></button>
+              <button class="acc" data-accent="cobalt" title="钴蓝 #2042E9" aria-label="钴蓝 #2042E9"></button>
               <button class="acc" data-accent="indigo" title="靛蓝"></button>
+              <button class="acc" data-accent="qinglian" data-tip="青莲紫 #72539A" aria-label="青莲紫 #72539A"></button>
               <button class="acc" data-accent="graphite" title="石墨"></button>
               <button class="acc acc-custom" id="acc-custom-btn" title="自定义颜色"></button>
               <!-- 自定义取色面板：像系统色板那样一块二维色区——
@@ -289,6 +271,11 @@
                    不放「完成」按钮：点面板外面或按 Esc 收起 -->
 
             </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label" id="button-hover-hints-label">按钮悬浮提示</span>
+            <span class="set-path">鼠标停在按钮上时显示操作说明</span>
+            <button class="switch on" id="sw-button-hover-hints" role="switch" aria-checked="true" aria-labelledby="button-hover-hints-label"></button>
           </div>
         </div>
 
@@ -457,15 +444,49 @@
             </div>
           </div>
           <hr class="set-divider" aria-hidden="true">
-          <div class="set-row" id="polish-row" hidden>
-            <span class="set-label"><svg class="ic"><use href="#i-doc"/></svg>润色字幕<i class="info" data-tip="视频网站的字幕下完后，用本机 Ollama 大模型修错字、合并断句，只有外语时可以翻译成中文。全程在这台电脑上处理，字幕不会上传；原字幕有备份，可以在任务右键恢复。需要先安装 Ollama 和模型，长视频会占用较多显卡或 CPU。"></i></span>
-            <span class="set-path"></span>
-            <button class="switch" id="sw-polish" role="switch" aria-checked="false"></button>
+          <div class="set-row">
+            <label class="set-label" for="subtitle-ai-provider"><svg class="ic"><use href="#i-chip"/></svg>AI 字幕服务</label>
+            <span class="set-path" id="subtitle-ai-local-note"></span>
+            <span class="set-actions" id="subtitle-ai-local-actions"></span>
+            <span class="select-wrap"><select id="subtitle-ai-provider" class="select"></select></span>
+          </div>
+          <div id="subtitle-ai-api" hidden>
+            <div class="set-row" id="subtitle-ai-endpoint-row" hidden>
+              <label class="set-label" for="subtitle-ai-endpoint">服务地址</label>
+              <input id="subtitle-ai-endpoint" class="field" type="url" placeholder="https://example.com/v1" autocomplete="off">
+            </div>
+            <div class="set-row">
+              <label class="set-label" for="subtitle-ai-model-choice">模型</label>
+              <span class="select-wrap subtitle-ai-model-select"><select id="subtitle-ai-model-choice" class="select" aria-label="字幕模型"></select></span>
+              <button class="ghost" id="subtitle-ai-refresh-models" type="button">刷新模型</button>
+            </div>
+            <div class="set-row" id="subtitle-ai-model-manual-row" hidden>
+              <label class="set-label" for="subtitle-ai-model">模型 ID</label>
+              <input id="subtitle-ai-model" class="field" placeholder="输入模型 ID" autocomplete="off">
+            </div>
+            <div class="set-row">
+              <label class="set-label" for="subtitle-ai-key">API Key</label>
+              <input id="subtitle-ai-key" class="field" type="password" autocomplete="new-password">
+              <button class="ghost" id="subtitle-ai-forget" type="button" hidden>清除密钥</button>
+            </div>
+          </div>
+          <div class="set-row" id="subtitle-ai-remote-footer" hidden>
+            <span class="set-label"></span>
+            <span class="set-path" id="subtitle-ai-remote-note"><span id="subtitle-ai-note" role="status"></span></span>
+            <span class="set-actions" id="subtitle-ai-remote-actions">
+              <button class="ghost" id="subtitle-ai-test" type="button">测试连接</button>
+              <button class="ghost" id="subtitle-ai-save" type="button">保存</button>
+            </span>
           </div>
           <div class="set-row" id="polish-model-row" hidden>
             <span class="set-label"><svg class="ic"><use href="#i-chip"/></svg>本机 Ollama 模型</span>
             <span class="set-path cloud-account-state" title="Ollama 已连接，选中的模型在本机模型列表中"><span class="cloud-status-dot ready" aria-hidden="true"></span>可用</span>
             <span class="select-wrap"><select id="set-polish-model" class="select"></select></span>
+          </div>
+          <div class="set-row" id="polish-row" hidden>
+            <span class="set-label"><svg class="ic"><use href="#i-doc"/></svg>润色字幕<i class="info" data-tip="可用本机模型或已配置的 AI 服务润色与翻译，原字幕可以恢复。使用第三方 API 时可能按用量计费"></i></span>
+            <span class="set-path"></span>
+            <button class="switch" id="sw-polish" role="switch" aria-checked="false"></button>
           </div>
           <div class="set-row" id="polish-mode-row" hidden>
             <span class="set-label"><svg class="ic"><use href="#i-film"/></svg>外语字幕处理<i class="info" data-tip="其他语言的视频总是从原文翻译；有人工中文字幕时只润色"></i></span>
@@ -677,7 +698,7 @@
       <div class="set-row" id="cf-opt-row" hidden>
         <span class="set-label">内容</span>
         <label class="modal-note" style="margin:0"><input type="checkbox" id="cf-subs"> 下载字幕</label>
-        <label class="modal-note" id="cf-polish-wrap" style="margin:0" hidden><input type="checkbox" id="cf-polish"> 润色字幕</label>
+        <label class="modal-note" id="cf-polish-wrap" style="margin:0" hidden><input type="checkbox" id="cf-polish"> <span id="cf-polish-label">润色字幕</span></label>
         <span class="modal-note" id="cf-subs-state" role="status" aria-live="polite" style="margin:0" hidden></span>
         <label class="modal-note" style="margin:0"><input type="checkbox" id="cf-audio"> 仅音频</label>
       </div>
@@ -687,6 +708,10 @@
       <hr class="set-divider" aria-hidden="true">
       <div class="cf-subtitle-heading">
         <h2 class="set-section-title"><button type="button" class="cf-fold-toggle" id="cf-subsettings-toggle" aria-label="展开字幕设置" aria-expanded="false" aria-controls="cf-subsettings-body">字幕设置</button><i class="info" id="cf-sub-hint" data-tip="下载后可在「已完成」中调整样式、保存预设。" hidden></i></h2>
+        <div class="cf-sub-language-note" id="cf-sub-language-note" hidden>
+          <span id="cf-sub-language-text" role="status" aria-live="polite"></span>
+          <button type="button" class="link" id="cf-sub-model-retry" hidden>重新检测</button>
+        </div>
       </div>
       <div id="cf-subsettings-body" hidden>
       <div class="set-row" id="cf-sub-row" hidden>

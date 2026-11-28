@@ -71,6 +71,33 @@ pub(crate) fn transfer_layout(
     })
 }
 
+pub(crate) struct TransferFileIdentity {
+    pub md5: String,
+    pub fs_id: Option<String>,
+}
+
+pub(crate) fn transfer_file_identity(
+    bin: &Path, id: &str, path: &Path, size: u64, active: &impl Fn() -> bool,
+) -> Option<TransferFileIdentity> {
+    if !valid_task_id(id) { return None; }
+    let remote = format!("{}/{}", task_directory(id), path.to_str()?.replace('\\', "/"));
+    let full_path = format!("{APP_PATH}{remote}");
+    let output = command_json(bin, &["ls", &remote, "--limit", "1"], active)?;
+    let mut entries = list_page(&output)?.into_iter().filter(|entry| {
+        entry["path"].as_str() == Some(full_path.as_str())
+            && entry["isdir"].as_bool() == Some(false)
+            && entry["size"].as_u64() == Some(size)
+    });
+    let found = entries.next()?;
+    if entries.next().is_some() { return None; }
+    let fs_id = ["fs_id", "fsid"].into_iter().find_map(|key| {
+        let value = &found[key];
+        value.as_u64().or_else(|| value.as_str()?.parse().ok())
+            .filter(|id| *id > 0).map(|id| id.to_string())
+    });
+    Some(TransferFileIdentity { md5: content_md5(found["md5"].as_str()?)?, fs_id })
+}
+
 #[derive(Debug, PartialEq)]
 pub enum CheckFailure {
     Unconfirmed,
@@ -86,19 +113,9 @@ pub struct VerifiedTransfer {
 #[derive(Default)]
 struct LocalProof {
     write_times: BTreeMap<PathBuf, u64>,
-    mismatches: BTreeMap<PathBuf, String>,
 }
 
 pub(crate) fn command_json(bin: &Path, args: &[&str], active: &impl Fn() -> bool) -> Option<Value> {
-    command_json_with_progress(bin, args, active, || 0)
-}
-
-fn command_json_with_progress(
-    bin: &Path,
-    args: &[&str],
-    active: &impl Fn() -> bool,
-    progress: impl Fn() -> u64,
-) -> Option<Value> {
     if !active() {
         return None;
     }
@@ -110,15 +127,9 @@ fn command_json_with_progress(
         .ok()?;
     let stdout = child.stdout.take().expect("piped stdout");
     let reader = std::thread::spawn(move || crate::baidu::read_response(stdout));
-    let mut last_activity = Instant::now();
-    let mut last_bytes = 0;
+    let started = Instant::now();
     let status = loop {
-        let bytes = progress();
-        if bytes > last_bytes {
-            last_bytes = bytes;
-            last_activity = Instant::now();
-        }
-        if !active() || last_activity.elapsed() >= Duration::from_secs(45) {
+        if !active() || started.elapsed() >= Duration::from_secs(45) {
             break None;
         }
         match child.try_wait() {
@@ -164,7 +175,7 @@ pub fn list_directory(bin: &Path, dir: &str, active: &impl Fn() -> bool) -> Opti
 
 // The directory listing can return Baidu's encoded form of the content MD5.
 // Normalize it before verifying the file; malformed hashes still prevent cleanup.
-fn content_md5(value: &str) -> Option<String> {
+pub(crate) fn content_md5(value: &str) -> Option<String> {
     let bytes: &[u8; 32] = value.as_bytes().try_into().ok()?;
     if bytes.iter().all(u8::is_ascii_hexdigit) {
         return Some(value.to_ascii_lowercase());
@@ -278,7 +289,7 @@ fn check_saved_tree(
             Some(proof) if metadata.is_file() && metadata.len() == proof.size => {
                 let checksum = md5_file(&path, active).map_err(|_| CheckFailure::Unconfirmed)?;
                 if proof.md5.as_deref() != Some(checksum.as_str()) {
-                    local.mismatches.insert(relative.clone(), checksum);
+                    return Err(CheckFailure::Different);
                 }
                 let unchanged = fs::symlink_metadata(&path).is_ok_and(|after| {
                     after.is_file()
@@ -338,14 +349,7 @@ impl VerifiedTransfer {
         source_name: Option<&std::ffi::OsStr>,
         active: impl Fn() -> bool,
     ) -> bool {
-        self.cleanup_with(
-            output,
-            source_name,
-            |args| command_json(bin, args, &active),
-            |remote, name, size, checksum| {
-                verify_remote_file(bin, remote, name, size, checksum, &active)
-            },
-        )
+        self.cleanup_with(output, source_name, |args| command_json(bin, args, &active))
     }
 
     fn cleanup_with(
@@ -353,27 +357,11 @@ impl VerifiedTransfer {
         output: &Path,
         source_name: Option<&std::ffi::OsStr>,
         request: impl Fn(&[&str]) -> Option<Value>,
-        verify_copy: impl Fn(&str, &Path, u64, &str) -> bool,
     ) -> bool {
         let absent = || {
             request(&["ls", &self.directory, "--limit", "1"])
                 .is_some_and(|value| directory_missing(&value))
         };
-        // An unreliable directory hash needs independent content verification before deletion.
-        for (path, checksum) in &self.local.mismatches {
-            let Some(Some(proof)) = self.tree.get(path) else {
-                return false;
-            };
-            let relative = path
-                .iter()
-                .map(|part| part.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join("/");
-            let remote = format!("{}/{relative}", self.directory);
-            if !verify_copy(&remote, path, proof.size, checksum) {
-                return absent();
-            }
-        }
         // Recheck after hashing so unrelated additions to this folder are preserved.
         if remote_tree(&self.directory, &request).as_ref() != Some(&self.tree) {
             return absent();
@@ -420,51 +408,20 @@ impl VerifiedTransfer {
     }
 }
 
-fn verify_remote_file(
-    bin: &Path,
-    remote: &str,
-    name: &Path,
-    size: u64,
-    checksum: &str,
-    active: &impl Fn() -> bool,
-) -> bool {
-    struct CheckDirectory(PathBuf);
-    impl Drop for CheckDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-    let directory = std::env::temp_dir().join(format!(
-        "shandian-baidu-check-{:016x}",
-        rand::random::<u64>()
-    ));
-    if !active() || fs::create_dir(&directory).is_err() {
-        return false;
-    }
-    let scratch = CheckDirectory(directory);
-    let Some(leaf) = name.file_name() else {
-        return false;
-    };
-    let file = scratch.0.join(leaf);
-    let result = command_json_with_progress(
-        bin,
-        &["download", remote, &file.to_string_lossy()],
-        active,
-        || crate::baidu::measure(&scratch.0),
-    );
-    result.is_some_and(|value| value["code"].as_i64() == Some(0))
-        && fs::symlink_metadata(&file).is_ok_and(|m| {
-            m.is_file() && m.file_attributes() & REPARSE_POINT == 0 && m.len() == size
-        })
-        && md5_file(&file, active).is_ok_and(|digest| digest == checksum)
+pub(crate) fn md5_file(path: &Path, active: &impl Fn() -> bool) -> io::Result<String> {
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_SEQUENTIAL_SCAN;
+    let mut file = fs::OpenOptions::new().read(true).write(true)
+        .custom_flags(FILE_FLAG_SEQUENTIAL_SCAN).open(path)?;
+    let digest = md5_reader(&mut file, active, |_| {})?;
+    file.sync_all()?;
+    Ok(digest)
 }
 
-fn md5_file(path: &Path, active: &impl Fn() -> bool) -> io::Result<String> {
+pub(crate) fn md5_reader(file: &mut fs::File, active: &impl Fn() -> bool, report: impl Fn(u64)) -> io::Result<String> {
     use windows_sys::Win32::Security::Cryptography::{
         BCryptCreateHash, BCryptDestroyHash, BCryptFinishHash, BCryptHashData, BCRYPT_HASH_HANDLE,
         BCRYPT_MD5_ALG_HANDLE,
     };
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_SEQUENTIAL_SCAN;
     struct Hash(BCRYPT_HASH_HANDLE);
     impl Drop for Hash {
         fn drop(&mut self) {
@@ -480,11 +437,7 @@ fn md5_file(path: &Path, active: &impl Fn() -> bool) -> io::Result<String> {
             Ok(())
         }
     };
-    let mut file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .custom_flags(FILE_FLAG_SEQUENTIAL_SCAN)
-        .open(path)?;
+    let mut read = 0;
     let mut handle = std::ptr::null_mut();
     unsafe {
         status(BCryptCreateHash(
@@ -510,6 +463,8 @@ fn md5_file(path: &Path, active: &impl Fn() -> bool) -> io::Result<String> {
         if size == 0 {
             break;
         }
+        read += size as u64;
+        report(read);
         unsafe {
             status(BCryptHashData(hash.0, buffer.as_ptr(), size as u32, 0))?;
         }
@@ -523,7 +478,6 @@ fn md5_file(path: &Path, active: &impl Fn() -> bool) -> io::Result<String> {
             0,
         ))?;
     }
-    file.sync_all()?;
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
@@ -565,10 +519,7 @@ mod tests {
         )]);
         assert!(check_saved_tree(&root, None, &tree, &|| true).is_ok());
         fs::write(&file, b"xyz").unwrap();
-        assert!(check_saved_tree(&root, None, &tree, &|| true)
-            .unwrap()
-            .mismatches
-            .contains_key(Path::new("test.bin")));
+        assert!(matches!(check_saved_tree(&root, None, &tree, &|| true), Err(CheckFailure::Different)));
         tree.insert(PathBuf::from("absent.bin"), None);
         assert!(matches!(
             check_saved_tree(&root, None, &tree, &|| true),
@@ -625,30 +576,13 @@ mod tests {
             Err(CheckFailure::Different)
         ));
         fs::rename(&staged, &saved).unwrap();
-        let mut local = check_saved_tree(&saved, source_name, &tree, &|| true).unwrap();
-        assert!(local.mismatches.is_empty());
-        local.mismatches.insert(
-            PathBuf::from("音频.bin"),
-            "900150983cd24fb0d6963f7d28e17f72".into(),
-        );
-        let verified = VerifiedTransfer {
-            directory: directory.clone(),
-            tree,
-            local,
-        };
-        let matching_copy = |remote: &str, path: &Path, size: u64, checksum: &str| {
-            assert_eq!(remote, format!("{directory}/音频.bin"));
-            assert_eq!(path, Path::new("音频.bin"));
-            assert_eq!(size, 3);
-            assert_eq!(checksum, "900150983cd24fb0d6963f7d28e17f72");
-            true
-        };
-        assert!(!verified.cleanup_with(&saved, source_name, request, |_, _, _, _| false));
+        let local = check_saved_tree(&saved, source_name, &tree, &|| true).unwrap();
+        let verified = VerifiedTransfer { directory: directory.clone(), tree, local };
         changed.set(true);
-        assert!(!verified.cleanup_with(&saved, source_name, request, matching_copy));
+        assert!(!verified.cleanup_with(&saved, source_name, request));
         assert_eq!(count.get(), 0);
         changed.set(false);
-        assert!(verified.cleanup_with(&saved, source_name, request, matching_copy));
+        assert!(verified.cleanup_with(&saved, source_name, request));
         assert_eq!(count.get(), 1);
         let missing = |args: &[&str]| {
             if args[0] == "ls" && args[2..] == ["--limit", "1"] {
@@ -661,7 +595,7 @@ mod tests {
                 None
             }
         };
-        assert!(verified.cleanup_with(&saved, source_name, missing, matching_copy));
+        assert!(verified.cleanup_with(&saved, source_name, missing));
         assert!(!directory_missing(&json!({"code":1,"error":"错误码 -6"})));
         fs::remove_file(saved).unwrap();
         fs::remove_dir(root).unwrap();

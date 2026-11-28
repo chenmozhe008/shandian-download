@@ -42,7 +42,7 @@ async function setup(root, frame, dialog, scale, installer = false, pointerType 
     location: { search: dialog ? '?dialog=1' : '' }, URLSearchParams,
     innerWidth: 1100, innerHeight: 720,
   });
-  vm.runInContext(fs.readFileSync(root + '/windows/ui/window-frame.js', 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync(root + '/ui/window-frame.js', 'utf8'), ctx);
   await flush();
   return { events, event, target, frames, positions, nativeCalls, setPending(value) { pending = value; } };
 }

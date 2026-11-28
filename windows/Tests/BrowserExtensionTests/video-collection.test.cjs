@@ -6,7 +6,7 @@ const youtube = "https://www.youtube.com/watch?v=6dBlxB1pBa8&list=UUz75RVbH8q2jd
 const playlist = "https://www.youtube.com/playlist?list=UUz75RVbH8q2jdBJ4SnwuZZQ";
 const playlistId = new URL(playlist).searchParams.get("list");
 const bili = "https://www.bilibili.com/video/BV1bK411W797?p=2";
-const source = fs.readFileSync("windows/browser-extension/background.js", "utf8");
+const source = fs.readFileSync("browser-extension/background.js", "utf8");
 const context = vm.createContext({
   URL,
   wechatShareOf: () => null,

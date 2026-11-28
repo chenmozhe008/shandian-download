@@ -50,6 +50,8 @@ pub struct VideoOptions {
     /// 避免 `zh.*` 同时命中简繁、`en.*` 命中 en + en-orig 一次落多个文件。
     /// 兼容老配置里的正则（`zh.*,ai-zh` 等），见 normalize_sub_intent。
     pub sub_langs: String,
+    #[serde(default)]
+    pub subtitle_ai_provider: Option<String>,
     /// 字幕格式：vtt（默认，yt-dlp 原生）/ srt / ass。非 vtt 时走 --convert-subs
     #[serde(default)]
     pub sub_format: String,
@@ -122,6 +124,7 @@ impl Default for VideoOptions {
             audio_only: false,
             // 默认只要中文（每个语系一个精确代码）
             sub_langs: "zh".to_string(),
+            subtitle_ai_provider: None,
             sub_format: "vtt".to_string(),
             sub_scale: 1.0,
             sub_colorize: false,
@@ -612,20 +615,23 @@ impl Videos {
         let s = crate::settings::Settings::load(&self.base);
         let Some(job) = self.find(id) else { return };
         let translate = job.needs_subtitle_translation();
-        if (!translate && !job.options.polish.unwrap_or(s.subtitle_polish)) || job.state != "done"
+        let provider = crate::subtitle_ai::selected_provider(&self.local);
+        let allowed = if provider == "ollama" {
+            translate || job.options.polish.unwrap_or(s.subtitle_polish)
+        } else {
+            job.options.polish == Some(true) && job.options.subtitle_ai_provider.as_deref() == Some(provider)
+        };
+        if !allowed || job.state != "done"
             || !job.options.subtitles || job.no_subs || job.collided || job.polish.starts_with("润色字幕中") {
             return;
         }
-        let available = crate::polish::models();
-        if available.is_empty() {
-            return;
+        if let Some(model) = crate::subtitle_ai::model(&self.local, &s.polish_model) {
+            self.polish(id, Some(model), bin_dir);
         }
-        let model = if available.contains(&s.polish_model) { s.polish_model } else { available[0].clone() };
-        self.polish(id, Some(model), bin_dir);
     }
 
     /// 后台润色字幕，一次只跑一条（模型占满显存）。视频已经下完，失败也不影响它
-    pub fn polish(self: &Arc<Self>, id: &str, model: Option<String>, bin_dir: &Path) {
+    pub fn polish(self: &Arc<Self>, id: &str, model: Option<crate::subtitle_ai::Model>, bin_dir: &Path) {
         static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
         let mut claimed = false;
         self.patch(id, |job| {
@@ -646,7 +652,7 @@ impl Videos {
                 .and_then(|sub| {
                     let o = &job.options;
                     let opts = crate::polish::Options {
-                        model: model.as_deref(),
+                        model: model.as_ref(),
                         drop_en: matches!(normalize_sub_intent(&o.sub_langs), SubIntent::Zh),
                         title: job.title.clone(),
                         style: crate::engine::subtitle_style(o.sub_scale, o.sub_colorize, &o.sub_color_zh, &o.sub_color_en),
@@ -939,6 +945,10 @@ impl Videos {
     }
 
     fn spawn(self: &Arc<Self>, id: &str, bin_dir: &Path) -> Result<(), String> {
+        self.spawn_attempt(id, bin_dir, true)
+    }
+
+    fn spawn_attempt(self: &Arc<Self>, id: &str, bin_dir: &Path, may_refresh: bool) -> Result<(), String> {
         let gen = self.next_gen(id);
         let job = {
             let jobs = self.jobs.lock().unwrap();
@@ -951,7 +961,7 @@ impl Videos {
         let mut opts = job.options.clone();
         let want_subs = opts.subtitles && !opts.audio_only;
         opts.subtitles = false;
-        let info_path = self.subs_info_path(id);
+        let info_path = self.attempt_subs_info_path(id, gen);
         let _ = std::fs::remove_file(&info_path);
 
         let mut cmd = Command::new(ytdlp_path(bin_dir));
@@ -1019,6 +1029,9 @@ impl Videos {
         // --require node-language-shim.cjs），会让 yt-dlp 解签名时读文件被拒，
         // 视频流全丢只剩音频。子进程用不上宿主的沙箱限制，直接摘掉。
         cmd.env_remove("NODE_OPTIONS");
+        if job.site == "YouTube" {
+            cmd.args(["--continue", "--abort-on-unavailable-fragments"]);
+        }
         if want_subs {
             // yt-dlp 会自己补 .info.json；模板里的 % 要转义
             let stem = info_path.to_string_lossy().trim_end_matches(".info.json").replace('%', "%%");
@@ -1077,11 +1090,13 @@ impl Videos {
 
         // 边写边读：每 250ms 看一眼日志文件，读到新内容就解析
         let done = Arc::new(AtomicBool::new(false));
+        let media_retryable = Arc::new(AtomicBool::new(false));
         {
             let videos = Arc::clone(self);
             let id2 = id.to_string();
             let path = log_path.clone();
             let done2 = Arc::clone(&done);
+            let media_error = Arc::clone(&media_retryable);
             std::thread::spawn(move || {
                 let mut st = Progress::default();
                 let mut pos: u64 = 0;
@@ -1108,6 +1123,7 @@ impl Videos {
                                         if line.starts_with("ERROR") {
                                             let msg =
                                                 line.replace("ERROR: ", "").trim().to_string();
+                                            media_error.store(youtube_media_retry(&msg), Ordering::Relaxed);
                                             let msg = friendly_error(&msg);
                                             videos.patch(&id2, |j| j.error = msg);
                                         }
@@ -1202,7 +1218,7 @@ impl Videos {
                 };
                 if let Some(code) = status {
                     done3.store(true, Ordering::Relaxed);
-                    videos.finish(&id4, code, gen, &bin4);
+                    videos.finish(&id4, code, gen, &bin4, may_refresh.then_some(media_retryable.as_ref()));
                     if let Some(job) = videos.find(&id4) { crate::app_log::record("video", &format!("task={} state={} exit={} error={}", id4, job.state, code, job.error)); }
                     videos.auto_polish(&id4, &bin4);
                     videos.pump();
@@ -1237,6 +1253,10 @@ impl Videos {
         crate::migrate::local_path(&self.local, &format!("subsinfo-{id}.info.json"))
     }
 
+    fn attempt_subs_info_path(&self, id: &str, gen: u64) -> PathBuf {
+        crate::migrate::local_path(&self.local, &format!("subsinfo-{id}-{gen}.info.json"))
+    }
+
     /// 另起一条 yt-dlp 只下字幕：等主进程落下元数据（通常一两秒，不多发请求），
     /// 按意图每个语系挑一条精确代码，再用 --load-info-json 下，不用重新解析页面。
     /// 视频完全不等它，它失败也不影响视频。
@@ -1247,13 +1267,13 @@ impl Videos {
         let (id, bin, job) = (id.to_string(), bin_dir.to_path_buf(), job.clone());
         std::thread::spawn(move || {
             me.run_subs(&id, gen, &bin, &job);
-            let _ = std::fs::remove_file(me.subs_info_path(&id));
+            let _ = std::fs::remove_file(me.attempt_subs_info_path(&id, gen));
             flag.store(true, Ordering::Relaxed);
         });
     }
 
     fn run_subs(&self, id: &str, gen: u64, bin_dir: &Path, job: &VideoJob) {
-        let info = self.subs_info_path(id);
+        let info = self.attempt_subs_info_path(id, gen);
         let mut avail = None;
         while avail.is_none() {
             if !self.is_current(id, gen) {
@@ -1271,9 +1291,15 @@ impl Videos {
         let mut intent = normalize_sub_intent(&job.options.sub_langs);
         let avail = avail.unwrap_or_default();
         let s = crate::settings::Settings::load(&self.base);
-        let polishing = job.options.polish.unwrap_or(s.subtitle_polish)
+        let provider = crate::subtitle_ai::selected_provider(&self.local);
+        let polish_requested = if provider == "ollama" {
+            job.options.polish.unwrap_or(s.subtitle_polish)
+        } else {
+            job.options.polish == Some(true) && job.options.subtitle_ai_provider.as_deref() == Some(provider)
+        };
+        let polishing = polish_requested
             && matches!(intent, SubIntent::Zh | SubIntent::ZhEn)
-            && !crate::polish::models().is_empty();
+            && crate::subtitle_ai::model(&self.local, &s.polish_model).is_some();
         let from_source = polishing
             .then(|| std::fs::read(&info).ok())
             .flatten()
@@ -1291,7 +1317,7 @@ impl Videos {
             });
             return;
         }
-        let log_path = self.local.join("cache/process").join(format!("ytdlp-{id}-subs.log"));
+        let log_path = self.local.join("cache/process").join(format!("ytdlp-{id}-{gen}-subs.log"));
         // 限流时等一等再试：视频不受影响，多等一会儿也不碍事
         for (attempt, wait_secs) in [0u64, 8, 20].into_iter().enumerate() {
             for _ in 0..wait_secs * 5 {
@@ -1373,7 +1399,7 @@ impl Videos {
 
     /// yt-dlp 退出后的收尾。state 要到字幕都处理完才翻成 done：
     /// 以前先报完成再嵌字幕，提示音响了文件还在被改写。
-    fn finish(self: &Arc<Self>, id: &str, code: i32, gen: u64, bin_dir: &Path) {
+    fn finish(self: &Arc<Self>, id: &str, code: i32, gen: u64, bin_dir: &Path, media_retryable: Option<&AtomicBool>) {
         // 进程先退、日志后读：SDFILE 那行可能还没被读日志的线程消化，等它读完
         for _ in 0..8 {
             std::thread::sleep(std::time::Duration::from_millis(250));
@@ -1388,6 +1414,26 @@ impl Videos {
         std::thread::sleep(std::time::Duration::from_millis(300));
         let Some(job) = self.find(id) else { return };
         if !self.is_current(id, gen) {
+            return;
+        }
+        if media_retryable.is_some_and(|error| error.load(Ordering::Relaxed))
+            && code != 0 && job.site == "YouTube" && job.state == "running"
+            && !job.collided && job.working_file().is_empty() && job.publish_plan.is_none()
+        {
+            self.patch(id, |job| {
+                job.stage = "正在重新解析视频地址…".into();
+                job.speed = 0;
+                job.error.clear();
+                job.no_subs = false;
+                job.subs_failed = false;
+            });
+            if let Err(error) = self.spawn_attempt(id, bin_dir, false) {
+                self.patch(id, |job| {
+                    job.state = "error".into();
+                    job.error = error;
+                });
+                self.save();
+            }
             return;
         }
         // 跳过了下载：字幕也不用下了（要再下一份会重新起一轮）
@@ -1691,7 +1737,7 @@ impl Videos {
                 });
                 let gen = self.next_gen(id);
                 let (me, id2, bin) = (Arc::clone(self), id.to_string(), bin_dir.to_path_buf());
-                std::thread::spawn(move || me.finish(&id2, 0, gen, &bin));
+                std::thread::spawn(move || me.finish(&id2, 0, gen, &bin, None));
                 return Ok(());
             }
         }
@@ -1709,7 +1755,7 @@ impl Videos {
                 let gen = self.next_gen(id);
                 let (me, id, bin) = (Arc::clone(self), id.to_string(), bin_dir.to_path_buf());
                 std::thread::spawn(move || {
-                    me.finish(&id, 0, gen, &bin);
+                    me.finish(&id, 0, gen, &bin, None);
                     me.auto_polish(&id, &bin);
                     me.pump();
                 });
@@ -2374,6 +2420,17 @@ fn cp_to_string(bytes: &[u8], _cp: u32) -> String {
     String::from_utf8_lossy(bytes).to_string()
 }
 
+fn youtube_media_retry(error: &str) -> bool {
+    let raw = error.to_ascii_lowercase();
+    if ["login required", "sign in", "not a bot", "private video", "this video is private", "members-only"]
+        .iter().any(|text| raw.contains(text))
+    {
+        return false;
+    }
+    ["http error 403", "connection reset", "timed out", "remote end closed", "incomplete read", "network is unreachable"]
+        .iter().any(|text| raw.contains(text))
+}
+
 /// 把 yt-dlp 的英文报错换成「知道该干什么」的中文说明。
 /// 原文留着，出问题好排查；只是前面加一句人话，别让用户对着一整段 stack 发呆。
 fn friendly_error(raw: &str) -> String {
@@ -2650,6 +2707,8 @@ fn translate_source(info: &[u8], avail: &[String], from_english: bool) -> Option
 pub struct VideoProbe {
     pub title: String,
     pub subs: bool,
+    pub sub_zh: bool,
+    pub sub_en: bool,
     pub heights: Vec<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
@@ -2748,6 +2807,8 @@ pub fn probe_video(local: &Path, bin_dir: &Path, url: &str, video: Option<&Video
     Some(VideoProbe {
         title: info["title"].as_str().unwrap_or_default().to_owned(),
         subs: langs.iter().any(|l| l != "danmaku" && l != "live_chat"),
+        sub_zh: pick_zh(&langs).is_some(),
+        sub_en: pick_en(&langs).is_some(),
         heights: heights_in_info(&bytes),
         size: video.and_then(|_| exact_selected_video_size(&info)),
     })
@@ -3394,7 +3455,7 @@ mod tests {
         let gen = queue.next_gen(&first_id);
         let runner = Arc::clone(&queue);
         let (id, bin) = (first_id.clone(), dir.clone());
-        let finish = std::thread::spawn(move || runner.finish(&id, 0, gen, &bin));
+        let finish = std::thread::spawn(move || runner.finish(&id, 0, gen, &bin, None));
         let launched_during_subtitles = (0..120).any(|_| {
             let finishing = queue.find(&first_id).unwrap();
             let waiting = queue.find(&next_id).unwrap();
@@ -3774,5 +3835,19 @@ mod tests {
         // "x264" 不是分辨率（数字前是字母）
         assert_eq!(resolution_from_name("movie.x264.mkv"), None);
         assert_eq!(resolution_from_name("readme.txt"), None);
+    }
+}
+
+#[cfg(test)]
+mod youtube_refresh_tests {
+    use super::youtube_media_retry;
+
+    #[test]
+    fn refreshes_expired_media_or_network_errors_only() {
+        assert!(youtube_media_retry("unable to download video data: HTTP Error 403: Forbidden"));
+        assert!(youtube_media_retry("connection reset by peer"));
+        assert!(!youtube_media_retry("sign in to confirm you're not a bot: HTTP Error 403"));
+        assert!(!youtube_media_retry("HTTP Error 429: Too Many Requests"));
+        assert!(!youtube_media_retry("WinError 32: file in use"));
     }
 }

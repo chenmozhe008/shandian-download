@@ -994,7 +994,7 @@ mod tests {
         )
         .is_err());
         assert!(prepare_fields("pan123", json!({"AccessToken":"synthetic"})).is_ok());
-        assert!(prepare_fields("guangya",json!({"client_id":"aMe-8VSlkrbQXpUR","access_token":"fixture_access_token_01","refresh_token":"fixture_refresh_token_02","device_id":"0123456789abcdef0123456789abcdef"})).is_ok());
+        assert!(prepare_fields("guangya",json!({"client_id":"aMe-8VSlkrbQXpUR","access_token":"synthetic-access","refresh_token":"synthetic-refresh","device_id":"0123456789abcdef0123456789abcdef"})).is_ok());
         assert!(prepare_fields("pan123", json!({"access_token":"wrong-case"})).is_err());
         assert!(prepare_fields(
             "guangya",

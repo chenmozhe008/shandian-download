@@ -27,6 +27,7 @@ mod dialog;
 mod engine;
 mod float;
 mod gateway;
+mod download_handoff;
 mod ghmirror;
 mod links;
 mod baidu;
@@ -35,11 +36,13 @@ mod feishu_setup;
 mod baidu_cleanup;
 mod baidu_setup;
 mod migrate;
+#[allow(unexpected_cfgs)]
 mod mcp;
 mod pikpak;
 mod thunder;
 mod proxy;
 mod settings;
+mod subtitle_ai;
 mod shell;
 mod sources;
 mod theme;
@@ -457,6 +460,7 @@ fn main() {
             feishu_setup::cancel_feishu_authorization,
             engine::multi_task_info,
             engine::multi_refresh_links,
+            engine::baidu_http_renew,
             engine::multi_refresh_prepare,
             engine::task_select_files,
             thunder::thunder_to_local,
@@ -477,8 +481,14 @@ fn main() {
             engine::subtitle_look,
             engine::subtitle_fetch,
             engine::system_fonts,
+            theme::pick_screen_color,
             engine::subtitle_restyle,
             engine::ollama_models,
+            subtitle_ai::subtitle_ai_settings,
+            subtitle_ai::save_subtitle_ai,
+            subtitle_ai::subtitle_ai_status,
+            subtitle_ai::test_subtitle_ai,
+            subtitle_ai::subtitle_ai_models,
             engine::set_queue_order,
             engine::is_dev_build,
             engine::list_tasks,
@@ -506,6 +516,7 @@ fn main() {
             commands::reveal_path,
             commands::quit_app,
             commands::open_logs_dir,
+            download_handoff::cancel_browser_handoff,
             commands::export_recent_logs,
             commands::diagnostic_info,
             app_log::log_ui_event,

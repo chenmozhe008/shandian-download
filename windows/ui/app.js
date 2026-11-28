@@ -314,6 +314,31 @@ $("toast").addEventListener("click", () => {
 // 设置卡片的解释文字平时不占版面，收在标题旁边的小 i 里（data-tip），鼠标移上去才出。
 // 文字短、只做补充说明；真正的配置值（网关地址、密钥那些）仍然留在卡片里让人看得见。
 const tipEl = $("tip");
+let buttonHoverHints = true;
+
+function isButtonTip(el) {
+  return el.dataset.tipKind !== "content" &&
+    !el.matches(".task-name, .fd-file-entry, .cf-file .n") &&
+    !!el.closest('button, [role="button"], input[type="button"], input[type="submit"], a.ghost, a.primary');
+}
+
+function applyButtonHoverHints(value) {
+  const enabled = value !== false;
+  if (buttonHoverHints !== enabled) hideTip();
+  buttonHoverHints = enabled;
+  if (state.settings) state.settings.settings.buttonHoverHints = enabled;
+  setSwitch("sw-button-hover-hints", enabled);
+}
+
+function promoteTitle(el) {
+  const value = el.getAttribute("title")?.trim();
+  el.removeAttribute("title");
+  if (!value) return;
+  if (!el.dataset.tip) el.dataset.tip = value;
+  if (isButtonTip(el) && !el.hasAttribute("aria-label") && !el.hasAttribute("aria-labelledby") && !el.textContent.trim()) {
+    el.setAttribute("aria-label", value);
+  }
+}
 /// 页内卡片提示：钉在被说明的元素上（居中于它下方），不跟鼠标。
 /// 跟着指针动的那种，鼠标从按钮左侧滑到右侧时提示会跟着跑，看着像在抖；
 /// 钉在按钮上才稳，箭头也指得准。（独立 tip 窗口曾在命令线程建窗导致主界面卡死，已停用。）
@@ -323,7 +348,8 @@ function menuOpen() {
 }
 function showTip(el) {
   const text = el.dataset.tip || "";
-  if (!text || !tipEl || menuOpen()) return;
+  if (!text || !tipEl || menuOpen() || (!buttonHoverHints && isButtonTip(el))) return;
+  if (el.classList.contains("task-name") && el.scrollWidth <= el.clientWidth) return;
   tipEl.textContent = text;
   tipEl.hidden = false;
   tipEl.classList.remove("tip-up"); // 默认尖朝上 = 卡片在下方
@@ -333,8 +359,9 @@ function showTip(el) {
   // 左右别贴边出界
   let x = r.left + r.width / 2 - tw / 2;
   x = Math.min(Math.max(6, x), window.innerWidth - tw - 6);
-  // 勾选框里行距小，提示贴近一点；其他地方留 14，免得挡住下面的按钮
-  let y = r.bottom + (el.closest(".grab-row") ? 8 : 14);
+  // 选项行和来源胶囊的间距较小，提示靠近一点。
+  const rowGap = el.closest(".grab-row") ? 8 : 14;
+  let y = r.bottom + (el.closest(".download-empty-sources") ? 8 : rowGap);
   if (y + th > window.innerHeight - 4) {
     y = r.top - th - 10;
     tipEl.classList.add("tip-up");
@@ -350,6 +377,9 @@ function hideTip() { if (tipEl) tipEl.hidden = true; }
 document.addEventListener("click", () => { if (menuOpen()) hideTip(); });
 document.addEventListener("contextmenu", () => setTimeout(() => { if (menuOpen()) hideTip(); }));
 document.addEventListener("mouseover", (e) => {
+  const title = e.target.closest?.("[title]");
+  // Dynamic buttons and task names are added after the initial title migration.
+  if (title && (isButtonTip(title) || title.classList.contains("task-name"))) promoteTitle(title);
   const el = e.target.closest?.("[data-tip]");
   if (el) { showTip(el); return; }
   // 元素自带的 title 会由 WebView2 画成白底黑框的系统提示，和这套界面完全不是一回事。
@@ -357,7 +387,7 @@ document.addEventListener("mouseover", (e) => {
   const tt = e.target.closest?.("[title]");
   if (tt) {
     // 文件名、路径说明：正文已经可读，摘掉 title 别再弹一层
-    if (tt.closest(".task-name") || tt.classList.contains("set-path") || tt.classList.contains("set-hint")) {
+    if (tt.classList.contains("set-path") || tt.classList.contains("set-hint")) {
       tt.removeAttribute("title");
       return;
     }
@@ -387,19 +417,15 @@ window.addEventListener("scroll", hideTip, true);
 // 空 title、.set-path（正文已经把路径显示出来了，再弹 tip 是重复）一律只摘掉。
 (function migrateTitles() {
   document.querySelectorAll("[title]").forEach((el) => {
-    if (el.closest(".task-name")) { el.removeAttribute("title"); return; }
     // 路径/说明正文本身就完整可读，悬浮再弹一遍等于双重提示
     if (el.classList.contains("set-path") || el.classList.contains("set-hint")) {
       el.removeAttribute("title");
       return;
     }
-    const text = el.getAttribute("title");
-    if (text && text.trim() && !el.dataset.tip) {
-      el.dataset.tip = text;
-    }
-    el.removeAttribute("title");
+    promoteTitle(el);
   });
 })();
+window.__TAURI__?.event?.listen("button-hover-hints-changed", ({ payload }) => applyButtonHoverHints(payload));
 
 // ---------- 主题 ----------
 
@@ -993,6 +1019,7 @@ function rowVals(t) {
   const sizeUnknown = !total;
   const seen = barHigh[t.id];
   const checking = t.shandianVerification === "checking";
+  const baiduCheck = checking && isBaiduFileTask(t) ? Number(t.meta?.req?.labels?.baiduCheckPercent || 0) : null;
   const checkFailed = t.shandianVerification === "failed";
   const lastBit = !!lastPiece[t.id]?.waiting;
   const stall = lastBit ? null : stallOf(t);
@@ -1002,7 +1029,7 @@ function rowVals(t) {
   const high = collection ? 0 : barHigh[t.id]?.pct || 0;
   const waitingTransfer = run && t.meta?.req?.labels?.baiduWaitingTransfer === "true";
   const indet = run && (waitingTransfer || (sizeUnknown && !high && !collection));
-  const pct = t.status === "done" ? 100 : waitingTransfer ? 0 : Math.max(high, Math.min(99, ratio * 100));
+  const pct = baiduCheck !== null ? baiduCheck : t.status === "done" ? 100 : waitingTransfer ? 0 : Math.max(high, Math.min(99, ratio * 100));
   if (!collection && t.status !== "done" && pct > 0 && !checking) barHigh[t.id] = { pct, done };
   const spd = run ? t.progress?.speed || 0 : 0;
   const etaSpd = smoothSpeed[t.id]?.v || spd;
@@ -1020,8 +1047,8 @@ function rowVals(t) {
     mainVal = t.stage || (spd ? speed(spd) : "连接中");
     subVal = t.stage ? "" : eta || (pct ? `${Math.round(pct)}%` : "");
     if (checking) {
-      mainVal = "正在校验";
-      subVal = pct ? `${Math.round(pct)}%` : "";
+      mainVal = baiduCheck !== null ? t.stage : "正在校验";
+      subVal = baiduCheck !== null ? String(baiduCheck) + "%" : pct ? `${Math.round(pct)}%` : "";
     } else if (checkFailed) {
       mainVal = "校验失败";
       subVal = "右键可重查字幕";
@@ -1289,18 +1316,20 @@ function downloadEmptyMarkup(watchClipboard) {
   <h2 id="download-empty-title">开始下载</h2>
   <p class="download-empty-hint">网页闪电按钮 · 扩展侦测 · ${linkHint} · 拖入种子</p>
   <ul class="download-empty-sources" aria-label="下载来源与入口">
-    <li>直链</li><li>磁力</li><li>种子</li>
-    <li title="支持合集选集和可用字幕">哔哩哔哩</li>
-    <li title="支持合集选集和可用字幕">YouTube</li>
-    <li>Vimeo</li><li>Facebook</li><li>Instagram</li><li>X</li><li>抖音</li>
-    <li>小红书</li><li>微信视频号</li><li>快手</li><li>微博</li><li>新片场</li>
-    <li>GitHub</li><li>Hugging Face</li>
-    <li title="粘贴百度网盘分享链接">百度分享</li>
-    <li title="在夸克、阿里云盘、UC、123 云盘等网页用扩展选择文件">扩展选文件</li>
-    <li title="关联 PikPak 后可离线中转">PikPak 离线</li>
-    <li>网页音视频</li><li>Pixabay</li><li>爱给</li>
-    <li title="通过扩展查找网页提供的 VTT、SRT 等字幕文件">字幕文件</li>
-    <li>轻雀文档</li><li>飞书文档</li><li>ed2k</li>
+    <li>直链</li>
+    <li data-tip="下载不动时，右键任务优先选「交给迅雷」，也可用「交给云盘」离线下载。">磁力</li>
+    <li data-tip="下载不动时，右键任务优先选「交给迅雷」，也可用「交给云盘」离线下载。">种子</li>
+    <li data-tip="支持合集选集和可用字幕">哔哩哔哩</li>
+    <li lang="en" data-tip="支持合集选集和可用字幕">YouTube</li>
+    <li lang="en">Vimeo</li><li lang="en">Facebook</li><li lang="en">Instagram</li><li lang="en">X</li><li>抖音</li>
+    <li>小红书</li><li data-tip="在微信视频号点分享按钮，再选择复制链接">微信视频号</li><li>快手</li><li>微博</li><li>新片场</li>
+    <li lang="en">GitHub</li><li lang="en">Hugging Face</li>
+    <li data-tip="在新建下载中粘贴百度网盘分享链接，可选择分享中的文件下载。">百度分享</li>
+    <li data-tip="支持百度网盘、夸克、阿里云盘、UC、123 云盘、迅雷、光鸭、天翼、移动。各网盘支持的操作及下载能力有差异，可查看网页内的「闪电下载」或扩展里的选文件入口，随时可能发生变化，不保证稳定性，速度受会员影响。">各种网盘</li>
+    <li data-tip="关联 PikPak 后可离线中转">PikPak 离线</li>
+    <li>网页音视频</li><li lang="en">Pixabay</li><li>爱给</li>
+    <li data-tip="通过扩展查找网页提供的 VTT、SRT 等字幕文件">字幕文件</li>
+    <li>轻雀文档</li><li>飞书文档</li><li lang="en">ed2k</li>
   </ul>
 </section>`;
 }
@@ -1744,7 +1773,7 @@ function trashRowHtml(r) {
   return `<div class="task trash-row${fileGone ? " missing" : ""}" data-id="${escapeHtml(r.id)}" data-trash-id="${escapeHtml(r.id)}" tabindex="0">
     ${thumb}
     <div class="task-body">
-      <div class="task-name" title="${escapeHtml(r.link || name)}">${escapeHtml(name)}</div>
+      <div class="task-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
       <div class="task-meta">
         ${kind ? `<span class="kind">${escapeHtml(kind)}</span>` : ""}
         ${r.resolution ? `<span class="res">${escapeHtml(r.resolution)}</span>` : ""}
@@ -1902,6 +1931,7 @@ async function loadThunder() {
 
 function renderSettings() {
   if (!state.settings) return;
+  applyButtonHoverHints(state.settings.settings.buttonHoverHints);
   for (const key of ["movie", "video", "other"]) {
     const d = state.settings[key];
     const el = $("dir-" + key);
@@ -1926,11 +1956,12 @@ function renderSettings() {
   loadThunder();
   setSwitch("sw-confirm", state.settings.settings.confirmNew);
   setSwitch("sw-polish", !!state.settings.settings.subtitlePolish);
+  loadSubtitleAiSettings();
   // 没检测到 Ollama 就不显示这一行
   invoke("ollama_models").then((models) => {
-    $("polish-row").hidden = !models.length;
-    $("polish-model-row").hidden = !models.length;
-    $("polish-mode-row").hidden = !models.length;
+    $("polish-row").hidden = false;
+    $("polish-model-row").hidden = !models.length || $("subtitle-ai-provider").value !== "ollama";
+    $("polish-mode-row").hidden = false;
     $("set-polish-mode").value = state.settings.settings.polishMode === "translate" ? "translate" : "polish";
     const sel = $("set-polish-model");
     sel.innerHTML = "";
@@ -1940,6 +1971,178 @@ function renderSettings() {
   }).catch(() => {});
   renderCookies();
 }
+
+let subtitleAiSettings = null;
+let subtitleModelsRevision = 0;
+const MANUAL_SUBTITLE_MODEL = "__manual_model__";
+
+function renderSubtitleModelOptions(provider, model, available = null) {
+  const select = $("subtitle-ai-model-choice");
+  const ids = available === null ? provider.models : [
+    ...provider.models.filter(id => available.includes(id)),
+    ...available.filter(id => !provider.models.includes(id)),
+  ];
+  const usingDefault = !model && !!provider.suggested && ids.includes(provider.suggested);
+  const choices = usingDefault || ids.includes(provider.suggested)
+    ? [new Option("默认 · " + provider.suggested, "")]
+    : [];
+  for (const id of new Set(ids)) {
+    if (id !== MANUAL_SUBTITLE_MODEL) choices.push(new Option(id, id));
+  }
+  if (model && !ids.includes(model)) choices.push(new Option("当前配置 · " + model, model));
+  choices.push(new Option("手动填写模型 ID", MANUAL_SUBTITLE_MODEL));
+  select.replaceChildren(...choices);
+  select.value = model || (usingDefault ? "" : MANUAL_SUBTITLE_MODEL);
+  $("subtitle-ai-model").value = select.value === MANUAL_SUBTITLE_MODEL ? model : "";
+  $("subtitle-ai-model-manual-row").hidden = select.value !== MANUAL_SUBTITLE_MODEL;
+  select._customSelect?.close();
+  initCustomSelect(select, { keyboard: true });
+}
+
+function subtitleModelDraft() {
+  const selected = $("subtitle-ai-model-choice").value;
+  return selected === MANUAL_SUBTITLE_MODEL ? $("subtitle-ai-model").value.trim() : selected;
+}
+
+function applySubtitleAccountModels(provider, models, model) {
+  const note = $("subtitle-ai-note");
+  const missingDefault = !model && provider.suggested && !models.includes(provider.suggested);
+  const fallback = missingDefault ? provider.models.find(id => models.includes(id)) : "";
+  renderSubtitleModelOptions(provider, model || fallback || "", models);
+  note.textContent = missingDefault
+    ? (fallback ? "当前账号未返回默认模型，已选中 " + fallback + "。" : "当前账号未返回默认模型，请选择一个可用模型。")
+    : "已加载当前账号的模型。";
+}
+
+async function refreshSubtitleModels() {
+  const id = $("subtitle-ai-provider").value;
+  const provider = subtitleAiSettings?.providers.find(item => item.id === id);
+  if (!provider || id === "ollama") return;
+  const endpoint = $("subtitle-ai-endpoint").value;
+  const key = $("subtitle-ai-key").value;
+  if (id !== "custom" && !key.trim() && !subtitleAiSettings.accounts[id]?.hasKey) {
+    $("subtitle-ai-note").textContent = "填写 API Key 后可刷新账号模型。";
+    return;
+  }
+  const revision = ++subtitleModelsRevision;
+  const button = $("subtitle-ai-refresh-models");
+  const note = $("subtitle-ai-note");
+  button.disabled = true;
+  note.textContent = "正在获取模型列表…";
+  const isCurrent = () => revision === subtitleModelsRevision && $("subtitle-ai-provider").value === id
+    && $("subtitle-ai-endpoint").value === endpoint && $("subtitle-ai-key").value === key;
+  try {
+    const models = await invoke("subtitle_ai_models", {providerId:id, endpoint, key:key || null});
+    if (!isCurrent()) return;
+    if (!models.length) {
+      note.textContent = "服务未返回模型，可从官方预设选择或手动填写。";
+      return;
+    }
+    applySubtitleAccountModels(provider, models, subtitleModelDraft());
+  } catch (error) {
+    if (isCurrent()) note.textContent = String(error) + "。可从官方预设选择或手动填写。";
+  } finally {
+    if (revision === subtitleModelsRevision) button.disabled = false;
+  }
+}
+
+async function loadSubtitleAiSettings() {
+  if (!subtitleAiSettings) {
+    subtitleAiSettings = await invoke("subtitle_ai_settings").catch(() => null);
+  }
+  if (!subtitleAiSettings) return;
+  const select = $("subtitle-ai-provider");
+  if (select.options.length) return;
+  for (const item of subtitleAiSettings.providers) select.add(new Option(item.name, item.id));
+  select.value = subtitleAiSettings.selected;
+  renderSubtitleAiSettings();
+  initCustomSelect(select);
+  syncCustomSelects();
+}
+
+function renderSubtitleAiSettings(fetchModels = true) {
+  ++subtitleModelsRevision;
+  $("subtitle-ai-refresh-models").disabled = false;
+  const id = $("subtitle-ai-provider").value;
+  const provider = subtitleAiSettings?.providers.find(item => item.id === id);
+  if (!provider) return;
+  const account = subtitleAiSettings.accounts[id] || {};
+  const local = id === "ollama";
+  $("subtitle-ai-api").hidden = local;
+  $("subtitle-ai-remote-footer").hidden = local;
+  $("polish-model-row").hidden = !local || !$("set-polish-model").options.length;
+  const actions = $(local ? "subtitle-ai-local-actions" : "subtitle-ai-remote-actions");
+  actions.append($("subtitle-ai-test"), $("subtitle-ai-save"));
+  $(local ? "subtitle-ai-local-note" : "subtitle-ai-remote-note").append($("subtitle-ai-note"));
+  $("subtitle-ai-endpoint-row").hidden = id !== "custom";
+  $("subtitle-ai-endpoint").value = account.endpoint || "";
+  renderSubtitleModelOptions(provider, account.model || "");
+  $("subtitle-ai-key").value = "";
+  $("subtitle-ai-key").placeholder = account.hasKey ? "已保存" : "输入 API Key";
+  $("subtitle-ai-forget").hidden = !account.hasKey;
+  $("subtitle-ai-note").textContent = local ? "" : "使用 API 时会发送字幕文字给所选服务，可能按用量计费。";
+  if (fetchModels && id !== "ollama" && account.hasKey) void refreshSubtitleModels();
+}
+
+async function saveSubtitleAi(action) {
+  const buttons = ["subtitle-ai-save", "subtitle-ai-test", "subtitle-ai-forget"].map($);
+  if (buttons.some(button => button.disabled)) return;
+  const provider = $("subtitle-ai-provider");
+  const note = $("subtitle-ai-note");
+  const model = subtitleModelDraft();
+  if (action !== "forget" && provider.value !== "ollama" && !model && $("subtitle-ai-model-choice").value === MANUAL_SUBTITLE_MODEL) {
+    note.textContent = "请选择模型或填写模型 ID。";
+    return;
+  }
+  ++subtitleModelsRevision;
+  buttons.forEach(button => button.disabled = true);
+  $("subtitle-ai-refresh-models").disabled = true;
+  provider.disabled = true;
+  syncCustomSelects();
+  note.textContent = action === "test" ? "正在测试连接…" : "正在保存…";
+  try {
+    subtitleAiSettings = await invoke("save_subtitle_ai", {
+      providerId: provider.value,
+      endpoint: $("subtitle-ai-endpoint").value,
+      model,
+      key: $("subtitle-ai-key").value || null,
+      forget: action === "forget",
+    });
+    renderSubtitleAiSettings(false);
+    $("subtitle-ai-refresh-models").disabled = true;
+    if (action === "test") {
+      note.textContent = "正在测试连接…";
+      const models = await invoke("test_subtitle_ai");
+      if (provider.value !== subtitleAiSettings.selected) return;
+      const selected = subtitleAiSettings.providers.find(item => item.id === provider.value);
+      if (models.length && selected && selected.id !== "ollama") {
+        applySubtitleAccountModels(selected, models, model);
+      } else {
+        note.textContent = models.length ? "本机模型可用。" : "已连接，服务未返回模型列表。";
+      }
+    } else {
+      note.textContent = action === "forget" ? "已清除密钥。" : "已保存。";
+    }
+  } catch (error) {
+    note.textContent = String(error);
+  } finally {
+    buttons.forEach(button => button.disabled = false);
+    provider.disabled = false;
+    $("subtitle-ai-refresh-models").disabled = false;
+    syncCustomSelects();
+  }
+}
+
+$("subtitle-ai-model-choice").addEventListener("change", () => {
+  const manual = $("subtitle-ai-model-choice").value === MANUAL_SUBTITLE_MODEL;
+  $("subtitle-ai-model-manual-row").hidden = !manual;
+  if (manual) $("subtitle-ai-model").focus();
+});
+$("subtitle-ai-refresh-models").addEventListener("click", refreshSubtitleModels);
+$("subtitle-ai-provider").addEventListener("change", () => renderSubtitleAiSettings());
+$("subtitle-ai-save").addEventListener("click", () => saveSubtitleAi("save"));
+$("subtitle-ai-test").addEventListener("click", () => saveSubtitleAi("test"));
+$("subtitle-ai-forget").addEventListener("click", () => saveSubtitleAi("forget"));
 
 /// 已导入 Cookie 的站点。名单以数据目录里的 cookies-<站点>.txt 为准
 async function renderCookies() {
@@ -2076,6 +2279,7 @@ async function handleWeChatReady({url, opts}) {
 
 if (!DIALOG && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("cloud-refresh-status",({payload})=>toast(payload.message));
+  window.__TAURI__.event.listen("cloud-resume-started", () => { toast("已收到百度网盘地址，正在核对原文件"); refreshTasks(); });
   window.__TAURI__.event.listen("cloud-refreshed",({payload})=>{if(cloudRefresh?.id===payload.id)cloudRefresh=null;toast("新地址已自动更新到原任务，继续下载");refreshTasks();});
   window.__TAURI__.event.listen("wechat-ready", ({payload}) => handleWeChatReady(payload));
   window.__TAURI__.event.listen("reveal-history",({payload})=>revealHistoryRecord(payload.id));
@@ -2496,17 +2700,24 @@ let pendingLinks = [];
 
 /// 开着的独立窗口：label → 类型。还在这里就关了的，算用户取消
 const openDialogs = new Map();
+const browserHandoffDialogs = new Map();
+
+function cancelBrowserHandoff(id) {
+  if (id) invoke?.("cancel_browser_handoff", { id }).catch(() => {});
+}
 
 async function openDialog(kind, payload) {
   try {
     const label = await invoke("open_dialog", { kind, payload });
     openDialogs.set(label, kind);
-    if (pushOpening && kind === "confirm" && !payload.opts?.collection) {
+    if (payload.opts?.browserHandoffId) browserHandoffDialogs.set(label, payload.opts.browserHandoffId);
+    if (pushOpening && kind === "confirm" && !payload.opts?.collection && !payload.opts?.browserHandoffId) {
       pushDialog = label;
       pushOpening = false;
     }
     return label;
   } catch (e) {
+    cancelBrowserHandoff(payload.opts?.browserHandoffId);
     toast(String(e));
     if (kind === "new") pendingLinks = [];
     else nextPending();
@@ -2619,6 +2830,7 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen("reveal-task",({payload})=>{refreshTasks().then(()=>revealTask(payload.id));});
   window.__TAURI__.event.listen("dialog-submit", ({ payload: { label, result } }) => {
     openDialogs.delete(label);
+    browserHandoffDialogs.delete(label);
     if ("feishuId" in result) {
       switchView("all");
       refreshTasks().then(() => { if (result.feishuId) revealTask(result.feishuId); });
@@ -2656,6 +2868,8 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
     }
   });
   window.__TAURI__.event.listen("dialog-closed", ({ payload: label }) => {
+    cancelBrowserHandoff(browserHandoffDialogs.get(label));
+    browserHandoffDialogs.delete(label);
     const kind = openDialogs.get(label);
     if (!openDialogs.delete(label)) return;
     if (kind === "substyle") return;
@@ -2677,22 +2891,55 @@ let pushOpening = false;
 let cloudRefresh = null;
 const cloudHomes = {"阿里云盘":"https://www.alipan.com/drive/file/all","夸克网盘":"https://pan.quark.cn/list","UC 网盘":"https://drive.uc.cn/","百度网盘":"https://pan.baidu.com/disk/main","123 云盘":"https://yun.123pan.cn/","天翼云盘":"https://cloud.189.cn/web/main/","移动云盘":"https://yun.139.com/w/","迅雷云盘":"https://pan.xunlei.com/","光鸭云盘":"https://www.guangyapan.com/"};
 const cloudKind = t => String(t.kind || "").replace(/^NAS · /, "");
-const canCloudRefresh = t => !String(t.id).startsWith("bd:") && !/^(?:nas:)?cloud:/.test(String(t.id)) && !String(t.id).startsWith("nas:") && (/^(https?:|shandian-multi:)/.test(String(t.meta?.req?.url || ""))) && !!cloudHomes[cloudKind(t)];
-const needsCloudRefresh = t => t.status === "error" && canCloudRefresh(t)
-  && /(?:\b(?:http(?:\s+status)?(?:\s+code)?|status|code)[=: ]+)(?:401|403|410)\b|(?:链接|下载地址|签名)(?:已)?(?:过期|失效)/i.test(t.shandianError || "");
+const canBaiduWebResume = t => String(t.id).startsWith("bd:") && t.meta?.req?.labels?.baiduWebResume === "true";
+const canCloudRefresh = t => canBaiduWebResume(t) || !String(t.id).startsWith("bd:") && !/^(?:nas:)?cloud:/.test(String(t.id)) && !String(t.id).startsWith("nas:") && (/^(https?:|shandian-multi:)/.test(String(t.meta?.req?.url || ""))) && !!cloudHomes[cloudKind(t)];
+const isLocalBaiduHttp = t => !String(t.id).includes(":") && cloudKind(t) === "百度网盘" && /^https?:/.test(t.meta?.req?.url || "");
+const pendingBaiduRenewals = new Set();
+const needsCloudRefresh = t => (t.status === "pause" && isLocalBaiduHttp(t)) || t.status === "error" && canCloudRefresh(t)
+  && /(?:\b(?:http(?:\s+status)?(?:\s+code)?|status|code)[=: ]+)(?:401|403|404|410)\b|(?:链接|下载地址|签名)(?:已)?(?:过期|失效)/i.test(t.shandianError || "");
 const cloudResumeLinkProviders = new Set(["夸克网盘","UC 网盘","移动云盘","123 云盘"]);
 const refreshName = name => String(name || "").replace(/\\/g,"/");
 async function beginCloudRefresh(t, fromContinue = false) {
   const home = cloudHomes[String(t.kind || "").replace(/^NAS · /,"")];
   if (!home || String(t.id).startsWith("nas:")) return toast("此来源暂不支持换链续传");
-  const contextual=fromContinue && needsCloudRefresh(t);
-  if(!contextual){
-    const v=await askChoice({title:"继续原下载",desc:"打开网盘后，闪电会尝试接着原进度下载。需要时请在网页登录。",buttons:[{label:"取消",value:false},{label:"打开网盘",value:true,primary:true}]});
+  const baiduResume = canBaiduWebResume(t);
+  if (baiduResume && fromContinue && t.meta?.req?.labels?.baiduCachedResume === "true") {
+    toast("正在从原进度继续下载…");
+    try { await invoke("resume_task", {id:t.id}); return; }
+    catch (error) { if (!String(error).includes("打开百度网盘续传")) throw error; }
+  }
+  const contextual=fromContinue && (baiduResume || needsCloudRefresh(t));
+  const backgroundBaidu = isLocalBaiduHttp(t);
+  const noRecordedProgress = !baiduResume && t.status === "error" && Number(t.progress?.downloaded) === 0;
+  if (!contextual || noRecordedProgress) {
+    const desc = noRecordedProgress ? "内核记录的已下载字节为 0。获取新地址后可能从头下载。" : "打开网盘后，闪电会尝试接着原进度下载。需要时请在网页登录。";
+    const v=await askChoice({title:"继续原下载",desc:backgroundBaidu && !noRecordedProgress ? "将从百度网盘获取新地址并继续原任务。" : desc,buttons:[{label:"取消",value:false},{label:backgroundBaidu?"获取新地址":"打开网盘",value:true,primary:true}]});
     if(!v)return;
   }
   toast("正在核对原任务文件与进度…");
   if (ACTIVE.has(t.status)) await invoke("pause_task",{id:t.id});
   const single=!String(t.meta?.req?.url || "").startsWith("shandian-multi:");
+  if (baiduResume) {
+    const token = await invoke("multi_refresh_prepare", {id:t.id});
+    const url = new URL(home);
+    url.searchParams.set("shandian-refresh", token);
+    await invoke("open_url", {url:url.href});
+    toast("正在获取原文件地址…");
+    return;
+  }
+  if (backgroundBaidu) {
+    if (pendingBaiduRenewals.has(t.id)) return;
+    pendingBaiduRenewals.add(t.id);
+    try {
+      toast("正在后台获取百度网盘下载地址…");
+      const reason = await invoke("baidu_http_renew", {id:t.id});
+      if (!reason) { toast("已更新下载地址，原任务已继续"); await refreshTasks(); return; }
+      const open = await askChoice({title:"需要在百度网盘选取文件",desc:reason,buttons:[
+        {label:"取消",value:false},{label:"打开网盘",value:true,primary:true}
+      ]});
+      if (!open) return;
+    } finally { pendingBaiduRenewals.delete(t.id); }
+  }
   const info=single ? {files:[{name:t.meta?.res?.files?.[0]?.name}]} : await invoke("multi_task_info",{id:t.id});
   const stats=single ? [{index:0,selected:true,status:"error"}] : await invoke("task_file_list",{id:t.id});
   const all=new Set((info.files || []).filter(f=>f.name).map(f=>refreshName(f.name)));
@@ -3886,6 +4133,7 @@ $("files-audio-mode").addEventListener("click", (event) => {
   const menu = ctxEl();
   menu.replaceChildren();
   menu.dataset.owner = "drawer-files";
+  menu.classList.add("audio-mode-menu");
   control.setAttribute("aria-expanded", "true");
   control.setAttribute("aria-controls", menu.id);
   for (const [mode, [label, icon]] of DRAWER_AUDIO_MODES) {
@@ -4080,6 +4328,10 @@ async function panGuide(url) {
 async function submitLink(url, opts = {}) {
   url = String(url || "").trim();
   if (!url || !invoke) return;
+  if (/^https?:\/\/(?:www\.)?github\.com\/(?:settings\/|two-factor\/)(?:[^/?#]+\/)*recovery[_-]download\/?(?:[?#]|$)/i.test(url)) {
+    toast("请在 GitHub 的恢复码页面点击 Download，让浏览器保存恢复码。");
+    return nextPending();
+  }
   if (WECHAT_SHARE.test(url)) return wechatGuide(url);
   if (isFeishuDocument(url)) return askConfirm(url, opts);
   if (BAIDU_SHARE.test(url) || /baidu\.com\//i.test(url)) {
@@ -4154,7 +4406,10 @@ async function doAdd(url, name, dir, video, headers, extra = {}) {
   // 贴链接时查过一次了；确认框里可能换了保存目录，那个目录里也可能已有这个文件
   if (!force && !(extra.duplicateChecked && extra.duplicateUrl === url && extra.duplicateDir === dir)) {
     const answer = await askDuplicate(url, dir);
-    if (!answer) return;
+    if (!answer) {
+      cancelBrowserHandoff(extra.browserHandoffId);
+      return;
+    }
     force = !!answer.force;
   }
   if (extra.nasRedownload && extra.originDir && extra.originId) {
@@ -4182,7 +4437,7 @@ async function doAdd(url, name, dir, video, headers, extra = {}) {
     } else {
       if (extra.btName) await invoke("name_hint", { url, name: extra.btName }).catch(() => {});
       const options = video && extra.nasRedownload ? { ...video, confirmCollision: !extra.allowRenaming } : video;
-      newId = await invoke("add_task", { url, name: name || null, dir: dir || null, video: options || null, headers: headers || null, forceNew: force, selectFiles: extra.select || null });
+      newId = await invoke("add_task", { url, name: name || null, dir: dir || null, video: options || null, headers: headers || null, forceNew: force, selectFiles: extra.select || null, browserHandoffId: extra.browserHandoffId || null });
     }
     // 空 id：保存目录里有同名，后端没建任务，正在问用户
     if (!newId) {
@@ -4455,6 +4710,7 @@ function renderCfVideo() {
   const row = $("cf-video-row");
   if (!row) return;
   const v = cf.video;
+  renderCfSubtitleLanguageNote(cf);
   renderCfSize(cf);
   renderCfNameState();
   const collection = !!cf.extra?.collection;
@@ -4537,8 +4793,11 @@ function renderCfVideo() {
     syncSubMode(!subRow.hidden && fmt === "ass");
   }
   $("cf-audio").checked = !!v.audioOnly;
-  $("cf-polish-wrap").hidden = !cf.hasOllama || noSubs || !v.subtitles || !!v.audioOnly;
+  $("cf-polish-wrap").hidden = !cf.hasSubtitleAi || noSubs || !v.subtitles || !!v.audioOnly;
   $("cf-polish").checked = !!cf.polish;
+  const wantsChinese = ["zh", "zh+en"].includes(normSubLangs(v.subLangs));
+  const needsTranslation = wantsChinese && cf.subtitleLanguages?.zh === false && cf.subtitleLanguages?.en === true;
+  $("cf-polish-label").textContent = needsTranslation ? "AI 翻译" : "润色字幕";
   syncCfSubtitleDisclosures();
   fitConfirmDialog();
 }
@@ -4563,6 +4822,7 @@ async function askConfirm(url, opts = {}, info) {
     ? `新建下载（${batch.length} 个）`
     : opts.baiduRetryId ? (opts.baiduCodeRequired ? "填写提取码" : "继续下载")
     : opts.recycleId || opts.trashHere ? "重新下载（旧文件会移到回收站）" : "新建下载";
+  $("cf-cancel").textContent = opts.browserHandoffId ? "用浏览器下载" : "取消";
   // 一个名字没法给多条用
   $("cf-name").closest(".set-row").hidden = !!batch || collection;
   $("cf-files").hidden = true;
@@ -4571,7 +4831,9 @@ async function askConfirm(url, opts = {}, info) {
     supportsSubs: !!info.supportsSubs,
     subtitleAvailability: info.supportsSubs ? "checking" : "unsupported",
     nameLoading: !collection && !opts.wechatTicket && !!info.videoOptions && !batch,
-    hasOllama: false,
+    hasSubtitleAi: false,
+    subtitleAiStatus: "pending",
+    subtitleLanguages: null,
     polish: !!state.settings?.settings.subtitlePolish,
     // 重新下载已经知道该放哪，就别让后端再按类型算一遍
     dir: opts.dir || info.dir,
@@ -5109,19 +5371,62 @@ function renderCfNameState() {
   loading.hidden=!busy;
   name.setAttribute("aria-busy",String(busy));
 }
-function checkCfPolish(cur) {
-  if (!cur.video) return;
-  invoke("ollama_models").then(models => {
-    if (cf === cur && !$("confirm").hidden) {
-      cur.hasOllama = !!models.length;
-      renderCfVideo();
+function renderCfSubtitleLanguageNote(draft) {
+  const note = $("cf-sub-language-note");
+  const retry = $("cf-sub-model-retry");
+  const { video, subtitleLanguages, subtitleAvailability, subtitleAiStatus, subtitleAi } = draft;
+  let message = "";
+  let canRetry = false;
+  if (subtitleLanguages && subtitleAvailability === "available" && video?.subtitles && !video.audioOnly) {
+    const selected = normSubLangs(video.subLangs);
+    const { zh, en } = subtitleLanguages;
+    if ((selected === "zh" || selected === "zh+en") && !zh) {
+      if (!en) {
+        message = "没有中文字幕。可选「全部」保存已有原字幕，中文需另行翻译。";
+      } else if (subtitleAiStatus === "available") {
+        message = subtitleAi?.local === false
+          ? draft.polish
+            ? "缺少中文字幕，会将字幕文字发给所选服务翻译，可能按用量计费。"
+            : "中文需要 AI 翻译。勾选「AI 翻译」后使用已配置的 API，可能按用量计费。"
+          : "有英文字幕，缺少中文。下载后会尝试用本机 Ollama 翻译。";
+      } else if (subtitleAiStatus === "checking" || subtitleAiStatus === "pending") {
+        message = "有英文字幕，中文需 AI 翻译，正在检测字幕服务…";
+      } else {
+        message = subtitleAiStatus === "failed"
+          ? "中文需要 AI 翻译。暂时无法检测字幕服务，当前会保留英文。"
+          : "中文需要 AI 翻译。没有可用的字幕服务，当前会保留英文。";
+        message += subtitleAi?.local === false
+          ? "请在「设置 → 视频网站工具」完成 API 配置，再重新检测。"
+          : "可启动 Ollama 并安装模型，或到「设置 → 视频网站工具」配置第三方 API。";
+        canRetry = true;
+      }
+    } else if ((selected === "en" || selected === "zh+en") && !en) {
+      message = selected === "zh+en" && zh
+        ? "有中文字幕，缺少英文。继续会下载已有的中文字幕。"
+        : "没有英文字幕。可选「全部」下载已有字幕。";
     }
-  }).catch(() => {});
+  }
+  $("cf-sub-language-text").textContent = message;
+  retry.hidden = !canRetry;
+  note.hidden = !message;
+}
+
+async function checkCfPolish(cur) {
+  if (!cur.video || cur.subtitleAiStatus === "checking") return;
+  cur.subtitleAiStatus = "checking";
+  renderCfVideo();
+  const status = await invoke("subtitle_ai_status").catch(() => null);
+  if (cf !== cur || $("confirm").hidden) return;
+  cur.subtitleAi = status;
+  cur.hasSubtitleAi = status?.available === true;
+  cur.subtitleAiStatus = cur.hasSubtitleAi ? "available" : status ? "unavailable" : "failed";
+  renderCfVideo();
 }
 
 async function probeCfSubs() {
   const cur=cf, note=$("cf-subs-state"), quality=$("cf-quality-state");
   cur.subtitleAvailability=cur.supportsSubs ? "checking" : "unsupported";
+  cur.subtitleLanguages = null;
   note.hidden=true;quality.hidden=true;$("cf-quality").setAttribute("aria-busy","false");
   setQualityButtons([1080,720]);renderCfVideo();
   checkCfPolish(cur);
@@ -5139,15 +5444,21 @@ async function probeCfSubs() {
   if(r.heights?.length)setQualityButtons(r.heights);
   if(cur.supportsSubs){
     cur.subtitleAvailability=r.subs===true ? "available" : r.subs===false ? "none" : "failed";
+    if (r.subs === true && typeof r.sub_zh === "boolean" && typeof r.sub_en === "boolean") {
+      cur.subtitleLanguages = { zh: r.sub_zh, en: r.sub_en };
+    }
     if(cur.subtitleAvailability==="none")setProbeState(note,"这个视频没有字幕",false);
     if(cur.subtitleAvailability==="failed")setProbeState(note,"字幕查询失败，暂不提供字幕选项",false);
   }
   renderCfVideo();
 }
 
+$("cf-sub-model-retry").addEventListener("click", () => checkCfPolish(cf));
+
 /// 关掉确认框。drain=false 用在 #cf-ok：确认那条路要等 doAdd 做完再接排队的下一条，
 /// 在这儿接会抢跑；取消（按钮/遮罩/Esc）才顺手在这儿接
 function closeConfirm(drain = true) {
+  if (drain) cancelBrowserHandoff(cf?.extra?.browserHandoffId);
   $("cf-dir-menu").hidden = true;
   if (cf?.extra?.baiduShare) {
     cf.baiduCancelled = true;
@@ -5284,6 +5595,7 @@ $("cf-quality").addEventListener("click", (e) => {
 });
 $("cf-polish").addEventListener("change", () => {
   cf.polish = $("cf-polish").checked;
+  renderCfVideo();
 });
 $("cf-subs").addEventListener("change", () => {
   if (cf.video) cf.video.subtitles = $("cf-subs").checked;
@@ -5403,7 +5715,7 @@ function renderSubtitleControls(task) {
       if (members.some(candidate => candidate.subs === "英文字幕" && !isPolishing(candidate))) {
         action += button("翻译", "translate", "用本机 Ollama 翻译合集内只有英文字幕的项目");
       }
-    } else if (english) action = button("翻译", "translate", "用本机 Ollama 将英文字幕翻译成中文");
+    } else if (english) action = button("翻译", "translate", "用配置的 AI 字幕服务将英文翻译成中文");
     else if (canFetchTaskSubtitles(task) && (!task.subs || info.label === "字幕未完整")) {
       action = button(task.subs ? "补字幕" : info.checked ? "重查" : "获取", "fetch", "从网站获取字幕");
     }
@@ -6361,7 +6673,10 @@ $("cf-ok").addEventListener("click", async () => {
   const known = cfFiles.find((g) => g.url === url && g.state === "ok" && btLink(g.url))?.name;
   const extra = known ? { ...cf.extra, btName: known } : cf.extra;
   // 框里看得到才算用户选过；看不到（没字幕、没 Ollama）就跟设置走
-  if (video) video.polish = $("cf-polish-wrap").hidden ? null : cf.polish;
+  if (video) {
+    video.polish = $("cf-polish-wrap").hidden ? null : cf.polish;
+    video.subtitleAiProvider = video.polish && cf.subtitleAi?.local === false ? cf.subtitleAi.id : null;
+  }
   // 以输入框里最后的值为准（用户可能手改过）
   const dir = ($("cf-dir").value || "").trim();
   const name = $("cf-name").value.trim();
@@ -6969,7 +7284,7 @@ async function bulkAction(act, targets) {
       }
       else if (act === "pause") await invoke("pause_task", { id: t.id });
       else if (act === "resume") {
-        if (needsCloudRefresh(t)) { await beginCloudRefresh(t,true); continue; }
+        if (canBaiduWebResume(t) || needsCloudRefresh(t)) { await beginCloudRefresh(t,true); continue; }
         await invoke("resume_task", { id: t.id });
       }
       else {
@@ -7066,7 +7381,9 @@ async function copyTaskPath(task) {
   const members = groupMembers(group.id);
   const member = members.find(item => item.status === "done" && !item.missing) || members[0];
   if (!member) return group.dir || "";
-  return invoke("task_folder_path", { id: member.id }).catch(() => group.dir || "");
+  return (member.id.startsWith("nas:")
+    ? nativeInvoke("nas_item_path", { id: member.id, folder: true })
+    : invoke("task_folder_path", { id: member.id })).catch(() => group.dir || "");
 }
 
 async function taskAction(id, act) {
@@ -7188,7 +7505,7 @@ async function taskAction(id, act) {
     if (act === "pikpak") return await openCloudChooser(t);
     if (act === "refreshLinks") return await beginCloudRefresh(t);
     // 已失败的网盘任务直接更新链接，不再先重试旧地址。
-    if (act === "resume" && needsCloudRefresh(t)) return await beginCloudRefresh(t,true);
+    if (act === "resume" && (canBaiduWebResume(t) || needsCloudRefresh(t))) return await beginCloudRefresh(t,true);
     if (act === "open") await invoke("item_open", { id });
     else if (act === "openLink") {
       const url = taskSourceLink(t);
@@ -7236,9 +7553,11 @@ async function taskAction(id, act) {
         desc: full,
         buttons: [
           { label: "复制", value: "copy" },
-          { label: "关闭", value: null, primary: true },
+          { label: "关闭", value: null, primary: !needsCloudRefresh(t) },
+          ...(needsCloudRefresh(t) ? [{ label: "重新获取下载地址", value: "refresh", primary: true }] : []),
         ],
       });
+      if (c === "refresh") return beginCloudRefresh(t, true);
       if (c === "copy") toast((await copyText(full)) ? "已复制" : "复制失败");
       return;
     }
@@ -7774,6 +8093,7 @@ function closeCtx() {
   if (!menu) return;
   if (menu.dataset.owner === "drawer-files") $("files-audio-mode").setAttribute("aria-expanded", "false");
   menu.hidden = true;
+  menu.classList.remove("audio-mode-menu");
   if(cloudContextMenu?.menu===menu)cloudContextMenu=null;
   delete menu.dataset.owner;
 }
@@ -7850,9 +8170,10 @@ function openCtx(x, y, id) {
   const nStopped = picked.filter((x) => x.status === "pause" || x.status === "error").length;
   const nActive = picked.filter((x) => ACTIVE.has(x.status)).length;
   if (nDone) {
-    if (many) item("redl", `重新下载（${nDone} 项）`);
+    if (!many && t.meta?.req?.labels?.baiduHashMismatch === "true") item("redl", "重新下载");
+    else if (many) item("redl", `重新下载（${nDone} 项）`);
     // 关了新建确认就没地方换清晰度、保存位置了，这里给个单次入口
-    if (!many && !t.collectionFiles && !state.settings?.settings.confirmNew) item("redlopt", "重新下载（选择选项）");
+    if (!many && t.meta?.req?.labels?.baiduHashMismatch !== "true" && !t.collectionFiles && !state.settings?.settings.confirmNew) item("redlopt", "重新下载（选择选项）");
   }
   if (many) {
     if (nStopped) item("resume", `继续（${nStopped} 项）`);
@@ -8000,16 +8321,17 @@ $("set-limit").addEventListener("change", (e) => {
 });
 
 // 系统卡片：每点一下立刻存盘，不等用户去点「保存」
-function bindSwitch(id, key) {
+function bindSwitch(id, key, show = on => setSwitch(id, on)) {
   $(id)?.addEventListener("click", () => {
     if (!state.settings) return;
     const on = !state.settings.settings[key];
     state.settings.settings[key] = on;
-    setSwitch(id, on);
+    show(on);
     saveSettings();
   });
 }
 
+bindSwitch("sw-button-hover-hints", "buttonHoverHints", applyButtonHoverHints);
 bindSwitch("sw-notify", "notifyOnFinish");
 bindSwitch("sw-sleep", "preventSleep");
 bindSwitch("sw-clip", "watchClipboard");
@@ -8238,6 +8560,11 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
     // 网盘助手推文件夹是一个文件一次请求：攒一小会儿，合成一个确认框
     const size = Number.isSafeInteger(p.sizeBytes) && p.sizeBytes >= 0 ? p.sizeBytes : undefined;
     const sizeLabel = typeof p.sizeLabel === "string" && /^\d+(?:\.\d+)? [KMGT]?B$/.test(p.sizeLabel) ? p.sizeLabel : "";
+    if (p.browserHandoffId) {
+      pendingLinks.push({ url, opts: { name: p.name || "", headers: p.headers, size, sizeLabel, browserHandoffId: p.browserHandoffId } });
+      if (!openDialogs.size) return nextPending();
+      return;
+    }
     extBuffer.push({ url, name: p.name || "", headers: Array.isArray(p.headers) ? p.headers : null, size, sizeLabel });
     clearTimeout(extTimer);
     if (p.group) extTimer = setTimeout(flushExtBuffer, 1500);
@@ -8245,6 +8572,10 @@ if (!DIALOG && window.__TAURI__?.event?.listen) {
   });
 
   window.__TAURI__.event.listen("ext-grab", ({ payload }) => openGrab(payload?.links || [], payload || {}));
+  window.__TAURI__.event.listen("browser-handoff-retry", ({ payload }) => {
+    toast(payload ? "原下载无法继续，请回网页再点下载，下一次会由浏览器保存。"
+      : "原下载无法继续，请暂时关闭扩展的接管下载，再回网页重新下载。");
+  });
 
   // 更新进度由后端推过来：下载带百分比，安装不带
   window.__TAURI__.event.listen("update-progress", ({ payload }) => {
@@ -8549,6 +8880,11 @@ $("task-list").addEventListener("contextmenu", (e) => {
 
 // 干掉 WebView2 默认右键菜单（共享/打印那些用不上）；输入框里放行，复制粘贴还要用
 document.addEventListener("contextmenu", (e) => {
+  if (e.target.closest("#accent-row, #acc-pop")) {
+    e.preventDefault();
+    closeCtx();
+    return;
+  }
   const tag = e.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
   // 设置页只给「复制」这一项：WebView2 原生菜单里的剪切、粘贴、全选在这儿都用不上，
@@ -8733,9 +9069,8 @@ winCur?.onResized?.(() => refreshMaxIcon());
 const ACCENT_KEY = "sd.accent";
 
 /// #rrggbb → 色相/饱和度（亮度由主题决定，不用存）
-/// 深色主题里强调色固定 52% 亮度，靠这判断该配白字还是近黑字
-function needsDarkText(h, s) {
-  const l = 0.52;
+/// 根据强调色亮度决定使用白字还是近黑字。
+function needsDarkText(h, s, l) {
   const c = (1 - Math.abs(2 * l - 1)) * (s / 100);
   const hp = h / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
@@ -8752,27 +9087,37 @@ function needsDarkText(h, s) {
 }
 
 /// 换色：预设只改 html 上的 data-accent；自定义则把 h/s 写成内联变量
-function applyAccent(name, hs) {
+function applyAccent(name, hex) {
   const root = document.documentElement;
   const dot = $("acc-custom-btn");
-  if (name === "custom" && hs) {
-    const { h, s } = hs;
-    const onDark = needsDarkText(h, s) ? "#1a1400" : "#fff";
+  const hsl = name === "custom" && hexToHsl(hex);
+  if (hsl) {
+    const { h, s } = hsl;
+    const onDark = needsDarkText(h, s, hsl.l / 100) ? "#1a1400" : "#fff";
     root.style.setProperty("--accent-h", String(h));
     root.style.setProperty("--accent-s", `${s}%`);
     root.style.setProperty("--on-dark", onDark);
     root.dataset.accent = "custom";
-    if (dot) dot.style.background = `hsl(${h} ${s}% 55%)`;
+    root.style.setProperty("--accent-color", hex);
+    if (dot) {
+      dot.style.background = hex;
+      dot.classList.add("has-color");
+    }
     try {
+      localStorage.setItem("sd.accentVars", JSON.stringify({ h: String(h), s: `${s}%`, onDark, hex }));
       localStorage.setItem(ACCENT_KEY, "custom");
-      localStorage.setItem("sd.accentVars", JSON.stringify({ h: String(h), s: `${s}%`, onDark }));
     } catch (e) {}
   } else {
     root.style.removeProperty("--accent-h");
     root.style.removeProperty("--accent-s");
     root.style.removeProperty("--on-dark");
-    root.dataset.accent = name || "amber";
-    if (dot) dot.style.removeProperty("background");
+    name = name && name !== "custom" ? name : "amber";
+    root.dataset.accent = name;
+    root.style.removeProperty("--accent-color");
+    if (dot) {
+      dot.style.removeProperty("background");
+      dot.classList.remove("has-color");
+    }
     try {
       localStorage.setItem(ACCENT_KEY, name);
       localStorage.removeItem("sd.accentVars");
@@ -8786,8 +9131,8 @@ function applyAccent(name, hs) {
 
 // ---------- 自定义取色面板（左边 饱和度/亮度 方块，右边 竖直色相条） ----------
 const PRESET_HS = {
-  amber: [37, 82], blue: [212, 92], teal: [178, 62], green: [148, 60],
-  purple: [266, 70], rose: [342, 76], indigo: [232, 62], graphite: [220, 8],
+  amber: [37, 82], blue: [212, 92], cobalt: [229.85, 82.04],
+  indigo: [232, 62], graphite: [220, 8],
 };
 let accH = 37;   // 色相 0-360
 let accS = 82;   // 饱和度 0-100
@@ -8889,14 +9234,8 @@ function hslToHex(h, sat, l) {
   return `#${to(r)}${to(g)}${to(b)}`;
 }
 
-/// 面板当前代表哪个颜色。强调色不接受任意亮度（整套配色是按 52% 亮度调的），
-/// 所以那个场景下显示的是实际生效的颜色，免得给的色值和界面对不上
 function pickerHex() {
-  if (accTarget && accLockHex) return accLockHex;
-  const raw = hsbToHex(accH, accS, accV);
-  if (accTarget) return raw;
-  const hsl = hexToHsl(raw);
-  return hsl ? hslToHex(hsl.h, hsl.s, 52) : raw;
+  return accLockHex || hsbToHex(accH, accS, accV);
 }
 
 /// 圆点、色相条游标、色块、十六进制值都跟着当前 H/S/V 走
@@ -8924,8 +9263,7 @@ function commitPicker() {
     accTarget(hex);
     return;
   }
-  const hsl = hexToHsl(hex);
-  if (hsl) applyAccent("custom", { h: hsl.h, s: hsl.s });
+  applyAccent("custom", hex);
 }
 
 /// 色区里按下/拖动：横轴饱和度、纵轴亮度
@@ -8958,12 +9296,13 @@ function openPicker(anchor, hex, cb) {
   const root = document.documentElement;
   accTarget = cb || null;
   accAnchor = anchor || null;
-  accLockHex = "";
-  const parsed = hex ? hexToHsb(hex) : null;
+  const initial = hex || (!cb && (savedCustomAccent() || getComputedStyle(root).getPropertyValue("--accent-color").trim()));
+  const parsed = hexToHsb(initial);
+  accLockHex = parsed ? initial : "";
   if (parsed) {
     accH = parsed.h;
     accS = parsed.s;
-    accV = Math.max(6, parsed.v);
+    accV = parsed.v;
   } else {
     const cur = root.dataset.accent;
     if (cur === "custom") {
@@ -8991,7 +9330,6 @@ function openPicker(anchor, hex, cb) {
     pop.style.left = `${Math.round(Math.max(8, left))}px`;
     pop.style.top = `${Math.round(top)}px`;
   }
-  if (!cb) commitPicker();
 }
 
 function closePicker() {
@@ -9002,8 +9340,17 @@ function closePicker() {
 
 $("acc-custom-btn")?.addEventListener("click", (e) => {
   e.stopPropagation();
-  if ($("acc-pop").hidden) openPicker($("acc-custom-btn"), null, null);
-  else closePicker();
+  if ($("acc-pop").hidden) {
+    const theme = getComputedStyle(document.documentElement);
+    const exact = theme.getPropertyValue("--accent-color").trim();
+    const hex = hexToHsl(exact) ? exact : hslToHex(
+      Number(theme.getPropertyValue("--accent-h")),
+      parseFloat(theme.getPropertyValue("--accent-s")),
+      52,
+    );
+    applyAccent("custom", hex);
+    openPicker($("acc-custom-btn"), hex, null);
+  } else closePicker();
 });
 
 // 色区和色相条：按下开始拖，抬起结束；拖动全程即时生效
@@ -9037,32 +9384,38 @@ function applyHexInput() {
     box.value = pickerHex().toUpperCase(); // 打错了就退回当前色，不弹窗打断
     return false;
   }
+  if (v === pickerHex().toUpperCase()) return true;
   accH = hsb.h;
   accS = hsb.s;
-  accV = Math.max(0, hsb.v);
-  // 手敲的字幕色原样保留（转 HSB 再转回来会掉一两级）；强调色那边的亮度是固定的，
-  // 显示实际生效的那个颜色，所以只在字幕色这种场景锁值
-  accLockHex = accTarget ? v : "";
-  paintPicker();
-  // 强调色的亮度固定，pickerHex() 给的是实际生效的颜色，写回去免得显示和生效不一致；
-  // 字幕颜色则原样保留用户敲的值
-  box.value = pickerHex().toUpperCase();
-  // 边敲边生效：强调色的圆点、字幕着色的色点都要立刻跟着变，
-  // 不能等回车或失焦（以前这里只画了面板，外面那圈点还是旧颜色）
+  accV = hsb.v;
+  accLockHex = v;
   commitPicker();
   return true;
 }
 
-// 吸管：系统取色，取到的值和手敲的一样原样用
-if (window.EyeDropper && $("acc-drop")) {
-  $("acc-drop").hidden = false;
-  $("acc-drop").addEventListener("click", async (e) => {
+// WebView2 的宿主窗口使用 Windows 屏幕取色，浏览器预览沿用 EyeDropper。
+if ((invoke || window.EyeDropper) && $("acc-drop")) {
+  const drop = $("acc-drop");
+  drop.hidden = false;
+  drop.addEventListener("click", async (e) => {
     e.stopPropagation();
+    if (drop.disabled) return;
+    const anchor = accAnchor;
+    const target = accTarget;
+    drop.disabled = true;
+    let dismissHint;
     try {
-      const { sRGBHex } = await new EyeDropper().open();
-      $("acc-hex").value = sRGBHex.toUpperCase();
+      if (invoke) dismissHint = toast("点击目标颜色取色，按 Esc 取消");
+      const hex = invoke ? await invoke("pick_screen_color") : (await new EyeDropper().open()).sRGBHex;
+      if (!hex || $("acc-pop").hidden || accAnchor !== anchor || accTarget !== target) return;
+      $("acc-hex").value = hex.toUpperCase();
       applyHexInput();
-    } catch {} // 按 Esc 取消
+    } catch (error) {
+      if (error?.name !== "AbortError") toast("取色失败，请重试");
+    } finally {
+      dismissHint?.();
+      drop.disabled = false;
+    }
   });
 }
 
@@ -9097,8 +9450,8 @@ $("acc-hex")?.addEventListener("blur", () => {
 
 // 点面板内部不收起；点外面收起；Esc 也收起
 $("acc-pop")?.addEventListener("pointerdown", (e) => e.stopPropagation());
-document.addEventListener("pointerdown", () => {
-  if ($("acc-pop") && !$("acc-pop").hidden) closePicker();
+document.addEventListener("pointerdown", (e) => {
+  if ($("acc-pop") && !$("acc-pop").hidden && !e.target.closest?.("#acc-custom-btn")) closePicker();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && $("acc-pop") && !$("acc-pop").hidden) {
@@ -9114,22 +9467,27 @@ $("accent-row")?.addEventListener("click", (e) => {
   const b = e.target.closest(".acc");
   if (!b || b.classList.contains("acc-custom")) return;
   const started = performance.now();
+  if (!$("acc-pop").hidden) closePicker();
   applyAccent(b.dataset.accent);
   invoke?.("log_ui_event", { kind: "accent", detail: b.dataset.accent, elapsedMs: performance.now() - started }).catch(() => {});
 });
 
+function savedCustomAccent() {
+  try {
+    const vars = JSON.parse(localStorage.getItem("sd.accentVars"));
+    if (hexToHsl(vars?.hex)) return vars.hex;
+    if (vars && Number.isFinite(Number(vars.h)) && Number.isFinite(parseFloat(vars.s))) {
+      return hslToHex(Number(vars.h), parseFloat(vars.s), 52);
+    }
+  } catch {}
+  return "";
+}
+
 try {
   const saved = localStorage.getItem(ACCENT_KEY) || "amber";
-  const vars = localStorage.getItem("sd.accentVars");
-  if (saved === "custom" && vars) {
-    const v = JSON.parse(vars);
-    accH = Number(v.h) || 36;
-    accS = parseInt(v.s, 10) || 100;
-    applyAccent("custom", { h: accH, s: accS });
-  } else {
-    applyAccent(saved);
-  }
-} catch (e) {}
+  const custom = saved === "custom" ? savedCustomAccent() : "";
+  applyAccent(saved, custom);
+} catch {}
 
 // ---------- 清空下载历史（只在「下载历史」页出现） ----------
 $("clear-trash-btn")?.addEventListener("click", async () => {
@@ -9899,10 +10257,14 @@ $("btn-report-issue")?.addEventListener("click", async () => {
   try {
     const report = await feedbackInfo();
     const issue = new URL(aboutRepositoryUrl + "/issues/new");
-    issue.searchParams.set("template", "windows-bug.yml");
-    const version = $("about-ver").textContent.trim();
-    if (/^v?\d+\.\d+\.\d+$/.test(version)) issue.searchParams.set("version", version.replace(/^v/, ""));
-    issue.searchParams.set("diagnostics", report);
+    if ($("nav-nas")) {
+      issue.searchParams.set("body", `### 问题描述\n\n### 复现步骤\n1. \n\n### 预期与实际结果\n\n### 环境信息\n${report}\n### 日志或截图\n复现后请在「设置 → 关于 → 问题反馈」导出脱敏日志并附上生成的 .txt 文件。\n`);
+    } else {
+      issue.searchParams.set("template", "windows-bug.yml");
+      const version = $("about-ver").textContent.trim();
+      if (/^v?\d+\.\d+\.\d+$/.test(version)) issue.searchParams.set("version", version.replace(/^v/, ""));
+      issue.searchParams.set("diagnostics", report);
+    }
     await invoke("open_url", { url: issue.toString() });
   } catch (e) { toast(String(e)); }
 });
