@@ -3249,3 +3249,184 @@ new file mode 100644
 +		}
 +	}
 +}
+diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
+--- a/internal/protocol/http/fetcher.go
++++ b/internal/protocol/http/fetcher.go
+@@ -711,6 +711,9 @@
+ 
+ 	// Initialize slow start controller
+ 	maxConns := f.meta.Opts.Extra.(*fhttp.OptsExtra).Connections
++	if shandianBaiduFile(f.meta.Req.URL) {
++		maxConns = min(maxConns, shandianBaiduMaxConnections)
++	}
+ 	// shandian: 每段至少 20 MB（同 aria2 的 min-split-size）：小文件只用 1 个连接。
+ 	// 一张几 MB 的图开 8 个连接，限流的服务器（如维基）直接 429，分段也快不了多少
+ 	if size := f.meta.Res.Size; size > 0 {
+@@ -1102,6 +1105,14 @@
+ 	if f.meta.Res.Range {
+ 		httpReq.Header.Set(base.HttpHeaderRange,
+ 			fmt.Sprintf(base.HttpHeaderRangeFormat, rangeStart, rangeEnd))
++	}
++
++	if f.meta.Res.Range && shandianBaiduFile(f.meta.Req.URL) {
++		release, err := shandianBaiduSlot(conn.ctx)
++		if err != nil {
++			return err
++		}
++		defer release()
+ 	}
+ 
+ 	// Record connection start time for adaptive timeout tracking
+diff --git a/internal/protocol/http/shandian_boost.go b/internal/protocol/http/shandian_boost.go
+--- a/internal/protocol/http/shandian_boost.go
++++ b/internal/protocol/http/shandian_boost.go
+@@ -155,6 +155,9 @@
+ 	if !f.meta.Res.Range || f.meta.Res.Size <= 0 || f.slowStart == nil {
+ 		return
+ 	}
++	if f.meta.Req != nil && shandianBaiduFile(f.meta.Req.URL) {
++		return
++	}
+ 	limit := min(f.slowStart.maxConnections*2, shandianBoostMax)
+ 	tick := time.NewTicker(shandianBoostTick)
+ 	defer tick.Stop()
+diff --git a/internal/protocol/http/shandian_baidu.go b/internal/protocol/http/shandian_baidu.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/http/shandian_baidu.go
+@@ -0,0 +1,33 @@
++package http
++
++import (
++	"context"
++	"net/url"
++	"strings"
++)
++
++const shandianBaiduMaxConnections = 8
++
++var shandianBaiduSlots = make(chan struct{}, shandianBaiduMaxConnections)
++
++func shandianBaiduFile(rawURL string) bool {
++	u, err := url.Parse(rawURL)
++	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
++		return false
++	}
++	host := strings.ToLower(u.Hostname())
++	return host == "pan.baidu.com" || host == "yun.baidu.com" ||
++		host == "pcs.baidu.com" || strings.HasSuffix(host, ".pcs.baidu.com") ||
++		host == "baidupcs.com" || strings.HasSuffix(host, ".baidupcs.com")
++}
++
++// Existing tasks can have more stored ranges than the current connection limit.
++// Queue remaining HTTP requests without changing any stored ranges or byte counts.
++func shandianBaiduSlot(ctx context.Context) (func(), error) {
++	select {
++	case shandianBaiduSlots <- struct{}{}:
++		return func() { <-shandianBaiduSlots }, nil
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	}
++}
+diff --git a/internal/protocol/http/shandian_baidu_test.go b/internal/protocol/http/shandian_baidu_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/protocol/http/shandian_baidu_test.go
+@@ -0,0 +1,62 @@
++package http
++
++import (
++	"context"
++	"errors"
++	"testing"
++	"time"
++)
++
++func TestShandian_BaiduFileHost(t *testing.T) {
++	cases := map[string]bool{
++		"https://pan.baidu.com/rest/2.0/pcs/file": true,
++		"https://d.pcs.baidu.com/file":            true,
++		"https://d.baidu.example/file":            false,
++		"https://D.BAIDUPCS.COM/file":             true,
++		"https://baidupcs.com.evil.example/a":     false,
++		"https://other.example/pan.baidu.com":     false,
++	}
++	for rawURL, expected := range cases {
++		if got := shandianBaiduFile(rawURL); got != expected {
++			t.Errorf("shandianBaiduFile(%q) = %t, want %t", rawURL, got, expected)
++		}
++	}
++}
++
++func TestShandian_BaiduQueuesRestoredRanges(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++	defer cancel()
++	slots := make([]func(), 0, shandianBaiduMaxConnections)
++	defer func() {
++		for _, release := range slots {
++			release()
++		}
++	}()
++	for range shandianBaiduMaxConnections {
++		release, err := shandianBaiduSlot(ctx)
++		if err != nil {
++			t.Fatal(err)
++		}
++		slots = append(slots, release)
++	}
++
++	wait, stop := context.WithTimeout(context.Background(), 25*time.Millisecond)
++	defer stop()
++	release, err := shandianBaiduSlot(wait)
++	if err == nil {
++		release()
++		t.Fatal("an extra request ran while all eight slots were occupied")
++	}
++	if !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatal(err)
++	}
++
++	first := slots[0]
++	slots = slots[1:]
++	first()
++	next, err := shandianBaiduSlot(ctx)
++	if err != nil {
++		t.Fatal(err)
++	}
++	next()
++}
+diff --git a/internal/protocol/http/fetcher.go b/internal/protocol/http/fetcher.go
+--- a/internal/protocol/http/fetcher.go
++++ b/internal/protocol/http/fetcher.go
+@@ -959,7 +959,11 @@
+ 
+ 	// Use fast-fail client for quick retry during download phase
+ 	client := f.buildFastFailClient()
+-	buf := make([]byte, 8192)
++	bufferSize := 8192
++	if f.meta.Res.Range && shandianBaiduFile(f.meta.Req.URL) {
++		bufferSize = 256 * 1024
++	}
++	buf := make([]byte, bufferSize)
+ 
+ 	retries := 0
+ 	conn.retryTimes = 0
+@@ -1174,7 +1178,17 @@
+ 			return conn.ctx.Err()
+ 		}
+ 
+-		n, err := reader.Read(buf)
++		var n int
++		var err error
++		if len(buf) == 256*1024 {
++			// Aggregate short network reads before issuing positional writes to SMB.
++			n, err = io.ReadFull(reader, buf)
++			if err == io.ErrUnexpectedEOF {
++				err = io.EOF
++			}
++		} else {
++			n, err = reader.Read(buf)
++		}
+ 		if n > 0 {
+ 			finished := false
+ 			var writeOffset int64

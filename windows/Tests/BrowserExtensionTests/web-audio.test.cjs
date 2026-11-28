@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-const load = (root, name) => fs.readFileSync(root + "/windows/browser-extension/" + name, "utf8").replace(/\r\n/g, "\n");
+const load = (root, name) => fs.readFileSync(root + "/browser-extension/" + name, "utf8").replace(/\r\n/g, "\n");
 const section = (code, start, end) => code.slice(code.indexOf(start), code.indexOf(end, code.indexOf(start)));
 const rect = (width, height) => ({ width, height });
 
@@ -35,7 +35,7 @@ class DomNode {
     const video = node("VIDEO", 480, 288);
     let elements = [native, video];
     const context = vm.createContext({
-      host: null, audioOnly: false, inlineShown: () => false, MIN_W: 200, MIN_H: 120, isX: false, isFeishu: false,
+      host: null, audioOnly: false, inlineShown: () => false, MIN_W: 200, MIN_H: 120, isX: false, isFeishu: false, isPixabay: false, isVjshi: false,
       location: { hostname: "example.test" },
       document: { elementsFromPoint: () => elements, elementFromPoint: () => null },
     });
@@ -103,7 +103,7 @@ class DomNode {
     assert.equal(await downloadAudio(), false, "do not download a detached attachment");
     assert.equal(downloads, 2);
 
-    const position = vm.createContext({ button: { style: {} }, SIZE: 38, GAP: 4, innerWidth: 950, innerHeight: 650 });
+    const position = vm.createContext({ button: { style: {} }, isPixabay: false, isVjshi: false, SIZE: 38, GAP: 4, innerWidth: 950, innerHeight: 650 });
     vm.runInContext(section(hover, "  function place(", "  function hide("), position);
     position.place({ getBoundingClientRect: () => ({ left: 100, top: 100, right: 400, bottom: 156, height: 56 }) }, true);
     assert.equal(position.button.style.left, "404px");

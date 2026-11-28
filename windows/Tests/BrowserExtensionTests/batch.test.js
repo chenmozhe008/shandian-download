@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const code = fs.readFileSync('windows/browser-extension/background.js', 'utf8');
+const code = fs.readFileSync('browser-extension/background.js', 'utf8');
 const fragment = code.slice(code.indexOf('function collectDownloadLinks()'), code.indexOf('async function extensionBatchRequest'));
 const hash = '1234567890123456789012345678901234567890';
 const anchor = (href, title) => ({ href, textContent: title, getAttribute: () => '', hasAttribute:()=>false });

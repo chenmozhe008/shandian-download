@@ -333,7 +333,7 @@ let upgradeMachine = null;
 
 function show(id) {
   for (const p of document.querySelectorAll(".page")) p.hidden = p.id !== id;
-  const center = !initialPagePositioned && id !== "p-check";
+  const center = !initialPagePositioned;
   if (center) initialPagePositioned = true;
   fit(center);
 }
@@ -481,8 +481,10 @@ async function runInstall({ dir, desktop, machine }) {
       extensionChanged: installed.extensionChanged,
       extensionFrom: installed.extensionFrom,
       extensionTo: installed.extensionTo,
-      buttons: [btn("完成", "primary", () => completeInstall(dir, installed, exe))],
+      buttons: [btn("完成", "primary", () => completeInstall(installed, exe, extensionInfo))],
     });
+    // 在完成页后台检查，扩展引导可以一次显示完整内容。
+    const extensionInfo = $("r-ext-row").hidden ? null : readExtInfo(dir);
   } catch (e) {
     result({
       ok: false,
@@ -493,7 +495,11 @@ async function runInstall({ dir, desktop, machine }) {
   }
 }
 
-async function completeInstall(dir, installed, exe) {
+function readExtInfo(dir) {
+  return invoke("ext_info", { dir }).catch(() => null);
+}
+
+async function completeInstall(installed, exe, extensionInfo) {
   if (working || finishing || closing) return;
   let shouldLaunch = $("r-open").checked;
   const finish = async (note, button) => {
@@ -523,45 +529,40 @@ async function completeInstall(dir, installed, exe) {
     }
   };
   if (!$("r-ext-row").hidden && $("r-ext").checked) {
-    await showExtGuide(dir, !!installed.extensionFrom, finish);
+    const button = $("r-foot").lastElementChild;
+    finishing = true;
+    button.disabled = true;
+    button.textContent = "正在准备…";
+    try {
+      const data = await extensionInfo;
+      if (!closing) showExtGuide(!!installed.extensionFrom, finish, data);
+    } finally {
+      finishing = false;
+      button.disabled = false;
+      button.textContent = "完成";
+    }
   } else {
     await finish($("r-text"), $("r-foot").lastElementChild);
   }
 }
 
 // ---------- 浏览器扩展 ----------
-async function showExtGuide(dir, updating, finish, extensionInfo) {
+function showExtGuide(updating, finish, extensionInfo) {
   $("e-title").textContent = updating ? "更新浏览器扩展" : "安装浏览器扩展";
   $("e-sub").textContent = updating ? "已添加的扩展无需删除重装。" : "首次添加扩展时使用下方文件夹。";
   $("e-steps").innerHTML = updating
     ? '<li>打开正在使用的浏览器的扩展管理页</li><li>找到「闪电全能下载」，选择 <b>重新加载</b></li><li><b>刷新已打开的网页</b>，即可使用新版</li>'
     : '<li>打开正在使用的浏览器的扩展管理页</li><li>开启 <b>开发者模式</b></li><li>加载下方文件夹中的本地扩展</li>';
-  $("e-dir").value = "";
-  $("e-reveal").disabled = true;
+  $("e-dir").value = extensionInfo?.dir ?? "";
+  $("e-reveal").disabled = !extensionInfo;
   const foot = $("e-foot");
   foot.innerHTML = "";
   const note = $("e-note");
   note.classList.remove("warn");
-  note.textContent = "正在检查浏览器扩展…";
+  note.textContent = extensionInfo ? "" : "无法读取浏览器扩展信息，可以先点「完成」。";
   const done = btn("完成", "primary", () => finish(note, done));
   foot.appendChild(done);
-  show("p-ext");
-  done.focus();
-  let x;
-  try {
-    x = extensionInfo ?? await invoke("ext_info", { dir });
-  } catch (_) {
-    if (!closing && !finishing) {
-      note.textContent = "无法读取浏览器扩展信息，可以先点「完成」。";
-      fit();
-    }
-    return;
-  }
-  if (closing) return;
-  $("e-dir").value = x.dir;
-  $("e-reveal").disabled = false;
-  if (!finishing) note.textContent = "";
-  const browsers = x.browsers.length ? x.browsers : [["chrome", "Chrome", false], ["edge", "Edge", false]];
+  const browsers = extensionInfo ? (extensionInfo.browsers.length ? extensionInfo.browsers : [["chrome", "Chrome", false], ["edge", "Edge", false]]) : [];
   for (const [key, name, available] of browsers) {
     const label = available ? `打开 ${name} 扩展页` : `复制 ${name} 地址`;
     const button = btn(label, "ghost", async () => {
@@ -585,8 +586,9 @@ async function showExtGuide(dir, updating, finish, extensionInfo) {
     });
     foot.insertBefore(button, done);
   }
-  if (updating) foot.insertBefore(btn("首次添加扩展", "ghost", () => showExtGuide(dir, false, finish, x)), done);
-  fit();
+  if (updating && extensionInfo) foot.insertBefore(btn("首次添加扩展", "ghost", () => showExtGuide(false, finish, extensionInfo)), done);
+  show("p-ext");
+  done.focus();
 }
 $("e-reveal").addEventListener("click", () => invoke("reveal_ext", { dir: $("e-dir").value }));
 
@@ -620,7 +622,6 @@ async function goUninstall() {
 
 // ---------- 启动 ----------
 (async () => {
-  show("p-check");
   info = await invoke("setup_info");
   if (info.mode === "uninstall") {
     $("u-dir").textContent = info.dir;

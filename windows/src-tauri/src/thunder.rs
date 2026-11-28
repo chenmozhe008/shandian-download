@@ -1815,9 +1815,9 @@ mod win {
     fn download_path_requires_the_same_absolute_directory() {
         assert!(same_path(r"Y:\", "y:/"));
         assert!(same_path(r"Y:\电影\", r"y:\电影"));
-        assert!(same_path(r"\\NAS.Example\video\电影", r"\\nas.example\Video\电影\"));
+        assert!(same_path(r"\\Why_NAS\video\电影", r"\\why_nas\Video\电影\"));
         assert!(!same_path(r"Y:\", "Y:"));
-        assert!(!same_path(r"\\nas.example\video", r"\nas.example\video"));
+        assert!(!same_path(r"\\why_nas\video", r"\why_nas\video"));
         assert!(!same_path(r"Y:\电影", r"Y:\下载"));
     }
 

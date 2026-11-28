@@ -26,9 +26,115 @@ const SPEED_SAMPLE: Duration = Duration::from_secs(6);
 const CONCURRENCY_COOLDOWN: Duration = Duration::from_secs(45);
 const MAX_FILE_RETRIES: u8 = 3;
 const FILE_RESULT_UNKNOWN: &str = "百度网盘未返回成功结果，请打开原分享检查文件是否可下载";
+const HASH_WARNING: &str = "校验值不一致，可先打开文件试用";
 const VERIFY_PENDING: &str = "正在校验本地文件…";
 const CLEANUP_UNCONFIRMED: &str = "本地文件已保存，网盘转存未确认清理";
 const COLLISION: &str = "保存位置已有同名文件";
+
+const RANGE_UNAVAILABLE: &str = "新地址无法续传同一资源，已保留本机临时文件";
+const COMPAT_RANGE_BYTES: u64 = 16 * 1024 * 1024;
+const RESUME_FROM_WEB: &str = "已保留本机临时文件，请打开百度网盘续传";
+const RESTART_FROM_WEB: &str = "已保留本机临时文件。当前工具无法续传这份任务，请在网盘页面检查原文件";
+
+struct WebResume {
+    url: Url,
+    digest: String,
+    verified_digest: Option<String>,
+}
+
+struct ResumeFile {
+    relative: PathBuf,
+    destination: PathBuf,
+    size: u64,
+    offset: u64,
+}
+
+fn baidu_download_host(url: &Url) -> bool {
+    url.scheme() == "https" && url.port().is_none() && url.username().is_empty()
+        && url.password().is_none() && url.host_str().is_some_and(|host| {
+            ["baidu.com", "baidupcs.com"].iter().any(|domain| {
+                host == *domain || host.strip_suffix(domain).is_some_and(|prefix| prefix.ends_with('.'))
+            })
+        })
+}
+
+fn open_range(
+    client: &reqwest::blocking::Client, url: &Url, from: u64, to: u64, size: u64,
+) -> Result<reqwest::blocking::Response, String> {
+    let response = client.get(url.clone())
+        .header(reqwest::header::RANGE, format!("bytes={from}-{to}"))
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .send().map_err(|_| "无法连接百度网盘，已保留本机临时文件")?;
+    if matches!(response.status().as_u16(), 401 | 403 | 404 | 410) {
+        return Err("百度网盘地址已失效，请重新获取地址并续传。已保留本机临时文件".into());
+    }
+    let range = format!("bytes {from}-{to}/{size}");
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || response.headers().get(reqwest::header::CONTENT_RANGE).and_then(|value| value.to_str().ok()) != Some(range.as_str())
+    {
+        return Err(RANGE_UNAVAILABLE.into());
+    }
+    Ok(response)
+}
+
+// Each reader owns a disjoint range. Only the caller appends to the partial file.
+fn parallel_web_ranges(
+    client: &reqwest::blocking::Client, url: &Url, start: u64, size: u64,
+    active: &(impl Fn() -> bool + Sync),
+    mut append: impl FnMut(&[u8], u64) -> Result<(), String>,
+) -> Result<(), String> {
+    use std::{collections::VecDeque, io::Read, sync::{atomic::{AtomicBool, AtomicU64, Ordering}, mpsc}};
+    const RANGE: u64 = 16 * 1024 * 1024;
+    const BLOCK: usize = 512 * 1024;
+    let stopping = AtomicBool::new(false);
+    let received = AtomicU64::new(0);
+    std::thread::scope(|scope| {
+        let mut pending = VecDeque::new();
+        let mut next = start;
+        let result = (|| {
+            while next < size || !pending.is_empty() {
+                while next < size && pending.len() < 4 {
+                    if !active() { return Err("下载已停止".into()); }
+                    let begin = next;
+                    let count = RANGE.min(size - begin);
+                    next += count;
+                    let (send, channel) = mpsc::sync_channel((RANGE as usize) / BLOCK);
+                    let stopping = &stopping;
+                    let received = &received;
+                    scope.spawn(move || {
+                        let read = || -> Result<(), String> {
+                            let mut response = open_range(client, url, begin, begin + count - 1, size)?;
+                            let mut remaining = count;
+                            while remaining > 0 && !stopping.load(Ordering::Relaxed) && active() {
+                                let mut chunk = vec![0; remaining.min(BLOCK as u64) as usize];
+                                response.read_exact(&mut chunk).map_err(|_| "百度网盘分段连接中断")?;
+                                remaining -= chunk.len() as u64;
+                                received.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                                if send.send(Ok(chunk)).is_err() { break; }
+                            }
+                            Ok(())
+                        };
+                        if let Err(error) = read() { let _ = send.send(Err(error)); }
+                    });
+                    pending.push_back((channel, count));
+                }
+                let (channel, expected) = pending.pop_front().expect("pending download range");
+                let mut consumed = 0u64;
+                for chunk in channel {
+                    if !active() { return Err("下载已停止".into()); }
+                    let bytes = chunk?;
+                    append(&bytes, received.load(Ordering::Relaxed))?;
+                    consumed += bytes.len() as u64;
+                }
+                if consumed != expected { return Err("百度网盘分段未传完".into()); }
+            }
+            Ok(())
+        })();
+        stopping.store(true, Ordering::Relaxed);
+        drop(pending);
+        result
+    })
+}
 
 fn share_component(value: &str) -> bool {
     !value.is_empty()
@@ -217,6 +323,8 @@ pub struct Job {
     has_code: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     protected_share_code: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    protected_resume_source: Option<Vec<u8>>,
     dir: PathBuf,
     created: u64,
     status: String,
@@ -241,6 +349,8 @@ pub struct Job {
     downloading_from_cloud: bool,
     #[serde(skip)]
     file_wait: Option<FileWait>,
+    #[serde(skip)]
+    verification: Option<(&'static str, u8)>,
     #[serde(default)]
     allow_duplicate: bool,
     #[serde(default)]
@@ -269,6 +379,7 @@ impl Job {
             parallel_files: false,
             has_code: has_share_code(url),
             protected_share_code: None,
+            protected_resume_source: None,
             dir,
             created: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -287,6 +398,7 @@ impl Job {
             transfer_layout: None,
             downloading_from_cloud: false,
             file_wait: None,
+            verification: None,
             allow_duplicate: false,
             cleanup_remote: cleanup,
             cleanup_note: String::new(),
@@ -343,6 +455,27 @@ impl Job {
     pub fn files(&self) -> Vec<PathBuf> {
         let path = self.output.clone().unwrap_or_else(|| self.staging());
         path.exists().then_some(path).into_iter().collect()
+    }
+
+    fn cached_resume(&self) -> Option<WebResume> {
+        let bytes = crate::settings::protect_local_secret(self.protected_resume_source.clone()?, false)?;
+        let (raw, digest): (String, String) = serde_json::from_slice(&bytes).ok()?;
+        let url = Url::parse(&raw).ok().filter(baidu_download_host)?;
+        let digest = baidu_cleanup::content_md5(&digest)?;
+        Some(WebResume { url, verified_digest: Some(digest.clone()), digest })
+    }
+
+    fn resume_file(&self) -> Option<ResumeFile> {
+        if self.ready_to_move || self.output.is_some() { return None; }
+        let layout = self.transfer_layout.as_ref()?;
+        let mut files = layout.iter().filter_map(|(path, size)| size.map(|size| (path, size)));
+        let (relative, size) = files.next()?;
+        if files.next().is_some() || has_partial_path_collision(layout) { return None; }
+        let destination = scoped_file(&self.staging_contents(true), relative, false).ok()?;
+        if destination.exists() { return None; }
+        let offset = downloaded_size(&partial_path(&destination))?;
+        if offset == 0 || offset > size { return None; }
+        Some(ResumeFile { relative: relative.clone(), destination, size, offset })
     }
 
     fn drawer_layout(&self) -> TransferLayout {
@@ -471,7 +604,7 @@ impl Job {
             "protocol": "baidu",
             "status": self.status,
             "progress": { "downloaded": self.bytes, "speed": self.speed },
-            "meta": { "req": { "url": self.url, "labels": { "baiduCleanup": self.cleanup_remote.to_string(), "baiduHasCode": self.has_code.to_string(), "baiduWaitingTransfer": waiting_for_transfer.to_string(), "baiduSelection": selection, "baiduFilesDone": self.files_done.to_string(), "baiduFilesTotal": self.files_total.to_string() } }, "res": { "name": name, "size": if self.status == "done" { self.bytes } else { self.total_bytes } },
+            "meta": { "req": { "url": self.url, "labels": { "baiduCleanup": self.cleanup_remote.to_string(), "baiduHasCode": self.has_code.to_string(), "baiduWaitingTransfer": waiting_for_transfer.to_string(), "baiduSelection": selection, "baiduCheckPercent": self.verification.map(|(_, pct)| pct.to_string()).unwrap_or_default(), "baiduHashMismatch": (self.cleanup_note == HASH_WARNING).to_string(), "baiduFilesDone": self.files_done.to_string(), "baiduCachedResume": self.protected_resume_source.is_some().to_string(), "baiduWebResume": (matches!(self.status.as_str(), "pause" | "error") && self.resume_file().is_some()).to_string(), "baiduFilesTotal": self.files_total.to_string() } }, "res": { "name": name, "size": if self.status == "done" { self.bytes } else { self.total_bytes } },
                 "opts": { "path": self.dir, "name": name } },
             "collided": self.status == "pause" && self.error == COLLISION,
             "shandianError": if self.error == COLLISION {
@@ -487,7 +620,10 @@ impl Job {
         task.created = Some(self.created);
         task.kind = Some("百度网盘".into());
         task.missing = self.output.as_ref().is_some_and(|path| !path.exists());
-        if let Some(wait) = self.file_wait.filter(|_| self.status == "running") {
+        if let Some((stage, _)) = self.verification.filter(|_| self.status == "running") {
+            task.shandian_verification = Some("checking".into());
+            task.stage = Some(stage.into());
+        } else if let Some(wait) = self.file_wait.filter(|_| self.status == "running") {
             task.stage = Some(
                 match wait {
                     FileWait::RateLimited => "网盘限流，稍后自动重试…",
@@ -701,7 +837,7 @@ impl Downloads {
                 })?
                 .clone()
         };
-        let code = String::from_utf8(protect_share_code(protected, false)?).ok()?;
+        let code = String::from_utf8(crate::settings::protect_local_secret(protected, false)?).ok()?;
         (code.len() == 4 && code.bytes().all(|b| b.is_ascii_alphanumeric())).then_some(code)
     }
 
@@ -826,6 +962,202 @@ impl Downloads {
     }
 
     fn resume_with_share(self: &Arc<Self>, id: &str, alternate: Option<Url>) -> Result<(), String> {
+        self.resume_job(id, alternate, None)
+    }
+
+    pub(crate) fn web_resume_file(&self, id: &str) -> Result<serde_json::Value, String> {
+        let job = self.find(id).ok_or("找不到下载任务")?;
+        if !matches!(job.status.as_str(), "pause" | "error") {
+            return Err("请先暂停原下载任务".into());
+        }
+        let file = job.resume_file().ok_or(RESTART_FROM_WEB)?;
+        Ok(json!({"name":file.relative.to_string_lossy().replace('\\', "/"), "size":file.size}))
+    }
+
+    pub(crate) async fn prepare_web_resume(self: &Arc<Self>, id: &str) -> Result<serde_json::Value, String> {
+        let mut request = self.web_resume_file(id)?;
+        let Some(bin) = executable(&self.tool) else { return Ok(request); };
+        let job = self.find(id).ok_or("找不到下载任务")?;
+        let file = job.resume_file().ok_or(RESTART_FROM_WEB)?;
+        let downloads = Arc::clone(self);
+        let identity = tauri::async_runtime::spawn_blocking(move || {
+            baidu_cleanup::transfer_file_identity(&bin, &job.id, &file.relative, file.size, &|| {
+                downloads.find(&job.id).is_some_and(|job| matches!(job.status.as_str(), "pause" | "error"))
+            })
+        }).await.map_err(|_| "无法读取原百度网盘文件")?;
+        if let Some(identity) = identity {
+            request["md5"] = json!(identity.md5);
+            request["fsId"] = json!(identity.fs_id);
+        }
+        Ok(request)
+    }
+
+    pub(crate) fn resume_download_url(
+        self: &Arc<Self>, id: &str, file: &crate::api::MultiFile, md5: Option<&str>, expected_md5: Option<&str>,
+    ) -> Result<(), String> {
+        let expected = self.web_resume_file(id)?;
+        if expected["name"].as_str() != Some(&file.name) {
+            return Err("文件名与原任务不匹配，已保留本机临时文件".into());
+        }
+        let url = Url::parse(&file.url).ok().filter(baidu_download_host)
+            .ok_or("百度网盘没有返回有效的下载地址")?;
+        let digest = md5.and_then(baidu_cleanup::content_md5)
+            .ok_or("百度网盘没有返回文件校验信息，已保留本机临时文件")?;
+        if expected_md5.is_some_and(|expected| expected != digest) {
+            return Err("新地址不是同一资源，已保留本机临时文件".into());
+        }
+        let verified_digest = expected_md5.map(str::to_owned);
+        self.resume_job(id, None, Some(WebResume { url, digest, verified_digest }))
+    }
+
+    fn run_web_resume(&self, job: &Job, bin: &Path, resume: WebResume) -> Result<bool, String> {
+        use io::{Read, Seek, SeekFrom, Write};
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let active = || {
+            let jobs = self.jobs.lock().unwrap();
+            !jobs.stopping && jobs.records.iter().any(|j| j.id == job.id && j.status == "running")
+        };
+        let file = job.resume_file().ok_or(RESTART_FROM_WEB)?;
+        let digest = match resume.verified_digest {
+            Some(digest) => digest,
+            None => baidu_cleanup::transfer_file_identity(bin, &job.id, &file.relative, file.size, &active)
+                .map(|identity| identity.md5)
+                .ok_or("无法核对原文件，请在闪电里确认百度网盘授权。已保留本机临时文件")?,
+        };
+        if digest != resume.digest {
+            return Err("新地址不是同一资源，已保留本机临时文件".into());
+        }
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("pan.baidu.com")
+            .timeout(Duration::from_secs(45))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() < 8 && baidu_download_host(attempt.url()) {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
+            .build().map_err(|_| "无法建立百度网盘连接")?;
+
+        let partial = partial_path(&file.destination);
+        let io_error = |_| "无法读取或保存已有临时文件";
+        // Deny concurrent writers and verify the last bytes of the existing file before appending.
+        let mut out = fs::OpenOptions::new().read(true).write(true)
+            .share_mode(1).open(&partial).map_err(io_error)?;
+        if out.metadata().map_err(io_error)?.len() != file.offset {
+            return Err("已下载进度发生变化，请重新续传".into());
+        }
+        if file.offset < file.size {
+            let overlap = file.offset.min(64 * 1024);
+            let mut local = vec![0; overlap as usize];
+            let mut remote = vec![0; overlap as usize];
+            out.seek(SeekFrom::Start(file.offset - overlap)).map_err(io_error)?;
+            out.read_exact(&mut local).map_err(io_error)?;
+            let mut check = open_range(&client, &resume.url, file.offset - overlap, file.offset - 1, file.size)?;
+            check.read_exact(&mut remote).map_err(|_| "无法核对新地址返回的数据")?;
+            let download_url = check.url().clone();
+            drop(check);
+            if local != remote {
+                return Err("新地址不是同一资源，已保留本机临时文件".into());
+            }
+
+            // Store only the address and identity of this verified file, protected for the Windows user.
+            let encoded = serde_json::to_vec(&(resume.url.as_str(), &digest)).ok()
+                .and_then(|bytes| crate::settings::protect_local_secret(bytes, true));
+            if let Some(encoded) = encoded {
+                let mut jobs = self.jobs.lock().unwrap();
+                if let Some(record) = jobs.records.iter_mut().find(|j| j.id == job.id && j.status == "running") {
+                    record.protected_resume_source = Some(encoded);
+                    self.save(&jobs.records)?;
+                }
+            }
+            let mut written = file.offset;
+
+            let mut sample = (Instant::now(), 0u64);
+            let mut report = |written: u64, received: u64| {
+                if received < sample.1 { sample = (Instant::now(), received); }
+                let elapsed = sample.0.elapsed();
+                if elapsed < Duration::from_secs(1) { return; }
+                if let Some(current) = self.jobs.lock().unwrap().records.iter_mut()
+                    .find(|j| j.id == job.id && j.status == "running")
+                {
+                    current.bytes = written;
+                    current.speed = (received.saturating_sub(sample.1) as f64 / elapsed.as_secs_f64()) as u64;
+                }
+                sample = (Instant::now(), received);
+            };
+            if file.size - written >= 64 * 1024 * 1024 {
+                let mut write_error = None;
+                let parallel = parallel_web_ranges(&client, &download_url, written, file.size, &active, |bytes, received| {
+                    if let Err(error) = out.write_all(bytes) {
+                        write_error = Some(error);
+                        return Err("无法写入临时文件".into());
+                    }
+                    written += bytes.len() as u64;
+                    report(written, received);
+                    Ok(())
+                });
+                if let Some(error) = write_error { return Err(io_error(error).into()); }
+                if parallel.is_err() && !active() { return Err("下载已停止".into()); }
+                // A rejected connection falls back to the original URL at the committed offset.
+            }
+            let mut buffer = vec![0; 256 * 1024];
+            let mut max_range = file.size;
+            while written < file.size {
+                if !active() { return Err("下载已停止".into()); }
+                let mut end = written + max_range.min(file.size - written) - 1;
+                let mut response = match open_range(&client, &resume.url, written, end, file.size) {
+                    Err(error) if error == RANGE_UNAVAILABLE && end - written + 1 > COMPAT_RANGE_BYTES => {
+                        // Some servers only accept smaller ranges. Keep that size for this transfer.
+                        max_range = COMPAT_RANGE_BYTES;
+                        end = written + max_range - 1;
+                        open_range(&client, &resume.url, written, end, file.size)?
+                    }
+                    result => result?,
+                };
+                while written <= end {
+                    if !active() { return Err("下载已停止".into()); }
+                    let length = (end + 1 - written).min(buffer.len() as u64) as usize;
+                    response.read_exact(&mut buffer[..length])
+                        .map_err(|_| "百度网盘连接中断，已保留本机临时文件")?;
+                    if !active() { return Err("下载已停止".into()); }
+                    out.write_all(&buffer[..length]).map_err(io_error)?;
+                    written += length as u64;
+                    report(written, written - file.offset);
+                }
+            }
+        }
+        let report = |stage: &'static str, bytes: u64| {
+            if let Some(current) = self.jobs.lock().unwrap().records.iter_mut()
+                .find(|j| j.id == job.id && j.status == "running") {
+                current.bytes = file.size;
+                current.speed = 0;
+                current.verification = Some((stage, (bytes.min(file.size) as f64 / file.size as f64 * 100.) as u8));
+            }
+        };
+        report("正在校验本地文件", 0);
+        out.sync_all().map_err(io_error)?;
+        out.seek(SeekFrom::Start(0)).map_err(io_error)?;
+        let fetched = baidu_cleanup::md5_reader(&mut out, &active, |n| report("正在校验本地文件", n))
+            .map_err(|_| "读取文件校验失败，已保留本机临时文件")?;
+        if !active() { return Err("下载已停止".into()); }
+        drop(out);
+        let mut jobs = self.jobs.lock().unwrap();
+        if jobs.stopping { return Err("下载已停止".into()); }
+        let record = jobs.records.iter_mut().find(|j| j.id == job.id && j.status == "running")
+            .ok_or("下载已停止")?;
+        if fetched != digest {
+            record.cleanup_note = HASH_WARNING.into();
+            self.save(&jobs.records)?;
+        } else if record.cleanup_note == HASH_WARNING {
+            record.cleanup_note.clear();
+        }
+        move_file(&partial, &file.destination, 0).map_err(io_error)?;
+        Ok(job.confirmed_transfer || job.browser_saved || job.pending_transfer.is_some())
+    }
+
+    fn resume_job(self: &Arc<Self>, id: &str, alternate: Option<Url>, direct: Option<WebResume>) -> Result<(), String> {
         let bin = executable(&self.tool).ok_or(SETUP)?;
         let mut jobs = self.jobs.lock().unwrap();
         if jobs.stopping {
@@ -874,12 +1206,19 @@ impl Downloads {
         if job.error == COLLISION && !job.allow_duplicate {
             return Err(COLLISION.into());
         }
+        let direct = direct.or_else(|| job.resume_file().and_then(|_| job.cached_resume()));
+        if direct.is_none() && job.resume_file().is_some() {
+            return Err(RESUME_FROM_WEB.into());
+        }
+        if direct.is_some() && job.resume_file().is_none() {
+            return Err(RESTART_FROM_WEB.into());
+        }
         let link = alternate
             .filter(has_share_code)
             .or_else(|| jobs.links.get(id).cloned())
             .or_else(|| {
                 let bytes = job.protected_share_code.clone()?;
-                let code = String::from_utf8(protect_share_code(bytes, false)?).ok()?;
+                let code = String::from_utf8(crate::settings::protect_local_secret(bytes, false)?).ok()?;
                 share_url(&format!(
                     "{}{}pwd={code}",
                     job.url,
@@ -891,15 +1230,17 @@ impl Downloads {
                     .then(|| share_url(&job.url))
                     .flatten()
             })
-            .or_else(|| job.ready_to_move.then(|| share_url(&job.url)).flatten())
+            .or_else(|| (job.ready_to_move || direct.is_some()).then(|| share_url(&job.url)).flatten())
             .ok_or(REENTER)?;
         if !job.ready_to_move && job.pending_transfer.is_none() {
             job.has_code = has_share_code(&link);
         }
         job.status = "running".into();
+        if direct.is_some() { job.downloading_from_cloud = true; }
         job.error.clear();
         job.speed = 0;
         job.file_wait = None;
+        job.verification = None;
         let mut records = jobs.records.clone();
         records[index] = job.clone();
         self.save(&records)?;
@@ -908,7 +1249,8 @@ impl Downloads {
         jobs.workers.insert(id.into(), None);
         drop(jobs);
         let downloads = Arc::clone(self);
-        if job.selection.is_empty()
+        if direct.is_none()
+            && job.selection.is_empty()
             && job.pending_transfer.is_some()
             && !job.ready_to_move
             && (job.transfer_layout.is_none()
@@ -923,7 +1265,7 @@ impl Downloads {
                 let _ = lookup.probe_share(&probe_job, &probe_bin, &probe_link);
             });
         }
-        tauri::async_runtime::spawn_blocking(move || downloads.run(job, bin, link));
+        tauri::async_runtime::spawn_blocking(move || downloads.run(job, bin, link, direct));
         Ok(())
     }
 
@@ -1142,13 +1484,16 @@ impl Downloads {
         }
     }
 
-    fn run(&self, job: Job, bin: PathBuf, link: Url) {
+    fn run(&self, job: Job, bin: PathBuf, link: Url, direct: Option<WebResume>) {
+        let resuming_from_web = direct.is_some();
         let receipt = if job.ready_to_move {
             Ok(job.confirmed_transfer)
+        } else if let Some(direct) = direct {
+            self.run_web_resume(&job, &bin, direct)
         } else {
             self.download_with_transfer(&job, &bin, &link)
         };
-        let from_cloud = job.browser_saved
+        let from_cloud = resuming_from_web || job.browser_saved
             || self
                 .jobs
                 .lock()
@@ -1183,6 +1528,12 @@ impl Downloads {
             return;
         };
         if jobs.records[index].status != "running" || jobs.stopping {
+            if resuming_from_web && jobs.records[index].status == "pause" {
+                if let Some(part) = jobs.records[index].resume_file() {
+                    jobs.records[index].bytes = part.offset;
+                    let _ = self.save(&jobs.records);
+                }
+            }
             return;
         }
         let current = &mut jobs.records[index];
@@ -1198,6 +1549,7 @@ impl Downloads {
                     let _ = fs::remove_dir(job.staging());
                 }
                 current.status = "done".into();
+                current.protected_resume_source = None;
                 current.output = Some(path);
                 current.output_root_name =
                     source_name.map(|root| root.to_string_lossy().into_owned());
@@ -1208,12 +1560,12 @@ impl Downloads {
                 current.transfer_layout = Some(layout);
                 if let Some((_, code)) = link.query_pairs().find(|(name, _)| name == "pwd") {
                     if let Some(protected) =
-                        protect_share_code(code.into_owned().into_bytes(), true)
+                        crate::settings::protect_local_secret(code.into_owned().into_bytes(), true)
                     {
                         current.protected_share_code = Some(protected);
                     }
                 }
-                if current.cleanup_remote {
+                if current.cleanup_remote && current.cleanup_note != HASH_WARNING {
                     current.cleanup_note = if current.confirmed_transfer {
                         VERIFY_PENDING
                     } else {
@@ -1223,6 +1575,9 @@ impl Downloads {
                 }
             }
             Err(error) => {
+                if resuming_from_web && (error.contains("新地址") || error.contains("校验未通过") || error.contains("重新获取")) {
+                    current.protected_resume_source = None;
+                }
                 current.status = if error == COLLISION { "pause" } else { "error" }.into();
                 let staging = job.staging();
                 current.bytes = measure(&staging);
@@ -1365,7 +1720,7 @@ impl Downloads {
                     record.speed = 0;
                     if let Some((_, code)) = link.query_pairs().find(|(name, _)| name == "pwd") {
                         record.protected_share_code =
-                            protect_share_code(code.into_owned().into_bytes(), true);
+                            crate::settings::protect_local_secret(code.into_owned().into_bytes(), true);
                     }
                     self.save(&jobs.records)?;
                     waiting = true;
@@ -1502,6 +1857,10 @@ impl Downloads {
                     };
                     let target = pending.remove(ready).unwrap();
                     if target.retries > 0 && downloaded_size(&target.local) == Some(target.size) {
+                        continue;
+                    }
+                    if downloaded_size(&partial_path(&target.local)).is_some_and(|size| size > 0) {
+                        failure.get_or_insert_with(|| RESTART_FROM_WEB.to_string());
                         continue;
                     }
                     let mut child =
@@ -1673,7 +2032,17 @@ impl Downloads {
         link: &Url,
         from_cloud: bool,
     ) -> Result<DownloadReply, String> {
-        let cmd = download_command(bin, link, &job.staging(), &job.id, from_cloud);
+        let staging = job.staging();
+        if let Some(local) = local_layout(&job.staging_contents(from_cloud)) {
+            let expected = self.find(&job.id).and_then(|current| current.transfer_layout);
+            let has_partial = local.iter().any(|(name, bytes)| {
+                bytes.is_some_and(|size| size > 0)
+                    && name.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("part"))
+                    && !expected.as_ref().is_some_and(|layout| layout.contains_key(name))
+            });
+            if has_partial { return Err(RESTART_FROM_WEB.into()); }
+        }
+        let cmd = download_command(bin, link, &staging, &job.id, from_cloud);
         self.run_bdpan(job, cmd, false, from_cloud)
     }
 
@@ -2196,58 +2565,6 @@ pub(crate) fn read_response(mut reader: impl io::Read) -> Vec<u8> {
     data
 }
 
-// Windows protects the extraction code for the current user. Task URLs stay public.
-fn protect_share_code(mut input: Vec<u8>, encrypt: bool) -> Option<Vec<u8>> {
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::{
-        Foundation::LocalFree,
-        Security::Cryptography::{
-            CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-        },
-    };
-
-    let data = CRYPT_INTEGER_BLOB {
-        cbData: u32::try_from(input.len()).ok()?,
-        pbData: input.as_mut_ptr(),
-    };
-    let mut output = CRYPT_INTEGER_BLOB {
-        cbData: 0,
-        pbData: null_mut(),
-    };
-    let result = unsafe {
-        if encrypt {
-            CryptProtectData(
-                &data,
-                null(),
-                null(),
-                null(),
-                null(),
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        } else {
-            CryptUnprotectData(
-                &data,
-                null_mut(),
-                null(),
-                null(),
-                null(),
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        }
-    };
-    if output.pbData.is_null() {
-        return None;
-    }
-    let value = (result != 0).then(|| unsafe {
-        std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec()
-    });
-    unsafe {
-        LocalFree(output.pbData.cast());
-    }
-    value
-}
 
 pub(crate) fn has_share_code(link: &Url) -> bool {
     link.query_pairs().any(|(key, _)| key == "pwd")
@@ -2889,6 +3206,170 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parallel_resume_commits_only_a_contiguous_prefix() {
+        use std::io::{BufRead, BufReader, Write};
+        for reject_second in [false, true] {
+            let start = 3u64;
+            let range = 16 << 20;
+            let size = start + 3 * range + 7;
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = Url::parse(&format!("http://{}/fixture", listener.local_addr().unwrap())).unwrap();
+            let server = std::thread::spawn(move || {
+                std::thread::scope(|scope| {
+                    // Each connection must be established before any body is delivered.
+                    let clients: Vec<_> = (0..4).map(|_| listener.accept().unwrap().0).collect();
+                    for mut client in clients {
+                        scope.spawn(move || {
+                            let mut first = None;
+                            for header in BufReader::new(&client).lines() {
+                                let header = header.unwrap();
+                                if header.is_empty() { break; }
+                                if let Some(value) = header.to_ascii_lowercase().strip_prefix("range: bytes=") {
+                                    first = value.split_once('-').and_then(|(a, _)| a.parse::<u64>().ok());
+                                }
+                            }
+                            let begin = first.unwrap();
+                            let index = (begin - start) / range;
+                            if reject_second && index == 1 {
+                                let _ = write!(client, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                                return;
+                            }
+                            let end = (begin + range).min(size) - 1;
+                            let length = end + 1 - begin;
+                            let _ = write!(client, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {begin}-{end}/{size}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
+                            let block = vec![index as u8; length as usize];
+                            let _ = client.write_all(&block);
+                        });
+                    }
+                });
+            });
+            let client = reqwest::blocking::Client::builder().no_proxy().timeout(Duration::from_secs(8)).build().unwrap();
+            let mut committed = 0;
+            let result = parallel_web_ranges(&client, &url, start, size, &|| true, |chunk, _| {
+                assert!(chunk.iter().all(|&b| b == (committed / range) as u8));
+                committed += chunk.len() as u64;
+                Ok(())
+            });
+            server.join().unwrap();
+            assert_eq!(result.is_err(), reject_second);
+            assert_eq!(committed, if reject_second { range } else { size-start });
+        }
+    }
+
+    #[test]
+    fn complete_part_with_hash_mismatch_is_saved_without_another_download() {
+        let dir = std::env::temp_dir().join(format!("sd-baidu-reference-{:016x}", rand::random::<u64>()));
+        fs::create_dir(&dir).unwrap();
+        let bin = dir.join("bdpan.cmd");
+        let mut job = Job::pending(&share_url("https://pan.baidu.com/s/check").unwrap(), dir.clone(), true);
+        job.status = "running".into();
+        job.transfer_layout = Some(TransferLayout::from([(PathBuf::from("clip.bin"), Some(3))]));
+        fs::create_dir(job.staging()).unwrap();
+        let partial = job.staging().join("clip.bin.part");
+        job.confirmed_transfer = true;
+        let digest = "a".repeat(32);
+        fs::write(&bin, "@echo off\r\ntype nul >\"%~dp0unexpected-command\"\r\nexit /b 1\r\n").unwrap();
+        let downloads = Downloads { file:dir.join("jobs.json"), tool:bin.clone(),
+            jobs:Mutex::new(Jobs { records:vec![job.clone()], ..Default::default() }) };
+        fs::write(&partial, b"aXc").unwrap();
+        downloads.run(job.clone(), bin, share_url(&job.url).unwrap(), Some(WebResume {
+            url:Url::parse("http://127.0.0.1:1/unused").unwrap(), digest:digest.clone(), verified_digest:Some(digest),
+        }));
+        let saved = downloads.find(&job.id).unwrap();
+        assert_eq!(saved.status, "done");
+        assert_eq!(saved.cleanup_note, HASH_WARNING);
+        assert_eq!(fs::read(saved.output.as_ref().unwrap()).unwrap(), b"aXc");
+        assert_eq!(saved.as_task().unwrap().stage.as_deref(), Some(HASH_WARNING));
+        assert!(!dir.join("unexpected-command").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cached_baidu_source_survives_restart_without_plaintext_credentials() {
+        let mut job = Job::pending(&share_url("https://pan.baidu.com/s/test").unwrap(), PathBuf::new(), false);
+        let url = "https://d.pcs.baidu.com/file?access_token=fixture-only";
+        let digest = "900150983cd24fb0d6963f7d28e17f72";
+        let bytes = serde_json::to_vec(&(url, digest)).unwrap();
+        job.protected_resume_source = crate::settings::protect_local_secret(bytes, true);
+        let saved = serde_json::to_string(&job).unwrap();
+        assert!(!saved.contains("fixture-only"));
+        let restored: Job = serde_json::from_str(&saved).unwrap();
+        let source = restored.cached_resume().unwrap();
+        assert_eq!(source.url.as_str(), url);
+        assert_eq!(source.digest, digest);
+    }
+
+    #[test]
+    fn web_resume_writes_only_the_remaining_bytes() {
+        check_web_resume_ranges(false);
+        check_web_resume_ranges(true);
+    }
+
+    fn check_web_resume_ranges(short_ranges_only: bool) {
+        use std::io::{BufRead, BufReader, Write};
+        let size = COMPAT_RANGE_BYTES + 3;
+        let dir = std::env::temp_dir().join(format!("sd-baidu-resume-{:016x}", rand::random::<u64>()));
+        fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("bdpan.cmd");
+        let link = share_url("https://pan.baidu.com/s/resume").unwrap();
+        let mut job = Job::pending(&link, dir.clone(), false);
+        job.status = "running".to_owned();
+        job.transfer_layout = Some(TransferLayout::from([(PathBuf::from("clip.bin"), Some(size))]));
+        let stage = job.staging();
+        fs::create_dir(&stage).unwrap();
+        let partial = stage.join("clip.bin.part");
+        fs::write(&partial, b"a").unwrap();
+        let digest = "af12ffede1d7e837c655e035aaf9ee09";
+        fs::write(&bin, format!(
+            "@echo off\r\necho [{{\"path\":\"/apps/bdpan/Shandian/{}/clip.bin\",\"isdir\":false,\"size\":{size},\"md5\":\"{digest}\"}}]\r\n",
+            job.id,
+        )).unwrap();
+        let downloads = Downloads {
+            file: dir.join("state.json"), tool: bin.clone(),
+            jobs: Mutex::new(Jobs { records: vec![job.clone()], ..Default::default() }),
+        };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = Url::parse(&format!("http://{}/test", listener.local_addr().unwrap())).unwrap();
+        let unrelated = WebResume { url: url.clone(), digest: "a".repeat(32), verified_digest: None };
+        assert!(downloads.run_web_resume(&job, &bin, unrelated).unwrap_err().contains("不是同一资源"));
+        assert_eq!(fs::read(&partial).unwrap(), b"a");
+        let server = std::thread::spawn(move || {
+            let mut requests = vec![(0, 0), (1, size - 1)];
+            if short_ranges_only {
+                requests.extend([(1, COMPAT_RANGE_BYTES), (COMPAT_RANGE_BYTES + 1, size - 1)]);
+            }
+            for (start, end) in requests {
+                let (mut client, _) = listener.accept().unwrap();
+                let mut range = String::new();
+                for line in BufReader::new(&mut client).lines() {
+                    let line = line.unwrap();
+                    if line.is_empty() { break; }
+                    if let Some((header, value)) = line.split_once(':') {
+                        if header.eq_ignore_ascii_case("range") { range = value.trim().to_owned(); }
+                    }
+                }
+                assert_eq!(range, format!("bytes={start}-{end}"));
+                if short_ranges_only && end - start + 1 > COMPAT_RANGE_BYTES {
+                    write!(client, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    continue;
+                }
+                let length = end - start + 1;
+                write!(client, "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{end}/{size}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n").unwrap();
+                if start == 0 {
+                    client.write_all(b"a").unwrap();
+                } else {
+                    client.write_all(&vec![b'x'; length as usize]).unwrap();
+                }
+            }
+        });
+        downloads.run_web_resume(&job, &bin, WebResume { url, digest: digest.to_owned(), verified_digest: None }).unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::metadata(stage.join("clip.bin")).unwrap().len(), size);
+        assert!(!partial.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn drawer_keeps_nested_files_and_allows_opening_a_finished_item() {
         let dir =
             std::env::temp_dir().join(format!("sd-baidu-drawer-{:016x}", rand::random::<u64>()));
@@ -2949,7 +3430,7 @@ mod tests {
     }
 
     #[test]
-    fn schedules_three_files_and_retries_a_rate_limited_file_in_place() {
+    fn schedules_three_files_and_retries_before_any_bytes_are_written() {
         let dir =
             std::env::temp_dir().join(format!("sd-baidu-parallel-{:016x}", rand::random::<u64>()));
         fs::create_dir_all(&dir).unwrap();
@@ -2980,7 +3461,6 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("a.txt"), b"done").unwrap();
         fs::write(root.join("a.txt.part"), b"stale").unwrap();
-        fs::write(root.join("b.txt.part"), b"pre").unwrap();
         let id = job.id.clone();
         let downloads = Arc::new(Downloads {
             file: dir.join("state.json"),
@@ -2997,7 +3477,6 @@ mod tests {
                     PathBuf::from(f),
                     Some(match f {
                         "a.txt" => 4,
-                        "b.txt" => 6,
                         _ => 3,
                     }),
                 )
@@ -3028,7 +3507,7 @@ mod tests {
         assert!(observed);
         assert!(waited);
         assert_eq!(fs::read(root.join("a.txt")).unwrap(), b"done");
-        assert_eq!(fs::read(root.join("b.txt")).unwrap(), b"prex\r\n");
+        assert_eq!(fs::read(root.join("b.txt")).unwrap(), b"x\r\n");
         assert_eq!(
             local_layout(&root).as_ref().map(|files| files.len()),
             Some(4)
@@ -3080,7 +3559,7 @@ mod tests {
             }),
         });
         let worker = Arc::clone(&downloads);
-        let run = std::thread::spawn(move || worker.run(job, bin, link));
+        let run = std::thread::spawn(move || worker.run(job, bin, link, None));
         let mut saw_saved = false;
         for _ in 0..80 {
             let job = downloads.find(&id).unwrap();
@@ -3102,7 +3581,7 @@ mod tests {
     }
 
     #[test]
-    fn small_batch_runs_eight_workers_and_recovers_failed_items() {
+    fn small_batch_runs_eight_workers_and_preserves_failed_parts() {
         let dir =
             std::env::temp_dir().join(format!("sd-baidu-small-{:016x}", rand::random::<u64>()));
         fs::create_dir_all(&dir).unwrap();
@@ -3153,7 +3632,9 @@ mod tests {
                 ..Default::default()
             }),
         });
-        let expected = layout.clone();
+        let mut expected = layout.clone();
+        expected.remove(Path::new("00.txt"));
+        expected.insert(PathBuf::from("00.txt.part"), Some(3));
         let worker = Arc::clone(&downloads);
         let run = std::thread::spawn(move || worker.download_parallel(&job, &bin, &layout));
         let mut eight_running = false;
@@ -3170,9 +3651,9 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        run.join().unwrap().unwrap();
+        assert_eq!(run.join().unwrap().unwrap_err(), RESTART_FROM_WEB);
         assert!(eight_running);
-        assert_eq!(fs::read(root.join("00.txt")).unwrap(), b"x\r\ny\r\n");
+        assert_eq!(fs::read(root.join("00.txt.part")).unwrap(), b"x\r\n");
         assert_eq!(fs::read(root.join("02.txt")).unwrap(), b"z\r\n");
         assert_eq!(local_layout(&root), Some(expected));
         fs::remove_dir_all(dir).unwrap();
@@ -3322,7 +3803,7 @@ mod tests {
     fn completed_share_code_round_trips_without_entering_task_links() {
         let url = share_url("https://pan.baidu.com/s/test?pwd=Ab12").unwrap();
         let mut job = Job::pending(&url, PathBuf::new(), false);
-        let ciphertext = protect_share_code(b"Ab12".to_vec(), true).unwrap();
+        let ciphertext = crate::settings::protect_local_secret(b"Ab12".to_vec(), true).unwrap();
         assert_ne!(ciphertext, b"Ab12");
         job.protected_share_code = Some(ciphertext);
         job.status = "done".into();
@@ -3399,6 +3880,7 @@ mod tests {
             parallel_files: false,
             has_code: true,
             protected_share_code: None,
+            protected_resume_source: None,
             dir: dir.clone(),
             created: 0,
             status: "running".into(),
@@ -3414,6 +3896,7 @@ mod tests {
             transfer_layout: None,
             downloading_from_cloud: false,
             file_wait: None,
+            verification: None,
             allow_duplicate: false,
             cleanup_remote: true,
             cleanup_note: String::new(),

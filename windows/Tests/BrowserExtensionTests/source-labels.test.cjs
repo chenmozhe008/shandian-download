@@ -1,0 +1,16 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const c=vm.createContext({URL});vm.runInContext(fs.readFileSync('browser-extension/source-labels.js','utf8'),c);const {label,task}=c.ShSources;
+assert.equal(label('https://github.com/a/b/releases/download/v/a.zip'),'GitHub');
+assert.equal(label('https://github.com.evil.test/a.zip'),'');
+assert.equal(label('https://gitee.com/mg-chao/snow-apps/releases/download/v1.6.3_snow-shot/snow-shot-1.6.3-windows-x64-offline.exe'),'Gitee');
+assert.equal(label('https://gitee.com.evil.test/a.zip'),'');
+assert.equal(task({meta:{req:{url:'https://cdn.example.test/file',extra:{header:{Referer:'https://gitee.com/example/repository/releases'}}}}}),'Gitee');
+assert.equal(label('https://cdn.example.test/file','https://www.guangyapan.com/'),'光鸭云盘');
+assert.equal(task({meta:{req:{url:'https://cdn.example.test/file',labels:null,extra:{header:{Referer:'https://cloud.189.cn/'}}}}}),'天翼云盘');
+assert.equal(task({meta:{req:{url:'shandian-multi:x',labels:{'shandian.source':'移动云盘'}}}}),'移动云盘');
+assert.equal(task({source:'直链',meta:{req:{url:'https://release-assets.githubusercontent.com/x'}}}),'GitHub');
+assert.equal(task({meta:{req:{url:'https://cdn.pixabay.com/download/audio/a.mp3'}}}),'Pixabay');
+assert.equal(label('https://www.vjshi.com/watch/46062590.html'),'光厂');
+assert.equal(task({source:'直链',meta:{req:{url:'https://mp4.vjshi.com/2026-10-22/clip.mp4'}}}),'光厂');
+assert.equal(label('https://vjshi.com.evil.test/clip.mp4'),'');
+console.log('统一来源标记通过：域名边界、CDN Referer、空 labels 和批量任务');

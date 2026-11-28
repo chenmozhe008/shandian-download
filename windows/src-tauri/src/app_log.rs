@@ -53,7 +53,7 @@ fn export_entry(line: &str, now: u64) -> Option<String> {
         r"^(?:",
         r"\[\+\s*\d{1,9} ms\] (?:main 开始|setup 进入|数据目录就绪|设置读完|窗口建好（WebView2 环境就绪）|页面开始加载|页面加载完成|setup 结束（窗口交给 WebView2）|builder\.build 完成（窗口与 WebView2 已就绪）|浮窗：窗口已创建，等页面加载|浮窗：定位到 \(-?\d{1,6}, -?\d{1,6}\) 尺寸 \d{1,6}x\d{1,6} scale=\d{1,2}(?:\.\d{1,4})? 结果=None)",
         r"|启动：进程→首帧 \d{1,9} ms（前端自报导航起 \d{1,9} ms），窗口 \d{1,9} ms 显示",
-        r"|accent=(?:amber|blue|teal|green|purple|rose|indigo|graphite|custom) elapsed_ms=\d{1,9}(?:\.\d{1,3})?",
+        r"|accent=(?:amber|blue|cobalt|teal|green|purple|rose|indigo|graphite|custom) elapsed_ms=\d{1,9}(?:\.\d{1,3})?",
         r"|script error; see reproduction steps|\[含凭据的日志行已省略\]",
         r"|(?:status|discovery) elapsed_ms=\d{1,9}(?: candidates=\d{1,6})?",
         r"|handoff browser=(?:chrome|edge) cached=(?:true|false) elapsed_ms=\d{1,9} ok=(?:true|false)",
@@ -200,7 +200,7 @@ pub fn drain_output(reader: impl Read + Send + 'static, category: &'static str) 
 
 #[tauri::command]
 pub fn log_ui_event(kind: String, detail: String, elapsed_ms: f64) {
-    if kind == "accent" && ["amber", "blue", "teal", "green", "purple", "rose", "indigo", "graphite", "custom"].contains(&detail.as_str()) {
+    if kind == "accent" && ["amber", "blue", "cobalt", "teal", "green", "purple", "rose", "indigo", "graphite", "custom"].contains(&detail.as_str()) {
         record("ui", &format!("accent={detail} elapsed_ms={elapsed_ms:.2}"));
     } else if kind == "script-error" { record("ui", "script error; see reproduction steps"); }
 }

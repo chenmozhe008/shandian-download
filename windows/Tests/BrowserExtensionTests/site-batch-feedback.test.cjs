@@ -1,5 +1,5 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const script=fs.readFileSync('windows/browser-extension/batch-ui.js','utf8');
+const script=['huggingface.js','batch-ui.js'].map(name=>fs.readFileSync('browser-extension/'+name,'utf8')).join('\n');
 const items=['first','second','third'].map((name,index)=>({url:'https://pixabay.com/music/'+name+'-'+(123+index)+'/',title:name,resolve:true}));
 const keys=items.map(item=>item.url);
 let state=null,permissionRequests=0;

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const code = fs.readFileSync('windows/browser-extension/background.js', 'utf8');
+const code = fs.readFileSync('browser-extension/background.js', 'utf8');
 const fragment = code.slice(code.indexOf('function collectPageMedia()'), code.indexOf('// 刷新标签页并等它加载完'));
 const track = { src: 'https://cdn.example/sub.vtt', label: '中文', srclang: 'zh' };
 const video = { tagName: 'VIDEO', videoWidth: 1280, videoHeight: 720, currentSrc: 'https://cdn.example/video.mp4?sig=1', src: '', querySelectorAll: selector => selector === 'source' ? [{ src: 'https://cdn.example/list.m3u8' }, { src: 'blob:https://example/123' }] : [track] };

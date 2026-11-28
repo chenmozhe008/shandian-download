@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const noteId = "6ad2dd96000000001800407d";
 const cdn = "https://cdn.example/";
 const noteUrl = "https://www.xiaohongshu.com/discovery/item/" + noteId + "?xsec_token=example";
-const source = fs.readFileSync("windows/browser-extension/background.js", "utf8");
+const source = fs.readFileSync("browser-extension/background.js", "utf8");
 const h265 = [
   { height: 1080, masterUrl: cdn + "video.m4s" },
   { height: 1080, masterUrl: cdn + "muted.mp4", audioCodec: "none" },

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const code = fs.readFileSync('windows/browser-extension/background.js', 'utf8');
+const code = fs.readFileSync('browser-extension/background.js', 'utf8');
 const ping = code.slice(code.indexOf('async function ping()'), code.indexOf('chrome.alarms.create("shandian-ping"'));
 let calls = 0, reloads = 0;
 const context = {

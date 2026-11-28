@@ -1,0 +1,30 @@
+/* Shared by the main window and native notification cards. */
+:root {
+  --accent-h: 36;
+  --accent-s: 100%;
+  --on-dark: #201703;
+  --tint: var(--accent-color, hsl(var(--accent-h) var(--accent-s) 52%));
+  --tint-press: hsl(var(--accent-h) var(--accent-s) 46%);
+  --on-tint: #fff;
+}
+:root[data-theme="dark"] {
+  --tint-press: hsl(var(--accent-h) var(--accent-s) 45%);
+  --on-tint: var(--on-dark);
+}
+
+/* ---------- 强调色预设 ---------- */
+/* 默认的琥珀色显示 Logo 本来的橙色，换了强调色才跟着变 */
+:root[data-accent]:not([data-accent="amber"]) {
+  --logo-top: hsl(var(--accent-h) var(--accent-s) 58%);
+  --logo-bottom: hsl(var(--accent-h) var(--accent-s) 42%);
+}
+:root[data-accent="amber"] { --accent-h: 37; --accent-s: 82%; --on-dark: #201703; }
+:root[data-accent="blue"] { --accent-h: 212; --accent-s: 92%; --on-dark: #fff; }
+:root[data-accent="qinglian"] { --accent-h: 266.1972; --accent-s: 29.9578%; --accent-color: #72539A; --on-dark: #fff; }
+:root[data-accent="shilv"] { --accent-h: 137.2881; --accent-s: 27.1889%; --accent-color: #4F8A60; --on-dark: #fff; }
+:root[data-accent="songlv"] { --accent-h: 156.2264; --accent-s: 30.2857%; --accent-color: #3D725D; --on-dark: #fff; }
+:root[data-accent="tongqing"] { --accent-h: 183.0380; --accent-s: 43.1694%; --accent-color: #347F83; --on-dark: #fff; }
+:root[data-accent="baolan"] { --accent-h: 220.3636; --accent-s: 52.3810%; --accent-color: #3256A0; --on-dark: #fff; }
+:root[data-accent="cobalt"] { --accent-h: 229.85; --accent-s: 82.04%; --on-dark: #fff; }
+:root[data-accent="indigo"] { --accent-h: 232; --accent-s: 62%; --on-dark: #fff; }
+:root[data-accent="graphite"] { --accent-h: 220; --accent-s: 8%; --on-dark: #fff; }

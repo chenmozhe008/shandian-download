@@ -1004,7 +1004,7 @@ fn remove_retry(p: &Path) {
 }
 
 /// 卸载项、开机启动、协议关联。开机启动和协议都要指向这个目录才动：
-/// 用户可能还有一份便携版，那份的登记不能被顺手删掉
+/// 用户可能还有一份绿色版，那份的登记不能被顺手删掉
 fn clear_registry(places: &Places, dir: &Path) {
     let _ = places.root().delete_subkey_all(places.uninstall_key());
     clear_launch_registrations(places, dir);
@@ -1142,10 +1142,10 @@ fn portable_cleanup_from_launcher() -> bool {
         return false;
     }
     let Some(dir) = exe.parent().filter(|dir| dir.join(APP_EXE).is_file() && !dir.join(MANIFEST).exists()) else {
-        message("请从完整解压的便携版文件夹运行此工具。");
+        message("请从完整解压的绿色版文件夹运行此工具。");
         return true;
     };
-    let prompt = HSTRING::from("清除当前 Windows 用户的闪电设置、任务记录、账号信息和缓存？\n\n便携版和安装版共用这些数据。清除后不可恢复，已下载的文件和程序文件会保留。\n\n请先从托盘退出闪电。");
+    let prompt = HSTRING::from("清除当前 Windows 用户的闪电设置、任务记录、账号信息和缓存？\n\n绿色版和安装版共用这些数据。清除后不可恢复，已下载的文件和程序文件会保留。\n\n请先从托盘退出闪电。");
     let title = HSTRING::from("清除闪电数据");
     let confirmed = unsafe { MessageBoxW(Some(HWND::default()), &prompt, &title, MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON2) } == IDYES;
     if confirmed {

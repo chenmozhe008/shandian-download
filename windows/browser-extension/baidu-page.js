@@ -69,7 +69,7 @@
           showFailure(r.error, { brief: true, ms: 4500 });
           return;
         }
-        if (r?.ok) text = r.needCode ? "请在闪电填提取码" : r.pending ? "请在闪电确认" : share ? "已交给闪电" : `已交给闪电（${r.sent}）`;
+        if (r?.ok) text = r.resumed ? "已继续原任务" : r.needCode ? "请在闪电填提取码" : r.pending ? "请在闪电确认" : share ? "已交给闪电" : `已交给闪电（${r.sent}）`;
         else if (r?.noKey) {
           text = "需要 AppKey";
           detail = "百度直下需要你自己的 AppKey（免费）。到百度网盘开放平台创建应用后，在扩展设置中填写 AppKey；也可以使用 LinkSwift 的 Aria2 下载助手连接闪电。";
@@ -127,7 +127,11 @@
   try {
     const page=new URL(location.href),token=page.searchParams.get("shandian-refresh");
     if(/^[a-f0-9]{32}$/.test(token || ""))chrome.runtime.sendMessage({type:"cloudRefreshBegin",token}).then(reply=>{
-      if(reply?.ok){page.searchParams.delete("shandian-refresh");history.replaceState(null,"",page.href);}
+      if (!reply?.ok) return;
+      const current = new URL(location.href);
+      if (current.searchParams.get("shandian-refresh") !== token) return;
+      current.searchParams.delete("shandian-refresh");
+      history.replaceState(history.state, "", current.href);
     }).catch(()=>{});
   } catch {}
   chrome.storage.local.get("baiduButton").then(({ baiduButton = true }) => {

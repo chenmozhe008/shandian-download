@@ -271,9 +271,10 @@ pub fn notify_update(app: &tauri::AppHandle, version: &str) {
     let handle = app.clone();
     let version = version.to_owned();
     let _ = app.run_on_main_thread(move || {
+        let edition = if cfg!(feature = "nas") { " NAS 版" } else { "" };
         show_done(
             &handle, format!("{UPDATE_NOTICE_PREFIX}{version}"),
-            format!("闪电全能下载 {version}"), Some("发现新版本".into()),
+            format!("闪电全能下载{edition} {version}"), Some("发现新版本".into()),
         );
     });
 }

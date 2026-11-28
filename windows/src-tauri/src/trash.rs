@@ -482,11 +482,11 @@ mod tests {
 
     #[test]
     fn protected_paths_are_refused() {
-        let home = Path::new(r"C:\Users\exampleuser1");
-        for p in [r"C:\", r"U:\", r"C:\Users", r"C:\Users\exampleuser1", r"C:\Users\ExampleUser1\", r"C:\Users\exampleuser1\Downloads", r"C:\Users\exampleuser1\Desktop", "", "relative\\x"] {
+        let home = Path::new(r"C:\Users\me");
+        for p in [r"C:\", r"U:\", r"C:\Users", r"C:\Users\me", r"C:\Users\ME\", r"C:\Users\me\Downloads", r"C:\Users\me\Desktop", "", "relative\\x"] {
             assert!(is_protected(Path::new(p), Some(home)), "{p} 应该被拒绝");
         }
-        for p in [r"C:\Users\exampleuser1\Downloads\a.mp4", r"C:\Users\exampleuser1\Downloads\电影合集", r"D:\movies\a.mkv"] {
+        for p in [r"C:\Users\me\Downloads\a.mp4", r"C:\Users\me\Downloads\电影合集", r"D:\movies\a.mkv"] {
             assert!(!is_protected(Path::new(p), Some(home)), "{p} 应该放行");
         }
     }

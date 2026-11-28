@@ -2,10 +2,11 @@
 
 本目录包含 Windows 版的主程序、安装器和专用浏览器扩展。Windows 的扩展源码位于 `windows/browser-extension/`，内核补丁位于 `windows/engine/`。更新摘要见 [CHANGELOG](CHANGELOG.md)。
 
-在仓库根目录运行 Windows 回归测试。
+从仓库根目录进入 Windows 源码目录运行回归测试。
 
 ```powershell
-$tests = (Get-ChildItem windows/Tests -Recurse -File | Where-Object { $_.Name -match '\.test\.c?js$' }).FullName
+Set-Location windows
+$tests = (Get-ChildItem Tests -Recurse -File | Where-Object { $_.Name -match '\.test\.c?js$' }).FullName
 node --test @tests
 ```
 
@@ -21,6 +22,14 @@ Windows 客户端已在 Windows 10 和 Windows 11 测试，构建目标为 x64�
 启动闪电后，在「设置 → AI 工具」点「复制 Codex 配置」，粘贴到 Codex 的 `~/.codex/config.toml`。需要 `mcpServers` 配置的客户端可用「复制 JSON 配置」。
 
 支持在本机新建下载、查看进度、暂停和继续。应用要求确认时会打开原有确认窗口。
+
+## AI 字幕服务
+
+在设置中选择本机 Ollama 或第三方 API。云端服务可以直接选模型，也可刷新账号可用的模型列表，或填写兼容服务的模型 ID。
+
+## 百度网盘续传
+
+地址失效时可在原任务中继续或重新获取下载地址。闪电会先校验文件身份、大小和分段能力。文件下载完毕但校验值不一致时，保留本地文件和网盘副本，用户可自行打开检查。
 
 ## 在线更新
 

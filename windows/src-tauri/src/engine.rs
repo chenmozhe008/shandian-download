@@ -1441,14 +1441,14 @@ pub(crate) fn strip_tags(s: &str) -> String {
     for ch in s.chars() {
         match ch {
             '<' => depth_tag += 1,
-            '>' => depth_tag = (depth_tag - 1).max(0),
+            '>' if depth_tag > 0 => depth_tag -= 1,
             '{' => depth_brace += 1,
             '}' => depth_brace = (depth_brace - 1).max(0),
             c if depth_tag == 0 && depth_brace == 0 => out.push(c),
             _ => {}
         }
     }
-    out.replace("&nbsp;", " ").replace("&amp;", "&").trim().to_string()
+    out.replace("&nbsp;", " ").replace("&amp;", "&").replace("&gt;", ">").trim().to_string()
 }
 
 /// "00:01:02,500" / "00:01.500" → 毫秒
@@ -2189,12 +2189,13 @@ pub async fn polish_task(id: String, state: State<'_, AppState>) -> Result<bool,
     if job.file_path.is_empty() || crate::polish::find_sub(Path::new(&job.file_path)).is_none() {
         return Err("这个视频没有中文字幕文件".into());
     }
-    let available = tauri::async_runtime::spawn_blocking(crate::polish::models).await.map_err(|e| e.to_string())?;
-    let want = state.settings.lock().unwrap().polish_model.clone();
-    let model = if available.contains(&want) { Some(want) } else { available.first().cloned() };
+    let local = state.local.clone();
+    let preferred = state.settings.lock().unwrap().polish_model.clone();
+    let model = tauri::async_runtime::spawn_blocking(move || crate::subtitle_ai::model(&local, &preferred))
+        .await.map_err(|_| "AI 字幕检测未完成")?;
     let refined = model.is_some();
     if !refined && crate::videos::subtitle_file_label(Path::new(&job.file_path)) == Some("英文字幕") {
-        return Err("视频已有英文字幕。翻译成中文需要先启动本机 Ollama 并选择模型。".into());
+        return Err("视频已有英文字幕。翻译成中文需要先在「设置 → 视频网站工具」配置可用的 AI 字幕服务。".into());
     }
     state.videos.polish(&vid, model, &state.tools.dir);
     Ok(refined)
@@ -2701,9 +2702,11 @@ pub async fn add_task(
     select_files: Option<Vec<usize>>,
     remember_dir: Option<String>,
     remember_video: Option<bool>,
+    browser_handoff_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    add_link_inner(
+    crate::download_handoff::begin(browser_handoff_id.as_deref(), &url)?;
+    let result = add_link_inner(
         &url,
         &state,
         name.as_deref().unwrap_or(""),
@@ -2715,7 +2718,9 @@ pub async fn add_task(
         remember_dir.as_deref(),
         remember_video.unwrap_or(true),
     )
-    .await
+    .await;
+    crate::download_handoff::finish(browser_handoff_id.as_deref(), &result);
+    result
 }
 
 /// 命令行/深链/剪贴板这些「不是用户点按钮」的入口走这里，
@@ -3891,39 +3896,76 @@ mod font_tests {
 }
 
 #[derive(Clone)]
-struct CloudRefreshIntent { id:String, kind:String, fingerprint:String, files:Vec<serde_json::Value>, api:Api, raw_id:String, at:std::time::Instant }
+struct CloudRefreshIntent { id:String, kind:String, fingerprint:String, files:Vec<serde_json::Value>, target:CloudRefreshTarget, at:std::time::Instant }
+#[derive(Clone)]
+enum CloudRefreshTarget { Engine { api: Api, raw_id: String }, Baidu }
+
 fn refresh_intents()->&'static Mutex<std::collections::HashMap<String,CloudRefreshIntent>> {
  static P:OnceLock<Mutex<std::collections::HashMap<String,CloudRefreshIntent>>>=OnceLock::new();P.get_or_init(Default::default)
 }
 #[tauri::command]
+pub async fn baidu_http_renew(id:String, state:State<'_,AppState>) -> Result<Option<String>,String> {
+    if id.contains(':') { return Err("请选择本机的 HTTP 下载任务".into()); }
+    let (port, token) = endpoint(&state);
+    crate::cloud_resume::refresh_baidu_http(&Api::new(port, token), &id).await
+}
+
+#[tauri::command]
 pub async fn multi_refresh_prepare(id:String,state:State<'_,AppState>)->Result<String,String>{
- let fingerprint=crate::cloud::refresh_target_fingerprint(&state,&id)?;
- let (api,raw_id)=multi_target(&state,&id)?;
- let (kind,files)=crate::cloud_resume::prepare(&api,&raw_id).await?;
+ let (fingerprint, kind, files, target) = if let Some(baidu_id) = id.strip_prefix("bd:") {
+     let file = state.baidu.prepare_web_resume(baidu_id).await?;
+     (String::new(), "百度网盘".to_owned(), vec![file], CloudRefreshTarget::Baidu)
+ } else {
+     let fingerprint = crate::cloud::refresh_target_fingerprint(&state, &id)?;
+     let (api, raw_id) = multi_target(&state, &id)?;
+     let (kind, files) = crate::cloud_resume::prepare(&api, &raw_id).await?;
+     (fingerprint, kind, files, CloudRefreshTarget::Engine { api, raw_id })
+ };
  let token=format!("{:016x}{:016x}",rand::random::<u64>(),rand::random::<u64>());
  let mut p=refresh_intents().lock().map_err(|_|"状态不可用")?;
  p.retain(|_,v|v.at.elapsed().as_secs()<600 && v.id!=id);
- p.insert(token.clone(),CloudRefreshIntent{id,kind,fingerprint,files,api,raw_id,at:std::time::Instant::now()});Ok(token)
+ p.insert(token.clone(),CloudRefreshIntent{id,kind,fingerprint,files,target,at:std::time::Instant::now()});Ok(token)
 }
 
 pub fn cloud_refresh_info(token:&str)->Option<serde_json::Value>{
  let p=refresh_intents().lock().ok()?;let v=p.get(token).filter(|v|v.at.elapsed().as_secs()<600)?;
- Some(serde_json::json!({"kind":v.kind,"files":v.files}))
+ Some(serde_json::json!({"kind":v.kind,"files":v.files,"baiduResume":matches!(v.target,CloudRefreshTarget::Baidu)}))
 }
 pub(crate) fn cloud_refresh_identity(token: &str) -> Option<(String, String, String)> {
     let intents = refresh_intents().lock().ok()?;
     let intent = intents.get(token).filter(|v| v.at.elapsed().as_secs() < 600)?;
     Some((intent.kind.clone(), intent.id.clone(), intent.fingerprint.clone()))
 }
-pub async fn cloud_refresh_apply(token:String,files:Vec<crate::api::MultiFile>,_state:State<'_,AppState>)->Result<(),String>{
+#[derive(serde::Deserialize)]
+pub(crate) struct CloudRefreshFile {
+    #[serde(flatten)]
+    file: crate::api::MultiFile,
+    md5: Option<String>,
+}
+
+pub(crate) async fn cloud_refresh_apply(token:String,files:Vec<CloudRefreshFile>,state:State<'_,AppState>)->Result<(),String>{
  use tauri::Emitter;
  let job=refresh_intents().lock().map_err(|_|"状态不可用")?.get(&token).filter(|v|v.at.elapsed().as_secs()<600).cloned().ok_or("换链请求已过期，请在原任务重新点击继续")?;
- let names:std::collections::HashSet<&str>=files.iter().map(|f|f.name.as_str()).collect();
+ let names:std::collections::HashSet<&str>=files.iter().map(|f|f.file.name.as_str()).collect();
  if names.len()!=job.files.len() || files.len()!=job.files.len() || !job.files.iter().all(|f|f["name"].as_str().is_some_and(|n|names.contains(n))) {return Err("未完整匹配原任务文件，进度未改动".into())}
- let urls:Vec<String>=files.iter().map(|f|f.url.clone()).collect();
- crate::cloud_resume::refresh(&job.api,&job.raw_id,&files).await?;
+ match job.target {
+     CloudRefreshTarget::Engine { api, raw_id } => {
+         let files: Vec<_> = files.iter().map(|f| f.file.clone()).collect();
+         crate::cloud_resume::refresh(&api, &raw_id, &files).await?;
+     }
+     CloudRefreshTarget::Baidu => {
+         let id = job.id.strip_prefix("bd:").ok_or("找不到原百度下载任务")?;
+         state.baidu.resume_download_url(id, &files[0].file, files[0].md5.as_deref(), job.files[0]["md5"].as_str())?;
+         refresh_intents().lock().map_err(|_|"状态不可用")?.remove(&token);
+         if let Some(app) = APP.get() {
+             let _ = app.emit("cloud-resume-started", serde_json::json!({"id": job.id}));
+         }
+         return Ok(());
+     }
+ }
+
  let page=match job.kind.as_str(){"阿里云盘"=>"https://www.alipan.com/drive/file/all","夸克网盘"=>"https://pan.quark.cn/list","UC 网盘"=>"https://drive.uc.cn/","123 云盘"=>"https://yun.123pan.cn/","天翼云盘"=>"https://cloud.189.cn/web/main/","移动云盘"=>"https://yun.139.com/w/","迅雷云盘"=>"https://pan.xunlei.com/","光鸭云盘"=>"https://www.guangyapan.com/",_=>"https://pan.baidu.com/disk/main"};
- for url in urls {crate::sources::remember(&url,page);}
+ for file in files {crate::sources::remember(&file.file.url,page);}
  refresh_intents().lock().map_err(|_|"状态不可用")?.remove(&token);
  if let Some(app)=APP.get(){let _=app.emit("cloud-refreshed",serde_json::json!({"id":job.id}));}
  Ok(())

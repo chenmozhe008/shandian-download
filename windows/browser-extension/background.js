@@ -6,6 +6,7 @@ importScripts("network-capture.js", "site-download.js", "audio-preview.js", "qin
 const APP = "http://127.0.0.1:6800/extension/add";
 const PING = "http://127.0.0.1:6800/extension/ping";
 const STATUS = "http://127.0.0.1:6800/extension/status";
+const BROWSER_HANDOFF = "http://127.0.0.1:6800/extension/browser-handoff";
 const BATCH = "http://127.0.0.1:6800/extension/batch";
 
 // 告诉 App 扩展已装好（设置页显示「已连接」）。扩展版本不匹配时不能反复
@@ -545,8 +546,19 @@ async function capturedFileSizes(tabId) {
     .map(item => [item.url, item.size]));
 }
 
+function githubRecoveryDownload(value, filename = "") {
+  if (typeof filename === "string" && /^github-recovery-codes(?: \(\d+\))?\.txt$/i.test(filename.split(/[\\/]/).pop())) return true;
+  try {
+    const url = new URL(value);
+    return ["github.com", "www.github.com"].includes(url.hostname) &&
+      /(?:^|\/)recovery[_-]download\/?$/i.test(url.pathname) &&
+      /^\/(?:settings\/|two-factor\/)/.test(url.pathname);
+  } catch (_) { return false; }
+}
+
 // tabId：传了就表示是用户主动点的，App 没开时自动打开它；浏览器自动接管的下载不传，App 没开就让浏览器自己下
 async function sendToApp(url, referrer, name, tabId, mediaType, collection, fileSize) {
+  if (githubRecoveryDownload(url, name)) return false;
   if (tabId != null && fileSize?.sizeBytes == null && !fileSize?.sizeLabel && isSiteDownloadURL(url)) {
     fileSize = { sizeBytes: (await capturedFileSizes(tabId)).get(url) };
   }
@@ -574,6 +586,161 @@ async function sendToApp(url, referrer, name, tabId, mediaType, collection, file
 
 // A fresh click replaces any old status watcher for that URL.
 const handoverWatches = new Map();
+const finishingBrowserHandoffs = new Set();
+const browserHandoffAlarm = "shandian-browser-handoff:";
+const browserRetryKey = "shandian-browser-retry";
+const browserResumeKey = "shandian-browser-resume:";
+
+function browserDownloadPage(item) {
+  try {
+    const url = new URL(item.referrer || item.url);
+    return /^https?:$/.test(url.protocol) ? url.origin + url.pathname : "";
+  } catch (_) { return ""; }
+}
+
+async function useBrowserForRetry(item) {
+  const retry = (await chrome.storage.session.get(browserRetryKey))[browserRetryKey];
+  if (!retry || retry.page !== browserDownloadPage(item)) return false;
+  await chrome.storage.session.remove(browserRetryKey);
+  return retry.until > Date.now();
+}
+
+async function browserHandoffStatus(id, options = {}) {
+  try {
+    const response = await fetch(BROWSER_HANDOFF, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...options }), signal: AbortSignal.timeout(10000),
+    });
+    return response.ok ? (await response.json()).state : null;
+  } catch (_) { return null; }
+}
+
+function browserHandoffCapability() {
+  return fetch(PING, { method: "POST", signal: AbortSignal.timeout(2500) })
+    .then(response => response.ok ? response.json() : null).catch(() => null);
+}
+
+async function adviseBrowserRetry(item, token) {
+  const page = browserDownloadPage(item);
+  const browserNext = page ? await chrome.storage.session.set({
+    [browserRetryKey]: { page, until: Date.now() + 5 * 60000 },
+  }).then(() => true, () => false) : false;
+  const title = browserNext
+    ? "请回原网页再点下载，下一次会由浏览器保存。"
+    : "请暂时关闭接管，再回原网页重新下载。";
+  await chrome.action.setTitle({ title }).catch(() => {});
+  await browserHandoffStatus(token, { showRetryHint: true, browserNext });
+}
+
+async function finishBrowserHandoff(item, record, status) {
+  if (finishingBrowserHandoffs.has(item.id)) return;
+  finishingBrowserHandoffs.add(item.id);
+  const key = browserHandoffAlarm + item.id;
+  try {
+    const current = (await chrome.downloads.search({ id: item.id }))[0];
+    if (status === "received") {
+      if (current?.state === "in_progress" && current.paused) {
+        await chrome.downloads.cancel(item.id);
+        await chrome.downloads.erase({ id: item.id }).catch(() => {});
+      }
+    } else if (current?.state !== "complete") {
+      if (current?.paused || current?.canResume) {
+        const resumeKey = browserResumeKey + item.id;
+        await chrome.storage.session.set({ [resumeKey]: { token: record.token, until: Date.now() + 30000 } }).catch(() => {});
+        try {
+          await chrome.downloads.resume(item.id);
+        } catch (_) {
+          await chrome.storage.session.remove(resumeKey).catch(() => {});
+          await adviseBrowserRetry(current || item, record.token);
+        }
+      } else if (current?.state !== "in_progress") {
+        await adviseBrowserRetry(current || item, record.token);
+      }
+    }
+    await chrome.alarms.clear(key);
+    await chrome.storage.local.remove(key);
+  } finally {
+    finishingBrowserHandoffs.delete(item.id);
+  }
+}
+
+async function recoverBrowserHandoff(key) {
+  const record = (await chrome.storage.local.get(key))[key];
+  if (!record || finishingBrowserHandoffs.has(record.id)) return;
+  const state = await browserHandoffStatus(record.token, { release: true });
+  if (state === "starting" || state === "waiting" || state === "unavailable" ||
+      (state == null && (await browserHandoffCapability())?.browserHandoff)) {
+    await chrome.alarms.create(key, { delayInMinutes: 0.5 });
+    return;
+  }
+  try {
+    await finishBrowserHandoff({ id: record.id }, record, state);
+  } catch (_) {
+    await chrome.alarms.create(key, { delayInMinutes: 0.5 });
+  }
+}
+
+chrome.alarms.onAlarm.addListener(({ name }) => {
+  if (name.startsWith(browserHandoffAlarm)) recoverBrowserHandoff(name).catch(() => {});
+});
+chrome.downloads.onChanged.addListener(async delta => {
+  const state = delta.state?.current;
+  if (state !== "complete" && state !== "interrupted") return;
+  const key = browserResumeKey + delta.id;
+  const resumed = (await chrome.storage.session.get(key).catch(() => ({})))[key];
+  if (!resumed) return;
+  await chrome.storage.session.remove(key).catch(() => {});
+  if (state !== "interrupted" || delta.error?.current === "USER_CANCELED" || resumed.until < Date.now()) return;
+  const [item] = await chrome.downloads.search({ id: delta.id }).catch(() => []);
+  await adviseBrowserRetry(item || {}, resumed.token);
+});
+chrome.runtime.onStartup.addListener(async () => {
+  const downloads = await chrome.storage.local.get();
+  for (const key of Object.keys(downloads).filter(key => key.startsWith(browserHandoffAlarm))) {
+    await recoverBrowserHandoff(key).catch(() => {});
+  }
+});
+
+async function startBrowserHandoff(item, url) {
+  if (item.paused || (item.state && item.state !== "in_progress") || await useBrowserForRetry(item)) return;
+  // Old App versions acknowledge at dispatch instead of reporting the actual new task.
+  const ping = await browserHandoffCapability();
+  if (!ping?.ready || ping.browserHandoff !== true) return;
+  const current = (await chrome.downloads.search({ id: item.id }))[0];
+  if (!current || current.state !== "in_progress" || current.paused) return;
+  url = current.finalUrl || url;
+  if (githubRecoveryDownload(current.url, current.filename) || githubRecoveryDownload(url)) return;
+
+  const token = crypto.randomUUID().replaceAll("-", "");
+  const record = { id: item.id, token };
+  const key = browserHandoffAlarm + item.id;
+  await chrome.storage.local.set({ [key]: record });
+  try {
+    await chrome.alarms.create(key, { delayInMinutes: 2 });
+    await chrome.downloads.pause(item.id);
+  } catch (_) {
+    await chrome.alarms.clear(key);
+    await chrome.storage.local.remove(key);
+    return;
+  }
+  try {
+    const name = feishuAttachmentDownload(url) ? await feishuDownloadName(current, url) : undefined;
+    const sizeBytes = knownFileBytes(current.totalBytes);
+    const accepted = await sendToApp(url, item.referrer, name, undefined, undefined, undefined, { sizeBytes, browserHandoffId: token });
+    if (!accepted) { await recoverBrowserHandoff(key); return; }
+    while ((await chrome.storage.local.get(key))[key]) {
+      const state = await browserHandoffStatus(token);
+      if (state === "received" || state === "failed" || state === "released") {
+        await finishBrowserHandoff(item, record, state);
+        return;
+      }
+      await chrome.runtime.getPlatformInfo();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  } catch (_) {
+    await recoverBrowserHandoff(key);
+  }
+}
 
 // 交给 App 后盯 5 分钟：App 那边失败了（会自己移除任务）就用浏览器重新下，不让这次下载丢掉
 async function watchHandOver(url) {
@@ -905,6 +1072,7 @@ async function feishuDownloadName(item, url) {
 
 chrome.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
+  if (githubRecoveryDownload(item.url, item.filename) || githubRecoveryDownload(url)) return;
   if(isSiteDownloadURL(url))console.warn('Pixabay browser download item created');
   // A browser fallback carries its initiator on the item itself. The same URL
   // clicked again by the user is a separate request and can be taken over.
@@ -912,6 +1080,10 @@ chrome.downloads.onCreated.addListener(async (item) => {
   if (!/^https?:/i.test(url)) return;
   const intent = takeSiteDownloadIntent(item);
   if (!intent && (!isUserDownload(item) || !(await enabled()))) return;
+  if (!intent) {
+    await startBrowserHandoff(item, url).catch(() => {});
+    return;
+  }
   const originalName=item.filename?.split(/[\\/]/).pop();
   const name = intent || isSiteDownloadURL(url) ? siteDownloadFileName(url,intent?.name,originalName) : undefined;
   if(intent?.collectOnly){
@@ -993,6 +1165,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // 网页上的悬停按钮。视频统一走 downloadVideoInTab，和右键入口一致
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type !== "hoverDownload" || !sender.tab) return;
+  if (githubRecoveryDownload(msg.url)) {
+    reply({ ok: false, error: "请在 GitHub 的恢复码页面点击原有的 Download 按钮，由浏览器保存。" });
+    return;
+  }
   (async () => {
     if (typeof msg.qingqueName === "string" && msg.qingqueName &&
         new URL(sender.tab.url).hostname === "docs.qingque.cn") {
@@ -1003,9 +1179,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     }
     const sizeLabel = typeof msg.sizeLabel === "string" && /^\d+(?:\.\d+)? [KMGT]?B$/.test(msg.sizeLabel) ? msg.sizeLabel : undefined;
     const sizeBytes = Number.isSafeInteger(msg.sizeBytes) && msg.sizeBytes >= 0 ? msg.sizeBytes : undefined;
+    const vjshiPage = (msg.vjshiTitle || msg.vjshiPath) && new URL(sender.url || sender.tab.url);
+    const isVjshi = vjshiPage && /(^|\.)vjshi\.com$/.test(vjshiPage.hostname);
+    const name = isVjshi && typeof msg.vjshiTitle === "string" && msg.vjshiTitle
+      ? siteDownloadFileName(msg.url, msg.vjshiTitle) : undefined;
+    const referrer = isVjshi && typeof msg.vjshiPath === "string" && /^\/watch\/\d+\.html$/.test(msg.vjshiPath)
+      ? new URL(msg.vjshiPath, vjshiPage.origin).href : sender.url;
     const result = msg.video
       ? await downloadVideoInTab(sender.tab)
-      : await sendToApp(msg.url, sender.url, undefined, sender.tab.id, undefined, undefined, { sizeLabel, sizeBytes });
+      : await sendToApp(msg.url, referrer, name, sender.tab.id, undefined, undefined, { sizeLabel, sizeBytes });
     // null = 没找到真实视频。以前一律回 ok，按钮显示「已交给闪电全能下载」但其实什么都没下
     return { ok: result === true, noVideo: result === null };
   })().then(reply, (error) => reply({ ok: false, error: /[\u4e00-\u9fff]/.test(error?.message || "") ? error.message : "未能添加下载，请稍后重试。" }));

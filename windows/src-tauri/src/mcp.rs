@@ -13,8 +13,12 @@ use crate::AppState;
 pub(crate) const ROUTE: &str = "/internal/mcp";
 const PROTOCOL: &str = "2025-11-25";
 
-fn targets() -> &'static [&'static str] {
-    &["local"]
+pub(crate) fn targets() -> &'static [&'static str] {
+    if cfg!(feature = "nas") {
+        &["local", "nas"]
+    } else {
+        &["local"]
+    }
 }
 
 #[tauri::command]
@@ -31,7 +35,7 @@ fn schema(properties: Value, required: &[&str]) -> Value {
 
 fn tools() -> Value {
     let target = json!({"type":"string", "enum":targets(), "default":"local",
-        "description":"下载位置，当前支持本机。"});
+        "description":"下载位置。local 是本机，nas 是已配置的 NAS。"});
     let task = schema(
         json!({
             "id":{"type":"string","description":"list_downloads 返回的完整任务 ID。"},
@@ -218,6 +222,13 @@ async fn add(app: &AppHandle, state: &AppState, args: Add) -> Result<Value, Stri
         || crate::baidu::share_url(url).is_some()
         || crate::feishu::document_url(url).is_some()
         || crate::wechat::is_share(url);
+    #[cfg(feature = "nas")]
+    if destination == "nas" {
+        crate::nas::task_client(&state.local)?;
+        if special {
+            return Err("这个链接需要在本机解析或授权，请选择本机".into());
+        }
+    }
     let confirm = special
         || crate::links::video_collection(url, false).is_some()
         || state.settings.lock().unwrap().confirm_new;
@@ -231,6 +242,18 @@ async fn add(app: &AppHandle, state: &AppState, args: Add) -> Result<Value, Stri
             .map_err(|e| e.to_string())?;
         return Ok(json!({"status":"needs_confirmation","target":destination}));
     }
+    #[cfg(feature = "nas")]
+    if destination == "nas" {
+        let video = matches!(
+            crate::links::LinkKind::of(url),
+            Some(crate::links::LinkKind::VideoSite)
+        )
+        .then(|| {
+            serde_json::to_value(crate::videos::VideoOptions::load(&state.base)).unwrap_or_default()
+        });
+        let id = crate::nas::add(state, url, "", "", &[], video.as_ref(), false, &[]).await?;
+        return Ok(json!({"status":"submitted","target":destination,"id":id}));
+    }
     let id = crate::engine::add_link(url, state).await?;
     Ok(json!({"status":"submitted","target":destination,"id":id}))
 }
@@ -238,6 +261,13 @@ async fn add(app: &AppHandle, state: &AppState, args: Add) -> Result<Value, Stri
 async fn list(app: &AppHandle, args: List) -> Result<Value, String> {
     let destination = target(args.target.as_deref())?;
     let state = app.state::<AppState>();
+    #[cfg(feature = "nas")]
+    let tasks = if destination == "nas" {
+        crate::nas::nas_list_tasks(state).await?
+    } else {
+        crate::engine::collect_tasks(&state).await?
+    };
+    #[cfg(not(feature = "nas"))]
     let tasks = crate::engine::collect_tasks(&state).await?;
     let rows: Vec<_> = tasks
         .into_iter()
@@ -265,7 +295,15 @@ async fn list(app: &AppHandle, args: List) -> Result<Value, String> {
 
 async fn control(app: &AppHandle, args: Control, pause: bool) -> Result<Value, String> {
     let id = args.id;
-    let destination = target(args.target.as_deref())?;
+    let inferred = if id.starts_with("nas:") {
+        "nas"
+    } else {
+        "local"
+    };
+    let destination = target(args.target.as_deref().or(Some(inferred)))?;
+    if destination != inferred {
+        return Err("任务 ID 与下载位置不一致，请使用查询返回的完整 ID".into());
+    }
     if id.is_empty()
         || id.ends_with(':')
         || !id
@@ -275,6 +313,15 @@ async fn control(app: &AppHandle, args: Control, pause: bool) -> Result<Value, S
         return Err("任务 ID 格式不正确".into());
     }
     let state = app.state::<AppState>();
+    #[cfg(feature = "nas")]
+    if destination == "nas" {
+        if pause {
+            crate::nas::nas_pause(id, state).await?;
+        } else {
+            crate::nas::nas_resume(id, state).await?;
+        }
+        return Ok(json!({"ok":true,"target":destination}));
+    }
     if pause {
         crate::engine::pause_task(id, state).await?;
     } else {

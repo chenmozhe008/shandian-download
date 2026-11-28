@@ -6,16 +6,15 @@
 <!-- 下载完成卡片：和剪贴板浮窗同一套外观，在屏幕右下角、任务栏上方，不抢焦点，8 秒自己消失。
      圆角和阴影由 CSS 画，窗口本身透明（见 float.rs） -->
 <script src="theme.js"></script>
+<link rel="stylesheet" href="accent.css">
 <style>
   :root {
     --card: #fcfbf9; --title: rgb(29, 29, 31); --sub: rgb(138, 138, 142);
-    --tint: rgb(232, 154, 0); --tint-press: rgb(210, 138, 0); --on-tint: #fff;
     --line: rgba(0, 0, 0, 0.08); --btn2: rgba(0, 0, 0, 0.045); --btn2-line: rgba(0, 0, 0, 0.16); --btn2-hover: rgba(0, 0, 0, 0.085);
     --ok: rgb(52, 168, 83);
   }
   html[data-dark="1"] {
     --card: #26262a; --title: rgb(245, 245, 247); --sub: rgb(152, 152, 157);
-    --tint: rgb(255, 181, 38); --tint-press: rgb(235, 165, 30); --on-tint: #1d1d1f;
     --line: rgba(255, 255, 255, 0.1); --btn2: rgba(255, 255, 255, 0.07); --btn2-line: rgba(255, 255, 255, 0.18); --btn2-hover: rgba(255, 255, 255, 0.12);
     --ok: rgb(90, 200, 120);
   }
@@ -40,6 +39,13 @@
   #folder { background: var(--tint); border-color: transparent; color: var(--on-tint); }
   #folder:hover { background: var(--tint-press); }
   #open.relogin { background: var(--tint); border-color: transparent; color: var(--on-tint); }
+  #open .update-logo { display: none; }
+  #open.update .update-logo { display: block; width: 17px; height: 17px; }
+  #open.update svg { display: none; }
+  .update-meter { display: block; appearance: none; width: 100%; height: 4px; margin-top: 5px; border: 0; border-radius: 4px; overflow: hidden; }
+  .update-meter[hidden] { display: none; }
+  .update-meter::-webkit-progress-bar { background: var(--btn2-hover); }
+  .update-meter::-webkit-progress-value { background: var(--tint); border-radius: 4px; }
   #close { width: 28px; padding: 0; }
 </style>
 </head>
@@ -49,10 +55,11 @@
     <div class="text">
       <div class="title" id="title">下载完成</div>
       <div class="name" id="name"></div>
+      <progress class="update-meter" id="update-meter" max="100" value="0" aria-label="更新下载进度" hidden></progress>
     </div>
     <div class="btns">
       <button id="folder"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>打开文件夹</span></button>
-      <button id="open"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>打开文件</span></button>
+      <button id="open"><img class="update-logo" src="assets/logo.svg" alt=""><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>打开文件</span></button>
       <button id="close" aria-label="关闭">✕</button>
     </div>
   </div>
@@ -69,8 +76,14 @@
   async function pull() {
     const d = await invoke("done_pending").catch(() => null);
     if (!d) return;
+    const previousVersion = updateVersion;
     updateVersion = String(d.id).startsWith("__windows_update__:") ? d.id.split(":")[1] : null;
-    $("open").disabled = false;
+    $("open").classList.toggle("update", !!updateVersion);
+    if (!updateVersion || previousVersion !== updateVersion) {
+      $("update-meter").hidden = true;
+      $("update-meter").value = 0;
+    }
+    $("open").disabled = updateVersion ? !$("update-meter").hidden : false;
     if (updateVersion) {
       clearTimeout(timer);
       noAuto = true;
@@ -115,11 +128,14 @@
   $("open").addEventListener("click", async () => {
     if (!updateVersion) { await invoke("done_action", { action: "open" }).catch(() => {}); return; }
     $("open").disabled = true;
+    $("update-meter").value = 0;
+    $("update-meter").hidden = false;
     $("name").textContent = "正在下载安装包…";
     try { await invoke("update_install", { version: updateVersion }); }
     catch (error) { showUpdateRetry(String(error)); }
   });
   function showUpdateRetry(text) {
+    $("update-meter").hidden = true;
     $("name").textContent = text;
     $("name").title = text;
     $("open").disabled = false;
@@ -132,8 +148,11 @@
       return;
     }
     $("open").disabled = true;
+    const percent = Math.round(Math.min(100, Math.max(0, Number(payload.percent) || 0)));
+    $("update-meter").value = payload.phase === "verifying" || payload.phase === "installing" ? 100 : percent;
+    $("update-meter").hidden = false;
     $("name").textContent = payload.phase === "installing" ? "正在安装更新…" :
-      payload.phase === "verifying" ? "正在校验安装包…" : "正在下载 " + Math.round(payload.percent || 0) + "%";
+      payload.phase === "verifying" ? "正在校验安装包…" : "正在下载 " + percent + "%";
   });
   $("folder").addEventListener("click", () => { invoke("done_action", { action: "folder" }).catch(() => {}); });
   $("close").addEventListener("click", close);

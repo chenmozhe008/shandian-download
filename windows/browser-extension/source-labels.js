@@ -26,7 +26,7 @@
     ["Facebook",["facebook.com","fb.watch"]],
     ["Instagram",["instagram.com"]],
     ["微博",["weibo.com","weibo.cn"]],["X",["x.com","twitter.com"]],
-    ["Pixabay",["pixabay.com"]],["爱给",["aigei.com"]],
+    ["Pixabay",["pixabay.com"]],["爱给",["aigei.com"]],["光厂",["vjshi.com"]],
   ];
   function label(value, page) {
     for (const link of [value,page]) {

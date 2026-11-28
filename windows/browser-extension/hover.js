@@ -8,6 +8,7 @@
   const isXhs = /(^|\.)xiaohongshu\.com$/.test(location.hostname);
   const isFeishu = /(^|\.)feishu\.cn$/i.test(location.hostname);
   const isPixabay = /(^|\.)pixabay\.com$/.test(location.hostname);
+  const isVjshi = /(^|\.)vjshi\.com$/.test(location.hostname);
   const isWeChatMedia = /^(mp\.weixin\.qq\.com|channels\.weixin\.qq\.com)$/.test(location.hostname);
   const audioOnly = cloudPage || (window.top !== window && !isWeChatMedia);
   const isNativeMediaSite = !audioOnly && (/(^|\.)aigei\.com$/.test(location.hostname) || (isPixabay && /^\/(?:[a-z]{2}\/)?(music|sound-effects|videos)\//.test(location.pathname)));
@@ -428,12 +429,65 @@
     return url ? { el, audio, url } : null;
   }
 
+  function isPixabayVideoBanner(el) {
+    return isPixabay && /^\/(?:[a-z]{2}\/)?videos\/?$/.test(location.pathname)
+      && !!el.closest('[class*="featuredContentCarousel--"]');
+  }
+
+  function vjshiWork(el) {
+    const card = el.closest(".video-card__item");
+    const title = card?.querySelector(".video-card__title")?.textContent?.trim();
+    const link = el.closest('a[href*="/watch/"]') || card?.querySelector('a[href*="/watch/"]');
+    if (!link && !card && /^\/watch\/\d+\.html$/.test(location.pathname)) {
+      return { path: location.pathname, title: document.querySelector("h1")?.textContent?.trim() };
+    }
+    if (link?.origin === location.origin && /^\/watch\/\d+\.html$/.test(link.pathname)) {
+      return { path: link.pathname, title };
+    }
+    return title ? { title } : null;
+  }
+
+  async function resolveVjshiWork(work, url) {
+    const preview = new URL(url);
+    const smallPreview = preview.hostname === "lmp4.vjshi.com";
+    if (!work.path || (work.title && !smallPreview)) return { url, title: work.title, smallPreview };
+    let title = work.title || "光厂素材 " + work.path.match(/\d+/)[0];
+    try {
+      const href = new URL(work.path, location.origin).href;
+      const response = await fetch(href, { credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(3000) });
+      if (response.ok) {
+        const page = new DOMParser().parseFromString(await response.text(), "text/html");
+        const canonical = page.querySelector('link[rel="canonical"]')?.getAttribute("href");
+        if (canonical === href) {
+          title = work.title || page.querySelector("h1")?.textContent?.trim() || page.title.replace(/_视频素材下载\s*$/, "").trim() || title;
+          const src = smallPreview && page.querySelector("video[data-track-play][src]")?.getAttribute("src");
+          if (src) {
+            const player = new URL(src, href);
+            // 两种预览共用素材路径，确保取到的是这一条作品的主播放器。
+            if (player.protocol === "https:" && player.hostname === "mp4.vjshi.com" && player.pathname === preview.pathname) {
+              return { url: player.href, title, path: work.path, smallPreview: false };
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return { url, title, smallPreview };
+  }
+
   function pick(x, y) {
     const elements = document.elementsFromPoint(x, y).filter(el => el !== host);
     for (const el of elements) {
       const sound = audioHit(el);
       if (sound) return sound;
       if (!audioOnly && el.tagName === "VIDEO" && !inlineShown()) {
+        if (isPixabayVideoBanner(el)) continue;
+        if (isVjshi) {
+          const url = el.currentSrc || el.src || el.querySelector("source[src]")?.src;
+          if (!/^https?:\/\//i.test(url || "")) continue;
+          if (location.pathname === "/" && /^https?:\/\/mp4\.vjshi\.com\/carousel\//i.test(url)) continue;
+          // 素材卡使用鼠标命中的视频，避免整页解析选到面积更大的首页背景。
+          return { el, url, vjshi: vjshiWork(el) };
+        }
         const r = el.getBoundingClientRect();
         if (r.width >= MIN_W && r.height >= MIN_H) {
           // X：信息流一屏好几条，交这条推文自己的地址（页面地址只是 /home）
@@ -529,7 +583,7 @@
       if (target) scheduleHide();
       return;
     }
-    if (target?.el === hit.el && host?.isConnected) return clearTimeout(hideTimer);
+    if (target?.el === hit.el && target.url === hit.url && host?.isConnected) return clearTimeout(hideTimer);
     clearTimeout(hideTimer);
     if (!host?.isConnected) build();
     target = hit;
@@ -544,7 +598,7 @@
 
   async function onClick(e) {
     if (!target || !button || button.disabled) return;
-    const { url, video, audio, qingqueName, feishuBlock } = target;
+    const { url, video, audio, qingqueName, feishuBlock, vjshi } = target;
     const control = feishuBlock && feishuDownloadControl(feishuBlock);
     if (!feishuBlock || control) {
       e.preventDefault();
@@ -560,20 +614,23 @@
     const timeout=setTimeout(()=>{if(request===hoverRequest && clicked.disabled)show("解析时间较长，可刷新页面后重试",0)},45000);
     try {
       let r;
+      let smallPreview = false;
       if (feishuBlock) {
         const ok = await downloadFeishuAudio(feishuBlock, control, () => request === hoverRequest);
         r = { ok, error: "飞书未打开这条音频的原件下载按钮" };
       } else {
         const source = audio ? audioSource(audio) : url;
         const size = source && typeof huggingFaceHoverSize === "function" ? huggingFaceHoverSize(source) : null;
+        const work = vjshi ? await resolveVjshiWork(vjshi, source) : null;
+        smallPreview = work?.smallPreview === true;
         r = audio && !source
           ? { ok: false, error: "音频地址已变化，请先播放后重试" }
-          : await chrome.runtime.sendMessage({ type: "hoverDownload", url: source, video: !!video, qingqueName, ...size });
+          : await chrome.runtime.sendMessage({ type: "hoverDownload", url: work?.url || source, video: !!video, vjshiTitle: work?.title, vjshiPath: work?.path, qingqueName, ...size });
       }
       if(request!==hoverRequest) return;
       clicked.className = r?.ok ? "ok" : "fail";
       const successLabel = feishuBlock ? "已发起飞书原文件下载" : "已交给闪电全能下载";
-      clicked.title = r?.ok ? successLabel : r?.noVideo
+      clicked.title = r?.ok ? (smallPreview ? "作品页画质未取到，已交给闪电下载小预览" : successLabel) : r?.noVideo
         ? "没找到可直接下载的视频：请先播放，再用扩展的「开始侦测本页播放资源」"
         : r?.error || "没交给闪电全能下载，请确认应用已打开";
       if (!r?.ok && isChannelPreview()) clicked.title += "。可点击重试，也可刷新页面后再试；仍失败时使用扩展中的闪电下载。";
@@ -636,7 +693,8 @@
     if (!enabled) return;
     if(!document.getElementById("shandian-site-download-style")) {
       const style=document.createElement("style");style.id="shandian-site-download-style";
-      style.textContent=`.shandian-site-download{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .1s ease!important}.shandian-site-download[aria-busy="true"],.shandian-download-row:hover .shandian-site-download,.shandian-download-row:has(:focus-visible) .shandian-site-download{opacity:1!important;visibility:visible!important;pointer-events:auto!important}`;
+      style.textContent=`.shandian-site-download{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:opacity .1s ease!important}.shandian-site-download[aria-busy="true"],.shandian-download-row:hover .shandian-site-download,.shandian-download-row:has(:focus-visible) .shandian-site-download{opacity:1!important;visibility:visible!important;pointer-events:auto!important}
+        [class*="overlayControlsLeft--"]:has(> .shandian-site-download){align-items:center}`;
       (document.head || document.documentElement).append(style);
     }
     const isAigei = /(^|\.)aigei\.com$/.test(location.hostname);
@@ -649,7 +707,7 @@
       if(native)candidates.add(native);
     });
     for(const native of candidates) {
-      if(nativeButtons.has(native) || native.closest('.shandian-site-download') || !native.getClientRects().length)continue;
+      if(nativeButtons.has(native) || native.closest('.shandian-site-download') || !native.getClientRects().length || isPixabayVideoBanner(native))continue;
       let row=isAigei ? native.closest('[id^="audioItemBox_"]') : native.parentElement,found=!!(isAigei && row);
       for(let i=0;!found && row && i<7;i++,row=row.parentElement){
         const r=row.getBoundingClientRect();
@@ -664,7 +722,11 @@
       b.querySelector("span").style.display="none";
       b.style.width=b.style.minWidth="40px";b.style.height="40px";b.style.padding="0";
       b.style.border="0";b.style.outline="none";b.style.background="transparent";b.style.boxShadow="none";
-      b.querySelector("img").style.width=b.querySelector("img").style.height="32px";
+      const leftControls = isPixabay && /^\/(?:[a-z]{2}\/)?videos\//.test(location.pathname) && native.closest('[class*="cell--"]')
+        ? native.closest('[class*="overlay--"][class*="top--"]')?.querySelector('[class*="overlayControlsLeft--"]')
+        : null;
+      const icon = b.querySelector("img");
+      icon.style.width=icon.style.height=leftControls ? "40px" : "32px";
       if(isPixabay)b.style.margin="0";
       b.addEventListener("mouseenter",()=>{b.style.filter="brightness(1.15)";});
       b.addEventListener("mouseleave",()=>{b.style.filter="";b.style.background="transparent";});
@@ -723,7 +785,7 @@
         // Compact cards have a fixed-width download/favourite strip; keep that strip intact.
         b.querySelector("span").style.display="none";
         b.style.width=b.style.minWidth="32px";b.style.height="32px";b.style.padding="0";
-        b.querySelector("img").style.width=b.querySelector("img").style.height="28px";
+        icon.style.width=icon.style.height="28px";
         if(!native.closest('.audio-download-box-common')) {
           b.style.position="absolute";b.style.right="6px";b.style.top="6px";b.style.margin="0";b.style.zIndex="2";
           const heading=row.querySelector('.audio-item-row1');
@@ -741,6 +803,8 @@
           const favourite=bar.querySelector('.fav-btn');
           (favourite || wrap).after(b);
         }
+      } else if (leftControls) {
+        leftControls.prepend(b);
       } else anchor.after(b);
       const hoverRow=isAigei && !native.closest('.audio-download-box-common') ? row.closest('.mpic-tpl') || row : row;
       hoverRow.classList.add("shandian-download-row");b._shandianHoverRow=hoverRow;
